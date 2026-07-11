@@ -12,6 +12,7 @@ export default function Klienci() {
   const [selected, setSelected] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
+  const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
@@ -31,12 +32,23 @@ export default function Klienci() {
   }, [])
 
   useEffect(() => {
-    if (!selected) { setProjects([]); return }
+    if (!selected) { setProjects([]); setDocuments([]); return }
     (async () => {
       const { data } = await supabase.from('projects').select('*').eq('client_id', selected.id)
       setProjects(data || [])
     })()
+    ;(async () => {
+      const { data, error } = await supabase.from('documents').select('*').eq('client_id', selected.id).order('created_at', { ascending: false })
+      if (error) console.error(error)
+      setDocuments(data || [])
+    })()
   }, [selected])
+
+  const handleDownload = async (doc) => {
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
+    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
 
   if (selected) {
     return (
@@ -50,6 +62,18 @@ export default function Klienci() {
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{p.order_label}</span>
                 <span style={{ fontSize: 11, color: C.muted }}>{p.stage}</span>
+              </div>
+            ))}
+          </SectionCard>
+          <SectionCard title="Dokumenty">
+            {documents.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak dokumentów — pliki wysłane na czacie tego klienta pojawią się tutaj automatycznie.</div>}
+            {documents.map(d => (
+              <div key={d.id} onClick={() => handleDownload(d)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>📎 {d.file_name}</span>
+                <span style={{ fontSize: 10, color: C.muted, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ background: C.bg, padding: '1px 7px', borderRadius: 10 }}>{d.category}</span>
+                  {d.source === 'chat' ? 'z czatu' : 'ręcznie'}
+                </span>
               </div>
             ))}
           </SectionCard>
