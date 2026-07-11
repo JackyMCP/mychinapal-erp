@@ -94,7 +94,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead><tr style={{ background: C.bg }}>
-              {[['left', 'Kontrahent'], ['left', 'Zlecenie'], ['right', 'Przychód'], ['right', 'Zakup'], ['right', 'Transport'], ['right', 'Cło'], ['right', 'VAT import'], ['right', 'Marża PLN'], ['left', 'Status']].map(([a, h], i) => (
+              {[['left', 'Kontrahent'], ['left', 'Zlecenie'], ['right', 'Przychód'], ['right', 'Zakup'], ['right', 'Transport'], ['right', 'Cło'], ['right', 'VAT import'], ['right', 'Marża PLN'], ['left', 'Etap zamówienia']].map(([a, h], i) => (
                 <th key={i} style={{ textAlign: a, padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr></thead>

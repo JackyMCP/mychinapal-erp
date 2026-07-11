@@ -63,8 +63,8 @@ export default function KasaBank() {
         supabase.from('report_kontrola_kasy').select('*'),
         supabase.from('account_balances').select('*'),
         supabase.from('report_vat_summary').select('*').order('sort_order'),
-        supabase.from('report_marza_klient').select('*'),
-        supabase.from('report_marza_zlecenie').select('*'),
+        supabase.from('v_marza_klient').select('*'),
+        supabase.from('v_marza_zlecenie').select('*'),
         supabase.from('recurring_payments').select('*').order('day_of_month'),
       ])
       for (const [name, res] of Object.entries({ txRes, clientsRes, projectsRes, kkRes, abRes, vatRes, mkRes, mzRes, rpRes })) {
@@ -93,21 +93,31 @@ export default function KasaBank() {
 
       setVatSummary((vatRes.data || []).map(r => ({ label: r.label, value: Number(r.value), description: r.description })))
       setMarzaK((mkRes.data || []).map(r => ({ k: r.client_name, client_id: r.client_id, p: Number(r.przychod), z: Number(r.zakup), t: Number(r.transport), c: Number(r.clo), m: Number(r.marza), mp: Number(r.marza_pct), vn: Number(r.vat_nalezny), vi: Number(r.vat_import) })))
-      setMarzaZ((mzRes.data || []).map(r => ({ k: r.client_name, client_id: r.client_id, z: r.order_label, project_id: r.project_id, p: Number(r.przychod), zk: Number(r.zakup), t: Number(r.transport), c: Number(r.clo), vi: Number(r.vat_import), m: Number(r.marza), s: r.status, active: r.active })))
+      setMarzaZ((mzRes.data || []).map(r => ({ k: r.client_name, client_id: r.client_id, z: r.order_label, project_id: r.project_id, p: Number(r.przychod), zk: Number(r.zakup), t: Number(r.transport), c: Number(r.clo), vi: Number(r.vat_import), m: Number(r.marza), s: r.stage, active: r.active })))
       setRecurring(rpRes.data || [])
       setLoading(false)
     })()
   }, [isZarzad])
 
   const handleSave = async (id, changes) => {
-    const { error } = await supabase.from('transactions').update(changes).eq('id', id)
+    // VAT jest częścią kwoty brutto z wyciągu (amount) — przy zmianie stawki VAT
+    // przeliczamy automatycznie kwotę VAT, żeby marża "netto" na zakładce Marża
+    // liczyła się poprawnie bez ręcznego wyliczania.
+    const current = txs.find(t => t.id === id)
+    const payload = { ...changes }
+    if (current && changes.vat_rate !== undefined) {
+      const rate = Number(changes.vat_rate) || 0
+      payload.vat_amount = rate > 0 ? Math.round(current.amount * rate / (100 + rate) * 100) / 100 : 0
+    }
+    const { error } = await supabase.from('transactions').update(payload).eq('id', id)
     if (error) { console.error(error); alert('Nie udało się zapisać zmian: ' + error.message); return }
     const client = clients.find(c => c.id === changes.client_id)
     const project = projects.find(p => p.id === changes.project_id)
     setTxs(prev => prev.map(t => t.id === id ? {
-      ...t, ...changes,
+      ...t, ...payload,
       assign: client?.name || '',
       order: project?.order_label || '',
+      vat_calc: payload.vat_amount !== undefined ? payload.vat_amount : t.vat_calc,
     } : t))
   }
 
