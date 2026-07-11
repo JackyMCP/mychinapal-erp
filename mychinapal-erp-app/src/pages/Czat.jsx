@@ -5,6 +5,7 @@ import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
 
 const DOC_CATEGORIES = ['Faktury', 'Wyceny', 'Transport', 'Cło']
+const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function Czat() {
   const { profile } = useAuth()
@@ -26,7 +27,7 @@ export default function Czat() {
       .from('chat_channels')
       .select('*, clients(name), projects(order_label)')
       .order('created_at', { ascending: false })
-    if (error) console.error(error)
+    if (error) { console.error(error); alert('Nie udało się wczytać kanałów: ' + error.message) }
     setChannels(data || [])
     setLoadingChannels(false)
     if (!activeId && data && data.length > 0) setActiveId(data[0].id)
@@ -36,25 +37,29 @@ export default function Czat() {
 
   useEffect(() => {
     if (!activeId) { setMessages([]); return }
-    (async () => {
+    let cancelled = false
+
+    ;(async () => {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('*, profiles(full_name), documents(id, file_name, category, file_path)')
+        .select(MSG_SELECT)
         .eq('channel_id', activeId)
         .order('created_at', { ascending: true })
-      if (error) console.error(error)
-      setMessages(data || [])
+      if (error) { console.error(error); alert('Nie udało się wczytać historii wiadomości: ' + error.message); return }
+      if (!cancelled) setMessages(data || [])
     })()
 
     const sub = supabase
       .channel(`chat_messages_${activeId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${activeId}` }, async (payload) => {
-        const { data } = await supabase.from('chat_messages').select('*, profiles(full_name), documents(id, file_name, category, file_path)').eq('id', payload.new.id).single()
-        setMessages(prev => [...prev, data || payload.new])
+        const { data, error } = await supabase.from('chat_messages').select(MSG_SELECT).eq('id', payload.new.id).single()
+        if (error) { console.error(error); return }
+        const row = data || payload.new
+        setMessages(prev => (prev.some(m => m.id === row.id) ? prev : [...prev, row]))
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(sub) }
+    return () => { cancelled = true; supabase.removeChannel(sub) }
   }, [activeId])
 
   useEffect(() => {
@@ -85,18 +90,21 @@ export default function Czat() {
       attachmentDocId = doc.id
     }
 
-    const { error } = await supabase.from('chat_messages').insert({
+    const { data: inserted, error } = await supabase.from('chat_messages').insert({
       channel_id: activeId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
       attachment_document_id: attachmentDocId,
-    })
+    }).select(MSG_SELECT).single()
     setSending(false)
     if (error) { console.error(error); alert('Nie udało się wysłać wiadomości: ' + error.message); return }
+    // pokaż wiadomość natychmiast, niezależnie od tego czy zdarzenie realtime dotrze
+    if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
     setText('')
     setAttachFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleDownload = async (doc) => {
+    if (!doc) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
     if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
@@ -147,15 +155,16 @@ export default function Czat() {
               {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 20 }}>Brak wiadomości — napisz pierwszą.</div>}
               {messages.map(m => {
                 const mine = m.sender_id === profile?.id
+                const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
                 return (
                   <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '65%' }}>
                     {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || 'Nieznany'}</div>}
                     <div style={{ background: mine ? C.blue : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {m.content}
-                      {m.documents && (
-                        <div onClick={() => handleDownload(m.documents)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
-                          📎 <span style={{ textDecoration: 'underline' }}>{m.documents.file_name}</span>
-                          <span style={{ fontSize: 9, opacity: 0.75 }}>({m.documents.category})</span>
+                      {doc && (
+                        <div onClick={() => handleDownload(doc)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
+                          📎 <span style={{ textDecoration: 'underline' }}>{doc.file_name}</span>
+                          <span style={{ fontSize: 9, opacity: 0.75 }}>({doc.category})</span>
                         </div>
                       )}
                     </div>
