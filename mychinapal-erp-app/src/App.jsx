@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Klienci from './pages/Klienci'
 import Projekty from './pages/Projekty'
+import KasaBank from './pages/KasaBank'
 import ComingSoon from './pages/ComingSoon'
 import { C } from './lib/theme'
 
@@ -22,7 +23,7 @@ function Shell() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/kasa" element={<ComingSoon title="Kasa & Bank" />} />
+          <Route path="/kasa" element={<KasaBank />} />
           <Route path="/klienci" element={<Klienci />} />
           <Route path="/projekty" element={<Projekty />} />
           <Route path="/faktury" element={<ComingSoon title="Faktury & Księgowość" />} />

@@ -17,8 +17,9 @@ const MODULES = [
 ]
 
 export default function Sidebar() {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, isZarzad } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
+  const modules = MODULES.filter(m => isZarzad || m.path !== '/kasa')
 
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: '100vh' }}>
@@ -27,7 +28,7 @@ export default function Sidebar() {
         {!collapsed && <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>My<span style={{ color: C.blue3 }}>China</span>Pal</div>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
-        {MODULES.map(m => (
+        {modules.map(m => (
           <NavLink key={m.path} to={m.path} end={m.end}
             style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 9, padding: '9px 9px', borderRadius: 7, textDecoration: 'none',

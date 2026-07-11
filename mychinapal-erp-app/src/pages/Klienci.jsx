@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
@@ -9,6 +10,7 @@ export default function Klienci() {
   const { isZarzad } = useAuth()
   const [clients, setClients] = useState([])
   const [selected, setSelected] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -20,6 +22,11 @@ export default function Klienci() {
       if (error) console.error(error)
       setClients(data || [])
       setLoading(false)
+      const wanted = searchParams.get('client')
+      if (wanted) {
+        const match = (data || []).find(c => c.id === wanted)
+        if (match) setSelected(match)
+      }
     })()
   }, [])
 
@@ -36,7 +43,7 @@ export default function Klienci() {
       <div>
         <PageHeader title={selected.name} subtitle={selected.full_name || 'Brak pełnej nazwy'} />
         <div style={{ padding: '16px 22px', maxWidth: 1200 }}>
-          <div onClick={() => setSelected(null)} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer', marginBottom: 12 }}>← Wróć do listy klientów</div>
+          <div onClick={() => { setSelected(null); setSearchParams({}) }} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer', marginBottom: 12 }}>← Wróć do listy klientów</div>
           <SectionCard title="Projekty klienta">
             {projects.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak zarejestrowanych projektów.</div>}
             {projects.map(p => (
