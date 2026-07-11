@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Klienci from './pages/Klienci'
 import Projekty from './pages/Projekty'
 import KasaBank from './pages/KasaBank'
+import Czat from './pages/Czat'
 import ComingSoon from './pages/ComingSoon'
 import { C } from './lib/theme'
 
@@ -29,7 +30,7 @@ function Shell() {
           <Route path="/faktury" element={<ComingSoon title="Faktury & Księgowość" />} />
           <Route path="/logistyka" element={<ComingSoon title="Logistyka & Import" />} />
           <Route path="/poczta" element={<ComingSoon title="Poczta" />} />
-          <Route path="/czat" element={<ComingSoon title="Czat wewnętrzny" />} />
+          <Route path="/czat" element={<Czat />} />
           <Route path="/raporty" element={<ComingSoon title="Raporty & Analizy" />} />
           <Route path="/ustawienia" element={<ComingSoon title="Ustawienia" />} />
         </Routes>
