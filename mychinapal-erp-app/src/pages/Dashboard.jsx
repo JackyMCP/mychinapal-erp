@@ -83,8 +83,8 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: isZarzad ? '1fr 1fr' : '1fr', gap: 14 }}>
-          <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} accentColor={C.blue} />
-          {isZarzad && <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} accentColor={C.purple} />}
+          <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.blue} />
+          {isZarzad && <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.purple} />}
         </div>
       </div>
     </div>

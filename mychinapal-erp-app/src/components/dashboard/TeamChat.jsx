@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
+import VoiceChannel from './VoiceChannel'
 
 const MSG_SELECT = '*, profiles(full_name)'
 
-export default function TeamChat({ channelName, zarzadOnly, currentUserId, accentColor }) {
+export default function TeamChat({ channelName, zarzadOnly, currentUserId, currentUserName, accentColor }) {
   const [channelId, setChannelId] = useState(null)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
@@ -62,6 +63,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, accen
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>💬 {channelName}</div>
+      {channelId && <VoiceChannel roomId={`voice-${channelId}`} currentUserId={currentUserId} currentUserName={currentUserName || 'Użytkownik'} accentColor={accentColor} />}
       {loading ? <div style={{ fontSize: 11, color: C.muted }}>Ładowanie…</div> : (
         <>
           <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 10 }}>
