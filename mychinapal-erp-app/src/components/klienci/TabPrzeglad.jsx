@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt, fmtPct } from '../../lib/theme'
 import { TYP_LABELS } from './utils'
 
@@ -9,6 +10,10 @@ const row = { display: 'flex', justifyContent: 'space-between', alignItems: 'cen
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
 export default function TabPrzeglad({ client, marza, projects, contacts, lastContactDays }) {
+  const {
+    t
+  } = useLang();
+
   const przychod = Number(marza?.przychod) || 0
   const marzaVal = Number(marza?.marza) || 0
   const marzaPct = Number(marza?.marza_pct) || 0
@@ -22,24 +27,22 @@ export default function TabPrzeglad({ client, marza, projects, contacts, lastCon
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
-        <div style={statBox}><div style={statLabel}>Obrót YTD</div><div style={statVal}>{fmt(przychod, 0)} PLN</div></div>
-        <div style={statBox}><div style={statLabel}>Marża YTD</div><div style={{ ...statVal, color: C.green }}>{fmt(marzaVal, 0)} PLN</div></div>
-        <div style={statBox}><div style={statLabel}>Marża %</div><div style={statVal}>{fmtPct(marzaPct)}</div></div>
-        <div style={statBox}><div style={statLabel}>Ostatni kontakt</div><div style={{ ...statVal, fontSize: 14, color: contactColor }}>{contactLabel}</div></div>
+        <div style={statBox}><div style={statLabel}>{t("Obrót YTD")}</div><div style={statVal}>{fmt(przychod, 0)} {t("PLN")}</div></div>
+        <div style={statBox}><div style={statLabel}>{t("Marża YTD")}</div><div style={{ ...statVal, color: C.green }}>{fmt(marzaVal, 0)} {t("PLN")}</div></div>
+        <div style={statBox}><div style={statLabel}>{t("Marża %")}</div><div style={statVal}>{fmtPct(marzaPct)}</div></div>
+        <div style={statBox}><div style={statLabel}>{t("Ostatni kontakt")}</div><div style={{ ...statVal, fontSize: 14, color: contactColor }}>{contactLabel}</div></div>
       </div>
-
-      <div style={label}>Dane kontrahenta</div>
+      <div style={label}>{t("Dane kontrahenta")}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px', fontSize: 12, marginBottom: 22 }}>
-        <div><div style={label}>NIP</div>{client.nip || '—'}</div>
-        <div><div style={label}>Typ</div>{TYP_LABELS[client.typ] || client.typ || '—'}</div>
-        <div><div style={label}>Kontakt</div>{primary?.email || '—'}</div>
-        <div><div style={label}>Telefon</div>{primary?.phone || '—'}</div>
-        <div><div style={label}>Adres</div>{client.address || '—'}</div>
-        <div><div style={label}>KRS</div>{client.krs || '—'}</div>
+        <div><div style={label}>{t("NIP")}</div>{client.nip || '—'}</div>
+        <div><div style={label}>{t("Typ")}</div>{t(TYP_LABELS[client.typ] || client.typ) || '—'}</div>
+        <div><div style={label}>{t("Kontakt")}</div>{primary?.email || '—'}</div>
+        <div><div style={label}>{t("Telefon")}</div>{primary?.phone || '—'}</div>
+        <div><div style={label}>{t("Adres")}</div>{client.address || '—'}</div>
+        <div><div style={label}>{t("KRS")}</div>{client.krs || '—'}</div>
       </div>
-
-      <div style={label}>Ostatnie zamówienia</div>
-      {projects.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak zarejestrowanych zamówień.</div>}
+      <div style={label}>{t("Ostatnie zamówienia")}</div>
+      {projects.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak zarejestrowanych zamówień.")}</div>}
       {projects.slice(0, 4).map(p => (
         <div key={p.id} style={row}>
           <div><div style={{ fontSize: 12, fontWeight: 700 }}>{p.order_label}</div><div style={{ fontSize: 10.5, color: C.muted, marginTop: 1 }}>{p.value ? `${fmt(p.value, 0)} ${p.currency || 'PLN'}` : '—'}</div></div>
@@ -47,5 +50,5 @@ export default function TabPrzeglad({ client, marza, projects, contacts, lastCon
         </div>
       ))}
     </div>
-  )
+  );
 }

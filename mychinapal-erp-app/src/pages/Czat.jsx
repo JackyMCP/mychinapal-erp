@@ -1,3 +1,4 @@
+import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
@@ -8,6 +9,10 @@ import { DOC_CATEGORIES } from '../components/projekty/stageDefs'
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function Czat() {
+  const {
+    t
+  } = useLang();
+
   const { profile } = useAuth()
   const [searchParams] = useSearchParams()
   const [channels, setChannels] = useState([])
@@ -128,12 +133,12 @@ export default function Czat() {
       {/* Lista kanałów */}
       <div style={{ width: 240, borderRight: `1px solid ${C.border}`, background: C.white, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 700 }}>Kanały</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 700 }}>{t("Kanały")}</div>
           <button onClick={() => setShowNew(true)} style={{ padding: '3px 9px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff' }}>+</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loadingChannels && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>Ładowanie…</div>}
-          {!loadingChannels && channels.length === 0 && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>Brak kanałów — utwórz pierwszy.</div>}
+          {loadingChannels && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>}
+          {!loadingChannels && channels.length === 0 && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Brak kanałów — utwórz pierwszy.")}</div>}
           {channels.map(ch => (
             <div key={ch.id} onClick={() => setActiveId(ch.id)}
               style={{ padding: '10px 16px', cursor: 'pointer', background: activeId === ch.id ? C.blight : 'transparent', borderLeft: `3px solid ${activeId === ch.id ? C.blue : 'transparent'}` }}>
@@ -145,12 +150,11 @@ export default function Czat() {
           ))}
         </div>
       </div>
-
       {/* Okno czatu */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: C.bg, minWidth: 0 }}>
         {!active && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 12 }}>
-            Wybierz kanał z listy po lewej albo utwórz nowy.
+            {t("Wybierz kanał z listy po lewej albo utwórz nowy.")}
           </div>
         )}
         {active && (
@@ -162,13 +166,13 @@ export default function Czat() {
               )}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 20 }}>Brak wiadomości — napisz pierwszą.</div>}
+              {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 20 }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
               {messages.map(m => {
                 const mine = m.sender_id === profile?.id
                 const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
                 return (
                   <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '65%' }}>
-                    {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || 'Nieznany'}</div>}
+                    {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || t("Nieznany")}</div>}
                     <div style={{ background: mine ? C.blue : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {m.content}
                       {m.translated_content && m.translated_content !== m.content && (
@@ -179,13 +183,13 @@ export default function Czat() {
                       {doc && (
                         <div onClick={() => handleDownload(doc)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
                           📎 <span style={{ textDecoration: 'underline' }}>{doc.file_name}</span>
-                          <span style={{ fontSize: 9, opacity: 0.75 }}>({doc.category})</span>
+                          <span style={{ fontSize: 9, opacity: 0.75 }}>({t(doc.category)})</span>
                         </div>
                       )}
                     </div>
                     <div style={{ fontSize: 9, color: C.muted, marginTop: 2, textAlign: mine ? 'right' : 'left' }}>{fmtTime(m.created_at)}</div>
                   </div>
-                )
+                );
               })}
               <div ref={bottomRef} />
             </div>
@@ -194,9 +198,9 @@ export default function Czat() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: C.bg, borderRadius: 8, padding: '6px 10px' }}>
                   <span style={{ fontSize: 11.5 }}>📎 {attachFile.name}</span>
                   <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
-                    {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
                   </select>
-                  <span onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 11, color: C.muted }}>✕ usuń</span>
+                  <span onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 11, color: C.muted }}>{t("✕ usuń")}</span>
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8 }}>
@@ -207,17 +211,16 @@ export default function Czat() {
                 </button>
                 <input value={text} onChange={e => setText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-                  placeholder="Napisz wiadomość…" style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12.5, outline: 'none' }} />
+                  placeholder={t("Napisz wiadomość…")} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12.5, outline: 'none' }} />
                 <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: (sending || (!text.trim() && !attachFile)) ? 0.5 : 1 }}>
-                  Wyślij
+                  {t("Wyślij")}
                 </button>
               </div>
             </div>
           </>
         )}
       </div>
-
       {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); setActiveId(ch.id) }} />}
     </div>
-  )
+  );
 }

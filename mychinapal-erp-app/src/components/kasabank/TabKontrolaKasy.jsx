@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { C, fmt } from '../../lib/theme'
 import { QUARTERS, Q_LABELS } from './constants'
@@ -16,6 +17,10 @@ const KK_ROWS = [
 // kk: { [row_label]: { [quarter|'razem']: value } }
 // stanKont: [{ label, cur, vals: [7 wartości] }]
 export default function TabKontrolaKasy({ kk, stanKont }) {
+  const {
+    t
+  } = useLang();
+
   const [selQ, setSelQ] = useState('Q2_2026')
   const qi = QUARTERS.indexOf(selQ)
   const getVal = (label, q) => (kk[label] && kk[label][q]) || 0
@@ -24,7 +29,7 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>Kwartał:</span>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>{t("Kwartał:")}</span>
         {[...QUARTERS.map((q, i) => ({ k: q, l: Q_LABELS[i] })), { k: 'razem', l: 'RAZEM' }].map(({ k, l }) => (
           <div key={k} onClick={() => setSelQ(k)} style={{
             padding: '4px 10px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: 600,
@@ -33,11 +38,10 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
           }}>{l}</div>
         ))}
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>
-            📊 Przepływy finansowe — {selQ === 'razem' ? 'WSZYSTKIE KWARTAŁY' : Q_LABELS[qi]}
+            {t("📊 Przepływy finansowe —")} {selQ === 'razem' ? t("WSZYSTKIE KWARTAŁY") : Q_LABELS[qi]}
           </div>
           {KK_ROWS.map((r, i) => {
             const val = getVal(r.label, selQ)
@@ -45,7 +49,7 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
             const color = isMarza ? (val >= 0 ? C.green : C.red) : r.color
             return (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < KK_ROWS.length - 1 ? `1px solid ${C.border}` : 'none', borderTop: r.bold && i > 0 ? `1.5px solid ${C.border}` : 'none', marginTop: r.bold && i > 0 ? 4 : 0 }}>
-                <span style={{ fontSize: 11, fontWeight: r.bold ? 700 : 400, color: r.bold ? C.text : C.text2 }}>{r.label}</span>
+                <span style={{ fontSize: 11, fontWeight: r.bold ? 700 : 400, color: r.bold ? C.text : C.text2 }}>{t(r.label)}</span>
                 <span style={{ fontSize: r.bold ? 15 : 12, fontWeight: 700, color }}>
                   {r.count ? val : ((val > 0 && !r.label.includes('ypływ')) ? '+' : '') + fmt(val, 0) + ' PLN'}
                 </span>
@@ -56,14 +60,14 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12 }}>🏦 Stan kont na koniec {selQ === 'razem' ? 'Q3 2026 (ostatni)' : Q_LABELS[qi]}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12 }}>{t("🏦 Stan kont na koniec")} {selQ === 'razem' ? t("Q3 2026 (ostatni)") : Q_LABELS[qi]}</div>
             {stanKont.filter(s => s.cur !== 'EUR').map((s, i, arr) => {
               const vIdx = selQ === 'razem' ? 6 : qi
               const val = s.vals[vIdx]
               return (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 600 }}>{s.label}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600 }}>{t(s.label)}</div>
                     <div style={{ fontSize: 9.5, color: C.muted }}>{s.cur}</div>
                   </div>
                   <span style={{ fontSize: 15, fontWeight: 700, color: val < 0 ? C.red : val > 0 ? C.blue : C.muted }}>{fmt(val)}</span>
@@ -73,11 +77,11 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
           </div>
 
           <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px', overflowX: 'auto' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: C.text }}>Marża operacyjna per kwartał</div>
+            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color: C.text }}>{t("Marża operacyjna per kwartał")}</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.5 }}>
               <thead><tr style={{ background: C.bg }}>
                 {Q_LABELS.map(q => <th key={q} style={{ padding: '4px 6px', fontWeight: 700, color: C.muted, textAlign: 'right', whiteSpace: 'nowrap', fontSize: 9 }}>{q}</th>)}
-                <th style={{ padding: '4px 6px', fontWeight: 700, color: C.navy, textAlign: 'right', fontSize: 9 }}>RAZEM</th>
+                <th style={{ padding: '4px 6px', fontWeight: 700, color: C.navy, textAlign: 'right', fontSize: 9 }}>{t("RAZEM")}</th>
               </tr></thead>
               <tbody><tr>
                 {marzaSeries.map((m, i) => (
@@ -94,5 +98,5 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
         </div>
       </div>
     </div>
-  )
+  );
 }

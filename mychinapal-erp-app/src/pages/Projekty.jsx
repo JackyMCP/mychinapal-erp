@@ -1,3 +1,4 @@
+import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
@@ -14,6 +15,10 @@ import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
 
 export default function Projekty() {
+  const {
+    t
+  } = useLang();
+
   const { profile } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
@@ -89,7 +94,7 @@ export default function Projekty() {
       <div>
         <PageHeader title={selected.order_label} subtitle={clientName} />
         <div style={{ padding: '16px 22px', maxWidth: 1100 }}>
-          <div onClick={handleBack} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer', marginBottom: 14 }}>← Wróć do listy projektów</div>
+          <div onClick={handleBack} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer', marginBottom: 14 }}>{t("← Wróć do listy projektów")}</div>
 
           <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ position: 'relative', width: 60, height: 60, flexShrink: 0 }}>
@@ -99,7 +104,7 @@ export default function Projekty() {
             <div style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', background: avatarColor(clientName) }}>{initials(clientName)}</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800 }}>{selected.order_label}</div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{clientName} · utworzono {selected.created_at ? new Date(selected.created_at).toLocaleDateString('pl-PL') : '—'}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{clientName} {t("· utworzono")} {selected.created_at ? new Date(selected.created_at).toLocaleDateString('pl-PL') : '—'}</div>
             </div>
           </div>
 
@@ -107,7 +112,7 @@ export default function Projekty() {
           <ProfitTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
           <RealCostsTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', margin: '4px 0 10px' }}>Etapy zamówienia</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', margin: '4px 0 10px' }}>{t("Etapy zamówienia")}</div>
           <StageTimeline project={selected} documents={projectDocs} onDocumentsChanged={loadAll} />
 
           <div style={{ marginTop: 8 }}>
@@ -115,15 +120,15 @@ export default function Projekty() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div>
-      <PageHeader title="Projekty & Zamówienia" subtitle={loading ? 'Ładowanie…' : `${projects.length} zamówień widocznych dla Ciebie`} />
+      <PageHeader title={t("Projekty & Zamówienia")} subtitle={loading ? 'Ładowanie…' : `${projects.length} zamówień widocznych dla Ciebie`} />
       <div style={{ padding: '16px 22px', maxWidth: 1500 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Szukaj zamówienia, klienta…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("Szukaj zamówienia, klienta…")}
             style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 14px', fontSize: 12, maxWidth: 260, flex: 1 }} />
           {[['all', 'Wszystkie'], ['progress', 'W toku'], ['done', 'Zakończone']].map(([key, label]) => (
             <div key={key} onClick={() => setFilter(key)}
@@ -133,7 +138,7 @@ export default function Projekty() {
           ))}
         </div>
 
-        {filtered.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted, padding: 20, textAlign: 'center' }}>Brak zamówień do wyświetlenia.</div>}
+        {filtered.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted, padding: 20, textAlign: 'center' }}>{t("Brak zamówień do wyświetlenia.")}</div>}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(p => (
@@ -143,5 +148,5 @@ export default function Projekty() {
         </div>
       </div>
     </div>
-  )
+  );
 }

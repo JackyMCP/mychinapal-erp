@@ -1,3 +1,4 @@
+import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
@@ -37,6 +38,10 @@ function mapTx(row) {
 }
 
 export default function KasaBank() {
+  const {
+    t
+  } = useLang();
+
   const { isZarzad } = useAuth()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -103,7 +108,7 @@ export default function KasaBank() {
     // VAT jest częścią kwoty brutto z wyciągu (amount) — przy zmianie stawki VAT
     // przeliczamy automatycznie kwotę VAT, żeby marża "netto" na zakładce Marża
     // liczyła się poprawnie bez ręcznego wyliczania.
-    const current = txs.find(t => t.id === id)
+    const current = txs.find(row => row.id === id)
     const payload = { ...changes }
     if (current && changes.vat_rate !== undefined) {
       const rate = Number(changes.vat_rate) || 0
@@ -113,35 +118,35 @@ export default function KasaBank() {
     if (error) { console.error(error); alert('Nie udało się zapisać zmian: ' + error.message); return }
     const client = clients.find(c => c.id === changes.client_id)
     const project = projects.find(p => p.id === changes.project_id)
-    setTxs(prev => prev.map(t => t.id === id ? {
-      ...t, ...payload,
+    setTxs(prev => prev.map(row => row.id === id ? {
+      ...row, ...payload,
       assign: client?.name || '',
       order: project?.order_label || '',
-      vat_calc: payload.vat_amount !== undefined ? payload.vat_amount : t.vat_calc,
-    } : t))
+      vat_calc: payload.vat_amount !== undefined ? payload.vat_amount : row.vat_calc,
+    } : row))
   }
 
   const podatkiPayments = useMemo(() => (
-    txs.filter(t => (t.category || '').toUpperCase() === 'PODATKI' && t.direction === 'MA-' && t.flow_type !== 'nie_podlega')
+    txs.filter(row => (row.category || '').toUpperCase() === 'PODATKI' && row.direction === 'MA-' && row.flow_type !== 'nie_podlega')
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-      .map(t => ({ date: t.date, label: t.desc || t.contractor, amount: t.amount }))
+      .map(row => ({ date: row.date, label: row.desc || row.contractor, amount: row.amount }))
   ), [txs])
 
   if (!isZarzad) {
     return (
       <div style={{ padding: 40 }}>
-        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Brak dostępu</div>
-        <div style={{ fontSize: 12, color: C.muted }}>Dane finansowe (Kasa & Bank) widoczne są wyłącznie dla Zarządu.</div>
+        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{t("Brak dostępu")}</div>
+        <div style={{ fontSize: 12, color: C.muted }}>{t("Dane finansowe (Kasa & Bank) widoczne są wyłącznie dla Zarządu.")}</div>
       </div>
-    )
+    );
   }
 
-  if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>Ładowanie danych finansowych…</div>
+  if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>{t("Ładowanie danych finansowych…")}</div>;
 
   const qi = QUARTERS.indexOf(selQ)
   const getKK = (label, q) => (kk[label] && kk[label][q]) || 0
-  const unassignedCount = txs.filter(t => !isHelperRow(t) && ['WN+', 'MA-'].includes(t.direction) && !t.assign).length
-  const weryfikacjaCount = txs.filter(t => (t.category || '').includes('WERYFIKACJI')).length
+  const unassignedCount = txs.filter(row => !isHelperRow(row) && ['WN+', 'MA-'].includes(row.direction) && !row.assign).length
+  const weryfikacjaCount = txs.filter(row => (row.category || '').includes('WERYFIKACJI')).length
   const alerts = unassignedCount + weryfikacjaCount
 
   const TABS = [
@@ -159,30 +164,29 @@ export default function KasaBank() {
     <div style={{ minHeight: '100vh', background: C.bg }}>
       <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700 }}>Kasa & Bank</div>
-          <div style={{ fontSize: 10, color: C.muted }}>{txs.length} transakcji w rejestrze · {alerts} do przypisania</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700 }}>{t("Kasa & Bank")}</div>
+          <div style={{ fontSize: 10, color: C.muted }}>{txs.length} {t("transakcji w rejestrze ·")} {alerts} {t("do przypisania")}</div>
         </div>
-        {alerts > 0 && <div style={{ background: C.rlight, border: `1px solid ${C.rmid}`, borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: C.red, fontWeight: 700 }}>⚠️ {alerts} wymaga przypisania</div>}
+        {alerts > 0 && <div style={{ background: C.rlight, border: `1px solid ${C.rmid}`, borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: C.red, fontWeight: 700 }}>⚠️ {alerts} {t("wymaga przypisania")}</div>}
         <div style={{ display: 'flex', gap: 3 }}>
           {QUARTERS.map((q, i) => (
             <div key={q} onClick={() => setSelQ(q)} style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10.5, cursor: 'pointer', fontWeight: 600, border: `1px solid ${selQ === q ? C.blue : C.border}`, background: selQ === q ? C.blue : 'transparent', color: selQ === q ? '#fff' : C.muted }}>{Q_LABELS[i]}</div>
           ))}
         </div>
       </div>
-
       <div style={{ padding: '12px 20px 20px', maxWidth: 1400, margin: '0 auto' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 9, marginBottom: 11 }}>
           {stanKont.filter(s => s.cur !== 'EUR').map((s, i) => {
             const val = s.vals[qi] || 0
             return (
               <div key={i} style={{ background: i === 0 ? C.navy : C.navy2, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
-                <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>{t(s.label)}</div>
                 <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 21, fontWeight: 700, color: val < 0 ? '#FCA5A5' : '#fff' }}>
                   {fmt(val)} <span style={{ fontSize: 10, color: 'rgba(255,255,255,.4)' }}>{s.cur}</span>
                 </div>
-                <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.32)', marginTop: 2 }}>na koniec {Q_LABELS[qi]}</div>
+                <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.32)', marginTop: 2 }}>{t("na koniec")} {Q_LABELS[qi]}</div>
               </div>
-            )
+            );
           })}
         </div>
 
@@ -203,10 +207,10 @@ export default function KasaBank() {
 
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
           <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 16px', overflowX: 'auto' }}>
-            {TABS.map(t => (
-              <div key={t.k} onClick={() => setTab(t.k)} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `2px solid ${tab === t.k ? C.blue : 'transparent'}`, marginBottom: -1, color: tab === t.k ? C.blue : t.danger ? C.red : C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {t.l}
-                {t.badge ? <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>{t.badge}</span> : null}
+            {TABS.map(row => (
+              <div key={row.k} onClick={() => setTab(row.k)} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `2px solid ${tab === row.k ? C.blue : 'transparent'}`, marginBottom: -1, color: tab === row.k ? C.blue : row.danger ? C.red : C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {row.l}
+                {row.badge ? <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>{row.badge}</span> : null}
               </div>
             ))}
           </div>
@@ -221,5 +225,5 @@ export default function KasaBank() {
         </div>
       </div>
     </div>
-  )
+  );
 }

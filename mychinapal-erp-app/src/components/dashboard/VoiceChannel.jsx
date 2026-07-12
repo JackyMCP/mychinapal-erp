@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
@@ -6,6 +7,10 @@ import { avatarColor, initials } from '../klienci/utils'
 const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
 export default function VoiceChannel({ roomId, currentUserId, currentUserName, accentColor }) {
+  const {
+    t
+  } = useLang();
+
   const [participants, setParticipants] = useState({}) // userId -> { name }
   const [joined, setJoined] = useState(false)
   const [muted, setMuted] = useState(false)
@@ -164,7 +169,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   function leaveCall() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     Object.keys(peersRef.current).forEach(closePeer)
-    localStreamRef.current?.getTracks().forEach(t => t.stop())
+    localStreamRef.current?.getTracks().forEach(row => row.stop())
     localStreamRef.current = null
     if (joinedRef.current) channelRef.current?.untrack()
     joinedRef.current = false
@@ -185,25 +190,23 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     <div style={{ background: C.bg, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 11, fontWeight: 700 }}>🎙️ Kanał głosowy</span>
-          {others.length > 0 && <span style={{ fontSize: 9.5, color: C.muted }}>{others.length} online</span>}
+          <span style={{ fontSize: 11, fontWeight: 700 }}>{t("🎙️ Kanał głosowy")}</span>
+          {others.length > 0 && <span style={{ fontSize: 9.5, color: C.muted }}>{others.length} {t("online")}</span>}
         </div>
         {!joined ? (
           <button onClick={joinCall} disabled={connecting} style={{ padding: '6px 13px', borderRadius: 7, border: 'none', background: color, color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', opacity: connecting ? .6 : 1 }}>
-            {connecting ? 'Łączenie…' : 'Dołącz'}
+            {connecting ? t("Łączenie…") : t("Dołącz")}
           </button>
         ) : (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={toggleMute} style={{ padding: '6px 11px', borderRadius: 7, border: `1px solid ${C.border}`, background: muted ? C.rlight : '#fff', color: muted ? C.red : C.text2, fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>
-              {muted ? '🔇 Wyciszony' : '🎤 Mikrofon'}
+              {muted ? t("🔇 Wyciszony") : t("🎤 Mikrofon")}
             </button>
-            <button onClick={leaveCall} style={{ padding: '6px 11px', borderRadius: 7, border: 'none', background: C.red, color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>Opuść</button>
+            <button onClick={leaveCall} style={{ padding: '6px 11px', borderRadius: 7, border: 'none', background: C.red, color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>{t("Opuść")}</button>
           </div>
         )}
       </div>
-
       {error && <div style={{ fontSize: 10, color: C.red, marginTop: 6 }}>{error}</div>}
-
       {others.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
           {others.map(([uid, p]) => {
@@ -215,13 +218,15 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
                   fontSize: 11, fontWeight: 800, color: '#fff', background: avatarColor(p.name),
                   boxShadow: isSpeaking ? `0 0 0 3px ${C.green}` : '0 0 0 2px transparent', transition: 'box-shadow .1s ease',
                 }}>{initials(p.name)}</div>
-                <span style={{ fontSize: 9, color: C.text2, maxWidth: 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}{uid === currentUserId ? ' (ja)' : ''}</span>
+                <span style={{ fontSize: 9, color: C.text2, maxWidth: 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}{uid === currentUserId ? t(" (ja)") : ''}</span>
               </div>
-            )
+            );
           })}
         </div>
       )}
-      <div style={{ fontSize: 9, color: C.muted, marginTop: 8 }}>Połączenie bezpośrednie przeglądarka-przeglądarka (WebRTC) — może nie zadziałać w niektórych sieciach firmowych z restrykcyjnym firewallem.</div>
+      <div style={{ fontSize: 9, color: C.muted, marginTop: 8 }}>{t(
+        "Połączenie bezpośrednie przeglądarka-przeglądarka (WebRTC) — może nie zadziałać w niektórych sieciach firmowych z restrykcyjnym firewallem."
+      )}</div>
     </div>
-  )
+  );
 }

@@ -1,7 +1,12 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { avatarColor, initials } from '../klienci/utils'
 import { C } from '../../lib/theme'
 
 export default function WhoAmI({ profile, isZarzad }) {
+  const {
+    t
+  } = useLang();
+
   if (!profile) return null
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -11,8 +16,8 @@ export default function WhoAmI({ profile, isZarzad }) {
         <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{profile.email}</div>
       </div>
       <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 11px', borderRadius: 20, background: isZarzad ? C.plight : C.blight, color: isZarzad ? C.purple : C.blue }}>
-        {isZarzad ? 'Zarząd' : 'Pracownik'}
+        {isZarzad ? t("Zarząd") : t("Pracownik")}
       </span>
     </div>
-  )
+  );
 }

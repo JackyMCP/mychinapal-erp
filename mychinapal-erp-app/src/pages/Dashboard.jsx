@@ -1,3 +1,4 @@
+import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -11,6 +12,10 @@ import CompanyDirection from '../components/dashboard/CompanyDirection'
 import TeamChat from '../components/dashboard/TeamChat'
 
 export default function Dashboard() {
+  const {
+    t
+  } = useLang();
+
   const { profile, isZarzad } = useAuth()
   const [clients, setClients] = useState([])
   const [myProjects, setMyProjects] = useState([])
@@ -53,7 +58,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle={loading ? 'Ładowanie…' : `Witaj, ${profile?.full_name || ''}`} />
+      <PageHeader title={t("Dashboard")} subtitle={loading ? 'Ładowanie…' : `Witaj, ${profile?.full_name || ''}`} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
 
         {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
@@ -61,12 +66,12 @@ export default function Dashboard() {
         {isZarzad && txSum && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 14 }}>
             <div style={{ background: C.navy, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>Wpływy (WN+)</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wpływy).toLocaleString('pl-PL')} PLN</div>
+              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wpływy (WN+)")}</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wpływy).toLocaleString('pl-PL')} {t("PLN")}</div>
             </div>
             <div style={{ background: C.navy2, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>Wypływy (MA-)</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wypływy).toLocaleString('pl-PL')} PLN</div>
+              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wypływy (MA-)")}</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wypływy).toLocaleString('pl-PL')} {t("PLN")}</div>
             </div>
           </div>
         )}
@@ -88,5 +93,5 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
-  )
+  );
 }

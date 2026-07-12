@@ -1,8 +1,13 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 
 export default function CompanyDirection({ currentUserId }) {
+  const {
+    t
+  } = useLang();
+
   const [row, setRow] = useState(null)
   const [text, setText] = useState('')
   const [editing, setEditing] = useState(false)
@@ -55,11 +60,9 @@ export default function CompanyDirection({ currentUserId }) {
         @keyframes cdPulse { 0%,100% { opacity: .55; box-shadow: 0 0 0 0 rgba(59,130,246,.45); } 50% { opacity: 1; box-shadow: 0 0 0 8px rgba(59,130,246,0); } }
         @keyframes cdFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
-
       {/* dekoracyjne, rozmyte "blobs" w tle */}
       <div style={{ position: 'absolute', top: -60, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,.35), transparent 70%)', filter: 'blur(10px)', animation: 'cdFloat1 9s ease-in-out infinite', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', bottom: -70, left: -30, width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle, rgba(124,58,237,.3), transparent 70%)', filter: 'blur(12px)', animation: 'cdFloat2 11s ease-in-out infinite', pointerEvents: 'none' }} />
-
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
@@ -68,25 +71,24 @@ export default function CompanyDirection({ currentUserId }) {
             animation: 'cdPulse 3.2s ease-in-out infinite',
           }}>🧭</div>
           <div>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '.2px' }}>Kierunek firmy</div>
-            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px', marginTop: 2 }}>widoczne tylko dla Zarządu</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '.2px' }}>{t("Kierunek firmy")}</div>
+            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px', marginTop: 2 }}>{t("widoczne tylko dla Zarządu")}</div>
           </div>
         </div>
         {!editing && (
           <span onClick={() => setEditing(true)} style={{
             fontSize: 11.5, fontWeight: 700, color: '#93C5FD', cursor: 'pointer', padding: '6px 13px',
             borderRadius: 8, border: '1px solid rgba(147,197,253,.35)', background: 'rgba(147,197,253,.08)', whiteSpace: 'nowrap',
-          }}>✏️ Edytuj</span>
+          }}>{t("✏️ Edytuj")}</span>
         )}
       </div>
-
       {editing ? (
         <div style={{ position: 'relative' }}>
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Opisz aktualne priorytety i kierunek firmy…" autoFocus
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("Opisz aktualne priorytety i kierunek firmy…")} autoFocus
             style={{ width: '100%', minHeight: 100, background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 10, padding: 14, fontSize: 15, color: '#fff', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={handleSave} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Zapisywanie…' : 'Zapisz'}</button>
-            <button onClick={() => { setEditing(false); setText(row?.content || '') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Anuluj</button>
+            <button onClick={handleSave} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{saving ? t("Zapisywanie…") : t("Zapisz")}</button>
+            <button onClick={() => { setEditing(false); setText(row?.content || '') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{t("Anuluj")}</button>
           </div>
         </div>
       ) : (
@@ -100,16 +102,18 @@ export default function CompanyDirection({ currentUserId }) {
               }}>{row.content}</div>
             </div>
           ) : (
-            <div style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', fontStyle: 'italic' }}>Brak wpisu — kliknij „Edytuj", żeby dodać kierunek firmy na ten kwartał.</div>
+            <div style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', fontStyle: 'italic' }}>{t(
+              "Brak wpisu — kliknij „Edytuj\", żeby dodać kierunek firmy na ten kwartał."
+            )}</div>
           )}
           {row?.content && (
             <div style={{ marginTop: 16, fontSize: 10.5, color: 'rgba(255,255,255,.4)', display: 'flex', gap: 6, alignItems: 'center' }}>
               <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#93C5FD' }} />
-              Zaktualizowano {lastUpdated}{row.profiles?.full_name ? ` przez ${row.profiles.full_name}` : ''}
+              {t("Zaktualizowano")} {lastUpdated}{row.profiles?.full_name ? ` przez ${row.profiles.full_name}` : ''}
             </div>
           )}
         </div>
       )}
     </div>
-  )
+  );
 }

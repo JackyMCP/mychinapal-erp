@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { C, fmt, fmtPct } from '../../lib/theme'
 import Pill from './Pill'
@@ -5,6 +6,10 @@ import Pill from './Pill'
 // marzaK: [{k, client_id, p, z, t, c, m, mp, vn, vi}]           per kontrahent
 // marzaZ: [{k, client_id, z: order_label, project_id, p, zk, t, c, vi, m, s, active}]  per zlecenie
 export default function TabMarza({ marzaK, marzaZ, goClient }) {
+  const {
+    t
+  } = useLang();
+
   const [view, setView] = useState('kontrahent')
   const [sortBy, setSortBy] = useState('m')
   const [filterClient, setFilterClient] = useState('')
@@ -33,7 +38,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
         ))}
         {view === 'kontrahent' && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', fontSize: 10.5, color: C.muted }}>
-            Sortuj:
+            {t("Sortuj:")}
             {[{ k: 'm', l: 'Marża PLN' }, { k: 'p', l: 'Przychód' }, { k: 'mp', l: 'Marża %' }, { k: 'k', l: 'A→Z' }].map(({ k, l }) => (
               <div key={k} onClick={() => setSortBy(k)} style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, cursor: 'pointer', fontWeight: 600, border: `1px solid ${sortBy === k ? C.blue : C.border}`, background: sortBy === k ? C.blight : 'transparent', color: sortBy === k ? C.blue : C.muted }}>{l}</div>
             ))}
@@ -42,13 +47,12 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
         {view === 'zlecenie' && (
           <div style={{ marginLeft: 'auto' }}>
             <select value={filterClient} onChange={e => setFilterClient(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, outline: 'none' }}>
-              <option value="">— wszyscy klienci —</option>
+              <option value="">{t("— wszyscy klienci —")}</option>
               {clients.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         )}
       </div>
-
       {view === 'kontrahent' && (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -78,7 +82,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
               ))}
             </tbody>
             <tfoot><tr style={{ background: C.navy2 }}>
-              <td style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>RAZEM ({sortedK.length} klientów)</td>
+              <td style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>{t("RAZEM (")}{sortedK.length} {t("klientów)")}</td>
               <td style={{ padding: '9px 10px', textAlign: 'right', color: '#86EFAC', fontWeight: 700 }}>{fmt(totP, 0)}</td>
               <td style={{ padding: '9px 10px', textAlign: 'right', color: '#FCA5A5', fontWeight: 700 }}>{fmt(totZ, 0)}</td>
               <td style={{ padding: '9px 10px', textAlign: 'right', color: '#FED7AA', fontWeight: 700 }}>{fmt(totT, 0)}</td>
@@ -89,7 +93,6 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
           </table>
         </div>
       )}
-
       {view === 'zlecenie' && (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -117,5 +120,5 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
         </div>
       )}
     </div>
-  )
+  );
 }

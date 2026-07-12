@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
@@ -6,6 +7,10 @@ import { DOC_CATEGORIES } from './stageDefs'
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function ProjectChat({ project }) {
+  const {
+    t
+  } = useLang();
+
   const [channelId, setChannelId] = useState(null)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
@@ -90,52 +95,51 @@ export default function ProjectChat({ project }) {
     window.open(data.signedUrl, '_blank')
   }
 
-  if (loading) return <div style={{ fontSize: 11, color: C.muted }}>Ładowanie czatu…</div>
+  if (loading) return <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie czatu…")}</div>;
 
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>💬 Czat tego zamówienia</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>{t("💬 Czat tego zamówienia")}</div>
       <div style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 10 }}>
-        {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak wiadomości — napisz pierwszą poniżej.</div>}
+        {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą poniżej.")}</div>}
         {messages.map(m => {
           const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
           return (
             <div key={m.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || 'Użytkownik'}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
                 <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
               </div>
               <div style={{ fontSize: 12, marginTop: 2 }}>{m.content}</div>
               {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
               {doc && (
-                <div onClick={() => handleDownload(doc)} style={{ fontSize: 11, color: C.blue, marginTop: 4, cursor: 'pointer', fontWeight: 600 }}>📎 {doc.file_name} <span style={{ color: C.muted, fontWeight: 400 }}>({doc.category})</span></div>
+                <div onClick={() => handleDownload(doc)} style={{ fontSize: 11, color: C.blue, marginTop: 4, cursor: 'pointer', fontWeight: 600 }}>📎 {doc.file_name} <span style={{ color: C.muted, fontWeight: 400 }}>({t(doc.category)})</span></div>
               )}
             </div>
-          )
+          );
         })}
         <div ref={bottomRef} />
       </div>
-
       {attachFile && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, fontSize: 11 }}>
           <span>📎 {attachFile.name}</span>
           <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5 }}>
-            {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
           </select>
-          <span onClick={() => { setAttachFile(null); if (fileRef.current) fileRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', color: C.muted }}>✕ usuń</span>
+          <span onClick={() => { setAttachFile(null); if (fileRef.current) fileRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', color: C.muted }}>{t("✕ usuń")}</span>
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => setAttachFile(e.target.files?.[0] || null)} />
-        <button onClick={() => fileRef.current?.click()} title="Załącz dokument" style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, cursor: 'pointer' }}>📎</button>
-        <input value={text} onChange={e => setText(e.target.value)} placeholder="Napisz wiadomość…"
+        <button onClick={() => fileRef.current?.click()} title={t("Załącz dokument")} style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, cursor: 'pointer' }}>📎</button>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość…")}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
           style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12 }} />
         <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)}
           style={{ padding: '9px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: (sending || (!text.trim() && !attachFile)) ? .5 : 1 }}>
-          Wyślij
+          {t("Wyślij")}
         </button>
       </div>
     </div>
-  )
+  );
 }

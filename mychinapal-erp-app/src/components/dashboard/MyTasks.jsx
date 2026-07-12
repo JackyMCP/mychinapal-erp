@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
@@ -13,6 +14,10 @@ function dueLabel(due) {
 }
 
 export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
+  const {
+    t
+  } = useLang();
+
   const [showAdd, setShowAdd] = useState(false)
   const [title, setTitle] = useState('')
   const [assignee, setAssignee] = useState(currentUserId)
@@ -41,46 +46,44 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
     onChanged && onChanged()
   }
 
-  const active = tasks.filter(t => t.status !== 'done').sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))
+  const active = tasks.filter(task => task.status !== 'done').sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))
 
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>Moje zadania ({active.length})</div>
-        <span onClick={() => setShowAdd(s => !s)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{showAdd ? '✕ Anuluj' : '+ Nowe'}</span>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>{t("Moje zadania (")}{active.length})</div>
+        <span onClick={() => setShowAdd(s => !s)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{showAdd ? t("✕ Anuluj") : t("+ Nowe")}</span>
       </div>
-
       {showAdd && (
         <div style={{ background: C.bg, borderRadius: 9, padding: 10, marginBottom: 12 }}>
-          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Treść zadania…"
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t("Treść zadania…")}
             style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', fontSize: 11.5, marginBottom: 7, boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 7 }}>
             <select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 8px', fontSize: 10.5 }}>
               {profiles.map(p => <option key={p.id} value={p.id}>{p.id === currentUserId ? `${p.full_name} (ja)` : p.full_name}</option>)}
             </select>
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 8px', fontSize: 10.5 }} />
-            <button onClick={handleAdd} disabled={saving} style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: C.blue, color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>Dodaj</button>
+            <button onClick={handleAdd} disabled={saving} style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: C.blue, color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>{t("Dodaj")}</button>
           </div>
         </div>
       )}
-
-      {active.length === 0 && !showAdd && <div style={{ fontSize: 11, color: C.muted }}>Brak aktywnych zadań.</div>}
-      {active.map(t => {
-        const due = dueLabel(t.due_date)
+      {active.length === 0 && !showAdd && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak aktywnych zadań.")}</div>}
+      {active.map(task => {
+        const due = dueLabel(task.due_date)
         return (
-          <div key={t.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
+          <div key={task.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>{t.title}</div>
-              {due && <span style={pill(due.cls === 'overdue' ? C.rlight : due.cls === 'today' ? C.olight : C.bg, due.cls === 'overdue' ? C.red : due.cls === 'today' ? C.orange : C.muted)}>{due.text}</span>}
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{t(task.title)}</div>
+              {due && <span style={pill(due.cls === 'overdue' ? C.rlight : due.cls === 'today' ? C.olight : C.bg, due.cls === 'overdue' ? C.red : due.cls === 'today' ? C.orange : C.muted)}>{t(due.text)}</span>}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-              {t.status === 'todo' && <button onClick={() => setStatus(t, 'in_progress')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer' }}>▶ Rozpocznij</button>}
-              {t.status === 'in_progress' && <button onClick={() => setStatus(t, 'done')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer' }}>✓ Zakończ</button>}
-              {t.status === 'in_progress' && <span style={pill(C.blight, C.blue)}>w trakcie</span>}
+              {task.status === 'todo' && <button onClick={() => setStatus(task, 'in_progress')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer' }}>{t("▶ Rozpocznij")}</button>}
+              {task.status === 'in_progress' && <button onClick={() => setStatus(task, 'done')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer' }}>{t("✓ Zakończ")}</button>}
+              {task.status === 'in_progress' && <span style={pill(C.blight, C.blue)}>{t("w trakcie")}</span>}
             </div>
           </div>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

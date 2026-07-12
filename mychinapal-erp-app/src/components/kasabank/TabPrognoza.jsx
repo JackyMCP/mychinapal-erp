@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt } from '../../lib/theme'
 import Pill from './Pill'
 
@@ -17,6 +18,10 @@ function nextOccurrences(items, days = 30) {
 }
 
 export default function TabPrognoza({ items }) {
+  const {
+    t
+  } = useLang();
+
   const up = nextOccurrences(items)
   const total = up.reduce((s, u) => s + u.amount, 0)
   const fmtDate = d => d.toLocaleDateString('pl-PL')
@@ -33,7 +38,9 @@ export default function TabPrognoza({ items }) {
       </div>
       {up.length === 0 ? (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: 24, textAlign: 'center', fontSize: 12, color: C.muted }}>
-          Brak zaplanowanych płatności w ciągu najbliższych 30 dni — prognoza opiera się na aktywnych pozycjach z zakładki „Płatności cykliczne".
+          {t(
+            "Brak zaplanowanych płatności w ciągu najbliższych 30 dni — prognoza opiera się na aktywnych pozycjach z zakładki „Płatności cykliczne\"."
+          )}
         </div>
       ) : (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -49,17 +56,17 @@ export default function TabPrognoza({ items }) {
                   <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, fontFamily: 'monospace', fontSize: 11, color: C.muted, whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
                   <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, fontWeight: 600 }}>{r.name}</td>
                   <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}` }}>{r.category ? <Pill type={r.category} small /> : '—'}</td>
-                  <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', fontWeight: 700, color: C.red, whiteSpace: 'nowrap' }}>−{fmt(r.amount)} PLN</td>
+                  <td style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', fontWeight: 700, color: C.red, whiteSpace: 'nowrap' }}>−{fmt(r.amount)} {t("PLN")}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot><tr style={{ background: C.navy2 }}>
-              <td colSpan={3} style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>Łącznie (30 dni)</td>
-              <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, color: '#FCA5A5', fontSize: 14 }}>−{fmt(total, 0)} PLN</td>
+              <td colSpan={3} style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>{t("Łącznie (30 dni)")}</td>
+              <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, color: '#FCA5A5', fontSize: 14 }}>−{fmt(total, 0)} {t("PLN")}</td>
             </tr></tfoot>
           </table>
         </div>
       )}
     </div>
-  )
+  );
 }

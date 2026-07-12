@@ -1,8 +1,13 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import { STAGE_DEFS } from './stageDefs'
 
 export default function ProjectTile({ project, clientName, progress, marza, onClick }) {
+  const {
+    t
+  } = useLang();
+
   const { doneStages, currentIndex, progressPct } = progress
   const isDone = currentIndex === null
   const currentStage = STAGE_DEFS.find(s => s.key === currentIndex)
@@ -45,29 +50,26 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
           <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.35, marginTop: 1 }}>{project.order_label}</div>
         </div>
       </div>
-
       <div style={{ display: 'flex', gap: 3, margin: '10px 0 6px' }}>
         {STAGE_DEFS.map(s => (
           <div key={s.key} style={{ flex: 1, height: 5, borderRadius: 3, background: doneStages.has(s.key) ? C.green : (s.key === currentIndex ? C.blue : C.border) }} />
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted, marginBottom: 10 }}>
-        <span style={{ fontWeight: 700, color: C.text2 }}>{isDone ? `Etap 9/9 — Zakończone` : `Etap ${currentIndex}/9 — ${currentStage?.name || ''}`}</span>
+        <span style={{ fontWeight: 700, color: C.text2 }}>{t(isDone ? `Etap 9/9 — Zakończone` : `Etap ${currentIndex}/9 — ${currentStage?.name || ''}`)}</span>
         <span>{progressPct}%</span>
       </div>
-
       <div style={{
         display: 'flex', gap: 7, background: nextClass === 'waiting' ? C.olight : nextClass === 'done' ? C.glight : C.bg,
         color: nextClass === 'waiting' ? C.orange : nextClass === 'done' ? C.green : C.text2,
         borderRadius: 9, padding: '8px 10px', fontSize: 10.5, marginBottom: 12, lineHeight: 1.4,
-      }}>{nextAction}</div>
-
+      }}>{t(nextAction)}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-        <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>Wartość zamówienia</div><div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800, marginTop: 2 }}>{project.value != null ? `${fmt(project.value, 0)} PLN` : '—'}</div></div>
-        <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>{profitLabel}</div>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: profitClass === 'tbd' ? 11 : 15, fontWeight: profitClass === 'tbd' ? 600 : 800, marginTop: 2, color: profitClass === 'profit' ? C.green : profitClass === 'profit neg' ? C.red : C.muted }}>{profitVal}</div>
+        <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>{t("Wartość zamówienia")}</div><div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800, marginTop: 2 }}>{project.value != null ? `${fmt(project.value, 0)} PLN` : '—'}</div></div>
+        <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>{t(profitLabel)}</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: profitClass === 'tbd' ? 11 : 15, fontWeight: profitClass === 'tbd' ? 600 : 800, marginTop: 2, color: profitClass === 'profit' ? C.green : profitClass === 'profit neg' ? C.red : C.muted }}>{t(profitVal)}</div>
         </div>
       </div>
     </div>
-  )
+  );
 }

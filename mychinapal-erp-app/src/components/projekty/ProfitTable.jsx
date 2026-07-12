@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
@@ -7,6 +8,10 @@ const fieldWrap = { display: 'flex', flexDirection: 'column' }
 const fieldStyle = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 10px', fontSize: 12.5, fontFamily: "'Syne',sans-serif", fontWeight: 700, color: C.text, boxSizing: 'border-box' }
 
 export default function ProfitTable({ project, onSaved }) {
+  const {
+    t
+  } = useLang();
+
   const [koszt, setKoszt] = useState(project.value ?? '')
   const [zakup, setZakup] = useState(project.est_zakup ?? '')
   const [transport, setTransport] = useState(project.est_transport ?? '')
@@ -40,21 +45,23 @@ export default function ProfitTable({ project, onSaved }) {
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        Podsumowanie — szacowany zysk
-        {saving && <span style={{ fontSize: 10, color: C.blue, fontWeight: 600 }}>zapisywanie…</span>}
+        {t("Podsumowanie — szacowany zysk")}
+        {saving && <span style={{ fontSize: 10, color: C.blue, fontWeight: 600 }}>{t("zapisywanie…")}</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr)) 160px', gap: 16, alignItems: 'stretch' }}>
-        <div style={fieldWrap}><label style={labelStyle}>Koszt zakupu towaru (Chiny)</label><input style={fieldStyle} type="number" value={zakup} onChange={e => setZakup(e.target.value)} onBlur={handleBlurSave} /></div>
-        <div style={fieldWrap}><label style={labelStyle}>Koszt dla klienta (netto)</label><input style={fieldStyle} type="number" value={koszt} onChange={e => setKoszt(e.target.value)} onBlur={handleBlurSave} /></div>
-        <div style={fieldWrap}><label style={labelStyle}>Szac. koszt transportu</label><input style={fieldStyle} type="number" value={transport} onChange={e => setTransport(e.target.value)} onBlur={handleBlurSave} /></div>
-        <div style={fieldWrap}><label style={labelStyle}>Szac. cło</label><input style={fieldStyle} type="number" value={clo} onChange={e => setClo(e.target.value)} onBlur={handleBlurSave} /></div>
+        <div style={fieldWrap}><label style={labelStyle}>{t("Koszt zakupu towaru (Chiny)")}</label><input style={fieldStyle} type="number" value={zakup} onChange={e => setZakup(e.target.value)} onBlur={handleBlurSave} /></div>
+        <div style={fieldWrap}><label style={labelStyle}>{t("Koszt dla klienta (netto)")}</label><input style={fieldStyle} type="number" value={koszt} onChange={e => setKoszt(e.target.value)} onBlur={handleBlurSave} /></div>
+        <div style={fieldWrap}><label style={labelStyle}>{t("Szac. koszt transportu")}</label><input style={fieldStyle} type="number" value={transport} onChange={e => setTransport(e.target.value)} onBlur={handleBlurSave} /></div>
+        <div style={fieldWrap}><label style={labelStyle}>{t("Szac. cło")}</label><input style={fieldStyle} type="number" value={clo} onChange={e => setClo(e.target.value)} onBlur={handleBlurSave} /></div>
         <div style={{ ...fieldWrap, background: `linear-gradient(135deg, ${C.navy}, ${C.navy2})`, borderRadius: 8, padding: '9px 12px', color: '#fff', justifyContent: 'center', boxSizing: 'border-box' }}>
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.5)', textTransform: 'uppercase', marginBottom: 4 }}>Szacowany zysk</div>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{fmt(zysk, 0)} PLN</div>
-          <div style={{ fontSize: 9.5, color: '#4ADE80', fontWeight: 700, marginTop: 3 }}>{marzaPct.toFixed(1)}% marży</div>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.5)', textTransform: 'uppercase', marginBottom: 4 }}>{t("Szacowany zysk")}</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{fmt(zysk, 0)} {t("PLN")}</div>
+          <div style={{ fontSize: 9.5, color: '#4ADE80', fontWeight: 700, marginTop: 3 }}>{marzaPct.toFixed(1)}{t("% marży")}</div>
         </div>
       </div>
-      <div style={{ fontSize: 10, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>Wartości zapisują się automatycznie po opuszczeniu pola. Prefilled z arkusza Marża_per_zlecenie tam gdzie było to możliwe — dopraw ręcznie jeśli się zmieniły.</div>
+      <div style={{ fontSize: 10, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>{t(
+        "Wartości zapisują się automatycznie po opuszczeniu pola. Prefilled z arkusza Marża_per_zlecenie tam gdzie było to możliwe — dopraw ręcznie jeśli się zmieniły."
+      )}</div>
     </div>
-  )
+  );
 }

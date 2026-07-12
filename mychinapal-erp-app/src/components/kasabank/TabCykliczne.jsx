@@ -1,8 +1,13 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt } from '../../lib/theme'
 import Pill from './Pill'
 
 // items: wiersze z tabeli recurring_payments (name, amount, day_of_month, category, active)
 export default function TabCykliczne({ items }) {
+  const {
+    t
+  } = useLang();
+
   const active = items.filter(i => i.active)
   const total = active.reduce((s, i) => s + Number(i.amount), 0)
 
@@ -18,7 +23,9 @@ export default function TabCykliczne({ items }) {
       </div>
       {items.length === 0 ? (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: 24, textAlign: 'center', fontSize: 12, color: C.muted }}>
-          Brak zdefiniowanych płatności cyklicznych. Dodaj je w tabeli <code>recurring_payments</code> (np. ZUS, obsługa księgowa, wynajem biura, wynagrodzenia) — pojawią się tu automatycznie.
+          {t("Brak zdefiniowanych płatności cyklicznych. Dodaj je w tabeli")} <code>{t("recurring_payments")}</code> {t(
+            "(np. ZUS, obsługa księgowa, wynajem biura, wynagrodzenia) — pojawią się tu automatycznie."
+          )}
         </div>
       ) : (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -33,15 +40,15 @@ export default function TabCykliczne({ items }) {
                 <tr key={r.id}>
                   <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}`, fontWeight: 600 }}>{r.name}</td>
                   <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}` }}>{r.category ? <Pill type={r.category} small /> : '—'}</td>
-                  <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', color: C.muted, fontSize: 11 }}>{r.day_of_month}. każdego</td>
+                  <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', color: C.muted, fontSize: 11 }}>{r.day_of_month}{t(". każdego")}</td>
                   <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', fontWeight: 700, color: C.red }}>−{fmt(r.amount)}</td>
                   <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}`, textAlign: 'right', color: C.muted }}>−{fmt(r.amount * 12, 0)}</td>
-                  <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}` }}><span style={{ fontSize: 10, background: r.active ? C.glight : C.bg, color: r.active ? C.green : C.muted, padding: '2px 7px', borderRadius: 10, fontWeight: 700 }}>{r.active ? '● Aktywna' : '○ Nieaktywna'}</span></td>
+                  <td style={{ padding: '9px 10px', borderBottom: `1px solid ${C.border}` }}><span style={{ fontSize: 10, background: r.active ? C.glight : C.bg, color: r.active ? C.green : C.muted, padding: '2px 7px', borderRadius: 10, fontWeight: 700 }}>{r.active ? t("● Aktywna") : t("○ Nieaktywna")}</span></td>
                 </tr>
               ))}
             </tbody>
             <tfoot><tr style={{ background: C.navy2 }}>
-              <td style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>Łącznie (aktywne)</td><td></td><td></td>
+              <td style={{ padding: '9px 10px', color: '#fff', fontWeight: 700 }}>{t("Łącznie (aktywne)")}</td><td></td><td></td>
               <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, color: '#FCA5A5', fontSize: 14 }}>−{fmt(total)}</td>
               <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, color: '#FCA5A5' }}>−{fmt(total * 12, 0)}</td>
               <td></td>
@@ -50,5 +57,5 @@ export default function TabCykliczne({ items }) {
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
@@ -7,6 +8,10 @@ import VoiceChannel from './VoiceChannel'
 const MSG_SELECT = '*, profiles(full_name)'
 
 export default function TeamChat({ channelName, zarzadOnly, currentUserId, currentUserName, accentColor }) {
+  const {
+    t
+  } = useLang();
+
   const [channelId, setChannelId] = useState(null)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
@@ -64,16 +69,16 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>💬 {channelName}</div>
       {channelId && <VoiceChannel roomId={`voice-${channelId}`} currentUserId={currentUserId} currentUserName={currentUserName || 'Użytkownik'} accentColor={accentColor} />}
-      {loading ? <div style={{ fontSize: 11, color: C.muted }}>Ładowanie…</div> : (
+      {loading ? <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div> : (
         <>
           <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 10 }}>
-            {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak wiadomości — napisz pierwszą.</div>}
+            {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
             {messages.map(m => (
               <div key={m.id} style={{ display: 'flex', gap: 8, padding: '6px 0' }}>
                 <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(m.profiles?.full_name || '') }}>{initials(m.profiles?.full_name || '?')}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700 }}>{m.profiles?.full_name || 'Użytkownik'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
                     <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ fontSize: 12 }}>{m.content}</div>
@@ -83,16 +88,16 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
             <div ref={bottomRef} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input value={text} onChange={e => setText(e.target.value)} placeholder="Napisz wiadomość…"
+            <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość…")}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12 }} />
             <button onClick={handleSend} disabled={sending || !text.trim()}
               style={{ padding: '8px 14px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: accentColor || C.blue, color: '#fff', opacity: (sending || !text.trim()) ? .5 : 1 }}>
-              Wyślij
+              {t("Wyślij")}
             </button>
           </div>
         </>
       )}
     </div>
-  )
+  );
 }

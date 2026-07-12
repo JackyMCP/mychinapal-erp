@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
@@ -17,6 +18,10 @@ function buildMonthGrid(year, month) {
 }
 
 export default function CalendarWidget({ events, profiles, currentUserId, onChanged }) {
+  const {
+    t
+  } = useLang();
+
   const today = new Date()
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDay, setSelectedDay] = useState(null)
@@ -82,15 +87,14 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>Kalendarz</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>{t("Kalendarz")}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))} style={{ cursor: 'pointer', color: C.muted, fontSize: 13, padding: '2px 6px' }}>‹</span>
           <span style={{ fontSize: 12, fontWeight: 700, minWidth: 110, textAlign: 'center' }}>{cursor.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</span>
           <span onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))} style={{ cursor: 'pointer', color: C.muted, fontSize: 13, padding: '2px 6px' }}>›</span>
-          <span onClick={() => { setSelectedDay(today); setDate(today.toISOString().slice(0, 10)); setShowAdd(s => !s) }} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer', marginLeft: 6 }}>{showAdd ? '✕' : '+ Nowe'}</span>
+          <span onClick={() => { setSelectedDay(today); setDate(today.toISOString().slice(0, 10)); setShowAdd(s => !s) }} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer', marginLeft: 6 }}>{showAdd ? '✕' : t("+ Nowe")}</span>
         </div>
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, marginBottom: 16 }}>
         {DOW.map(d => <div key={d} style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 700, paddingBottom: 4 }}>{d}</div>)}
         {cells.map((d, i) => {
@@ -120,13 +124,12 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
                     color: isToday ? '#fff' : EVENT_COLORS[j % EVENT_COLORS.length],
                   }}>{ev.title}</div>
                 ))}
-                {extra > 0 && <div style={{ fontSize: 8, fontWeight: 700, color: isToday ? 'rgba(255,255,255,.8)' : C.muted }}>+{extra} więcej</div>}
+                {extra > 0 && <div style={{ fontSize: 8, fontWeight: 700, color: isToday ? 'rgba(255,255,255,.8)' : C.muted }}>+{extra} {t("więcej")}</div>}
               </div>
             </div>
-          )
+          );
         })}
       </div>
-
       {selectedDay && (
         <div style={{
           background: `linear-gradient(180deg, ${C.blight}, ${C.white})`, border: `1px solid ${C.bmid}`, borderRadius: 12, padding: 16, marginBottom: 16,
@@ -136,16 +139,16 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div>
               <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800, textTransform: 'capitalize' }}>{selectedDay.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 1 }}>{dayEventsSelected.length === 0 ? 'Brak wydarzeń' : `${dayEventsSelected.length} wydarzeni${dayEventsSelected.length === 1 ? 'e' : 'a'}`}</div>
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 1 }}>{dayEventsSelected.length === 0 ? t("Brak wydarzeń") : `${dayEventsSelected.length} wydarzeni${dayEventsSelected.length === 1 ? 'e' : 'a'}`}</div>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              {!showAdd && <span onClick={() => openAddForDay(selectedDay)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>+ Dodaj wydarzenie</span>}
+              {!showAdd && <span onClick={() => openAddForDay(selectedDay)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{t("+ Dodaj wydarzenie")}</span>}
               <span onClick={() => { setSelectedDay(null); setShowAdd(false) }} style={{ fontSize: 13, color: C.muted, cursor: 'pointer' }}>✕</span>
             </div>
           </div>
 
           {!showAdd && dayEventsSelected.length === 0 && (
-            <div style={{ fontSize: 11.5, color: C.muted, padding: '10px 0' }}>Nic tu jeszcze nie zaplanowano — kliknij "+ Dodaj wydarzenie".</div>
+            <div style={{ fontSize: 11.5, color: C.muted, padding: '10px 0' }}>{t("Nic tu jeszcze nie zaplanowano — kliknij \"+ Dodaj wydarzenie\".")}</div>
           )}
           {!showAdd && dayEventsSelected.map((e, idx) => (
             <div key={e.id} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', marginBottom: 8, borderLeft: `3px solid ${EVENT_COLORS[idx % EVENT_COLORS.length]}` }}>
@@ -157,11 +160,11 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
                     {e.end_at ? ` – ${new Date(e.end_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   </div>
                 </div>
-                {(e.created_by === currentUserId) && <span onClick={() => handleDelete(e.id)} style={{ fontSize: 10, color: C.red, cursor: 'pointer', fontWeight: 600 }}>Usuń</span>}
+                {(e.created_by === currentUserId) && <span onClick={() => handleDelete(e.id)} style={{ fontSize: 10, color: C.red, cursor: 'pointer', fontWeight: 600 }}>{t("Usuń")}</span>}
               </div>
               {(e.event_attendees || []).length > 0 && (
                 <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 5 }}>Uczestnicy</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 5 }}>{t("Uczestnicy")}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {(e.event_attendees || []).map((a, j) => (
                       <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 5, background: C.bg, borderRadius: 20, padding: '3px 10px 3px 3px' }}>
@@ -179,14 +182,14 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
 
           {showAdd && (
             <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Nazwa spotkania…"
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t("Nazwa spotkania…")}
                 style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
               <div style={{ display: 'flex', gap: 7, marginBottom: 10 }}>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 8px', fontSize: 11 }} />
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 8px', fontSize: 11 }} />
                 <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 8px', fontSize: 11 }} />
               </div>
-              <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }}>Uczestnicy</div>
+              <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }}>{t("Uczestnicy")}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {profiles.map(p => (
                   <span key={p.id} onClick={() => toggleAttendee(p.id)}
@@ -195,14 +198,13 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
                   </span>
                 ))}
               </div>
-              <button onClick={handleAdd} disabled={saving} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: C.blue, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Zapisywanie…' : 'Zapisz spotkanie'}</button>
+              <button onClick={handleAdd} disabled={saving} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: C.blue, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? t("Zapisywanie…") : t("Zapisz spotkanie")}</button>
             </div>
           )}
         </div>
       )}
-
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>Nadchodzące</div>
-      {upcoming.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak nadchodzących wydarzeń.</div>}
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>{t("Nadchodzące")}</div>
+      {upcoming.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak nadchodzących wydarzeń.")}</div>}
       {upcoming.map(e => (
         <div key={e.id} onClick={() => setSelectedDay(new Date(e.start_at))} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
           <div>
@@ -219,5 +221,5 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
         </div>
       ))}
     </div>
-  )
+  );
 }

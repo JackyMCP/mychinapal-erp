@@ -1,3 +1,4 @@
+import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
@@ -15,6 +16,10 @@ import TabNotatki from '../components/klienci/TabNotatki'
 const TABS = ['Przegląd', 'Zamówienia', 'Finanse', 'Dokumenty', 'Czat', 'Notatki']
 
 export default function Klienci() {
+  const {
+    t
+  } = useLang();
+
   const { isZarzad } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -90,13 +95,13 @@ export default function Klienci() {
 
   return (
     <div>
-      <PageHeader title="Klienci & CRM" subtitle={loading ? 'Ładowanie…' : `${clients.length} kontrahentów widocznych dla Ciebie`}
-        right={isZarzad && <button style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>+ Nowy klient</button>} />
+      <PageHeader title={t("Klienci & CRM")} subtitle={loading ? 'Ładowanie…' : `${clients.length} kontrahentów widocznych dla Ciebie`}
+        right={isZarzad && <button style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>{t("+ Nowy klient")}</button>} />
       <div style={{ padding: '16px 22px', maxWidth: 1500, display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16, alignItems: 'start' }}>
 
         {/* ── lista klientów ── */}
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Szukaj klienta…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("Szukaj klienta…")}
             style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 12px', fontSize: 11.5, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
           {filtered.map(c => {
             const act = activityById[c.id]
@@ -109,33 +114,33 @@ export default function Klienci() {
                 <div style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(c.name) }}>{initials(c.name)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
-                  <div style={{ fontSize: 10, color: C.muted }}>{act?.project_count || 0} zamówień{m ? ` · ${Math.round(Number(m.przychod) || 0).toLocaleString('pl-PL')} PLN` : ''}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{act?.project_count || 0} {t("zamówień")}{m ? ` · ${Math.round(Number(m.przychod) || 0).toLocaleString('pl-PL')} PLN` : ''}</div>
                 </div>
                 <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: healthColor(days) }} title={days === null ? 'brak danych o kontakcie' : `ostatni kontakt ${days} dni temu`} />
               </div>
-            )
+            );
           })}
-          {filtered.length === 0 && !loading && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>Brak klientów do wyświetlenia.</div>}
+          {filtered.length === 0 && !loading && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Brak klientów do wyświetlenia.")}</div>}
         </div>
 
         {/* ── rekord 360° ── */}
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, minHeight: 400 }}>
-          {!selected && <div style={{ fontSize: 12, color: C.muted, padding: 20, textAlign: 'center' }}>Wybierz klienta z listy po lewej, żeby zobaczyć pełny widok 360°.</div>}
+          {!selected && <div style={{ fontSize: 12, color: C.muted, padding: 20, textAlign: 'center' }}>{t("Wybierz klienta z listy po lewej, żeby zobaczyć pełny widok 360°.")}</div>}
           {selected && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
                 <div style={{ width: 52, height: 52, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(selected.name) }}>{initials(selected.name)}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{selected.full_name || 'Brak pełnej nazwy'}{selected.created_at ? ` · Klient od ${new Date(selected.created_at).toLocaleDateString('pl-PL')}` : ''}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{selected.full_name || t("Brak pełnej nazwy")}{selected.created_at ? ` · Klient od ${new Date(selected.created_at).toLocaleDateString('pl-PL')}` : ''}</div>
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
-                {TABS.map(t => (
-                  <div key={t} onClick={() => setTab(t)}
-                    style={{ padding: '9px 14px', fontSize: 11.5, fontWeight: 600, color: tab === t ? C.blue : C.muted, cursor: 'pointer', borderBottom: tab === t ? `2px solid ${C.blue}` : '2px solid transparent', marginBottom: -1 }}>
-                    {t}{t === 'Zamówienia' ? ` (${selectedProjects.length})` : ''}{t === 'Dokumenty' ? ` (${documents.length})` : ''}
+                {TABS.map(row => (
+                  <div key={row} onClick={() => setTab(row)}
+                    style={{ padding: '9px 14px', fontSize: 11.5, fontWeight: 600, color: tab === row ? C.blue : C.muted, cursor: 'pointer', borderBottom: tab === row ? `2px solid ${C.blue}` : '2px solid transparent', marginBottom: -1 }}>
+                    {row}{row === 'Zamówienia' ? ` (${selectedProjects.length})` : ''}{row === 'Dokumenty' ? ` (${documents.length})` : ''}
                   </div>
                 ))}
               </div>
@@ -151,5 +156,5 @@ export default function Klienci() {
         </div>
       </div>
     </div>
-  )
+  );
 }

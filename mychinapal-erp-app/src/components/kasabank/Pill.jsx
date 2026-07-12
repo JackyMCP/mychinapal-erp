@@ -1,4 +1,5 @@
 import { C } from '../../lib/theme'
+import { useLang } from '../../lib/i18n/LanguageContext'
 
 const MAP = {
   'ROZLICZONO CAŁKOWICIE': [C.glight, C.green],
@@ -36,12 +37,13 @@ const MAP = {
 }
 
 export default function Pill({ type, small = false }) {
+  const { t } = useLang()
   const sz = small ? { fontSize: 9, padding: '1px 5px' } : { fontSize: 10, padding: '2px 7px' }
   const t2 = (type || '').toUpperCase()
   const cfg = MAP[type] || MAP[t2] || [C.bg, C.muted]
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, ...sz, borderRadius: 20, fontWeight: 700, backgroundColor: cfg[0], color: cfg[1], whiteSpace: 'nowrap' }}>
-      ●&nbsp;{type || '—'}
+      ●&nbsp;{type ? t(type) : '—'}
     </span>
   )
 }

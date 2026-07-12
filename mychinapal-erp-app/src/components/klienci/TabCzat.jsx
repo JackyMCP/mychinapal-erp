@@ -1,8 +1,13 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 
 export default function TabCzat({ clientId, projectIds, onOpenChat }) {
+  const {
+    t
+  } = useLang();
+
   const [channels, setChannels] = useState([])
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -30,25 +35,28 @@ export default function TabCzat({ clientId, projectIds, onOpenChat }) {
     })()
   }, [clientId, JSON.stringify(projectIds)])
 
-  if (loading) return <div style={{ fontSize: 11, color: C.muted }}>Ładowanie…</div>
-  if (channels.length === 0) return <div style={{ fontSize: 11, color: C.muted }}>Ten klient nie ma jeszcze kanału na czacie. Utwórz go w module Czat wewnętrzny.</div>
+  if (loading) return <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>;
+  if (channels.length === 0) return (
+    <div style={{ fontSize: 11, color: C.muted }}>{t(
+      "Ten klient nie ma jeszcze kanału na czacie. Utwórz go w module Czat wewnętrzny."
+    )}</div>
+  );
 
   return (
     <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
         {channels.map(c => (
           <div key={c.id} onClick={() => onOpenChat(c.id)}
-            style={{ fontSize: 11.5, fontWeight: 600, padding: '7px 13px', borderRadius: 8, background: C.blight, color: C.blue, cursor: 'pointer' }}>
-            💬 {c.name} — otwórz pełny czat
+            style={{ fontSize: 11.5, fontWeight: 600, padding: '7px 13px', borderRadius: 8, background: C.blight, color: C.blue, cursor: 'pointer' }}>💬 {c.name} {t("— otwórz pełny czat")}
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>Ostatnie wiadomości</div>
-      {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak wiadomości.</div>}
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>{t("Ostatnie wiadomości")}</div>
+      {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości.")}</div>}
       {messages.map(m => (
         <div key={m.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || 'Użytkownik'}</span>
+            <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
             <span style={{ fontSize: 10, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
           </div>
           <div style={{ fontSize: 12, marginTop: 2 }}>{m.content}</div>
@@ -58,5 +66,5 @@ export default function TabCzat({ clientId, projectIds, onOpenChat }) {
         </div>
       ))}
     </div>
-  )
+  );
 }

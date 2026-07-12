@@ -1,3 +1,4 @@
+import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
@@ -18,6 +19,10 @@ const FIELDS = [
 ]
 
 export default function RealCostsTable({ project, onSaved }) {
+  const {
+    t
+  } = useLang();
+
   const [values, setValues] = useState(Object.fromEntries(FIELDS.map(([k]) => [k, project[k] ?? ''])))
   const [saving, setSaving] = useState(false)
 
@@ -45,8 +50,8 @@ export default function RealCostsTable({ project, onSaved }) {
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        Realne koszty i zysk <span style={{ fontWeight: 600, textTransform: 'none', color: C.muted, fontSize: 10.5 }}>— uzupełniaj w miarę jak faktury/płatności są opłacane</span>
-        {saving && <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>zapisywanie…</span>}
+        {t("Realne koszty i zysk")} <span style={{ fontWeight: 600, textTransform: 'none', color: C.muted, fontSize: 10.5 }}>{t("— uzupełniaj w miarę jak faktury/płatności są opłacane")}</span>
+        {saving && <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>{t("zapisywanie…")}</span>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         {FIELDS.map(([key, label]) => (
@@ -58,11 +63,11 @@ export default function RealCostsTable({ project, onSaved }) {
       </div>
       <div style={{ marginTop: 16, background: `linear-gradient(135deg, ${C.navy}, #0F3D24)`, borderRadius: 10, padding: '12px 16px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.55)', textTransform: 'uppercase' }}>Realny zysk</div>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 800, marginTop: 2 }}>{fmt(zysk, 0)} PLN</div>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.55)', textTransform: 'uppercase' }}>{t("Realny zysk")}</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 800, marginTop: 2 }}>{fmt(zysk, 0)} {t("PLN")}</div>
         </div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#4ADE80' }}>{marzaPct.toFixed(1)}% marży rzeczywistej</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#4ADE80' }}>{marzaPct.toFixed(1)}{t("% marży rzeczywistej")}</div>
       </div>
     </div>
-  )
+  );
 }
