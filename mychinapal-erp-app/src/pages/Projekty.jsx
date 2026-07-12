@@ -6,6 +6,7 @@ import { C } from '../lib/theme'
 import { avatarColor, initials } from '../components/klienci/utils'
 import ProjectTile from '../components/projekty/ProjectTile'
 import ProfitTable from '../components/projekty/ProfitTable'
+import RealCostsTable from '../components/projekty/RealCostsTable'
 import StageTimeline from '../components/projekty/StageTimeline'
 import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
@@ -100,6 +101,7 @@ export default function Projekty() {
           </div>
 
           <ProfitTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
+          <RealCostsTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
 
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', margin: '4px 0 10px' }}>Etapy zamówienia</div>
           <StageTimeline project={selected} documents={projectDocs} onDocumentsChanged={loadAll} />
