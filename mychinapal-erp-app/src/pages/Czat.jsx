@@ -4,8 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
-
-const DOC_CATEGORIES = ['Faktury', 'Wyceny', 'Transport', 'Cło']
+import { DOC_CATEGORIES } from '../components/projekty/stageDefs'
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function Czat() {
