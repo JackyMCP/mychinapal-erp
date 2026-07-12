@@ -57,6 +57,10 @@ export default function Czat() {
         const row = data || payload.new
         setMessages(prev => (prev.some(m => m.id === row.id) ? prev : [...prev, row]))
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${activeId}` }, (payload) => {
+        // np. dotarło tłumaczenie z funkcji translate-chat-message
+        setMessages(prev => prev.map(m => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+      })
       .subscribe()
 
     return () => { cancelled = true; supabase.removeChannel(sub) }
@@ -161,6 +165,11 @@ export default function Czat() {
                     {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || 'Nieznany'}</div>}
                     <div style={{ background: mine ? C.blue : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {m.content}
+                      {m.translated_content && m.translated_content !== m.content && (
+                        <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${mine ? 'rgba(255,255,255,.25)' : C.border}`, fontSize: 11.5, fontStyle: 'italic', opacity: 0.85 }}>
+                          🌐 {m.translated_content}
+                        </div>
+                      )}
                       {doc && (
                         <div onClick={() => handleDownload(doc)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
                           📎 <span style={{ textDecoration: 'underline' }}>{doc.file_name}</span>
