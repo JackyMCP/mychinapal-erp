@@ -2,76 +2,90 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
-import SectionCard from '../components/SectionCard'
-import { C, fmt } from '../lib/theme'
-import { useNavigate } from 'react-router-dom'
+import { C } from '../lib/theme'
+import WhoAmI from '../components/dashboard/WhoAmI'
+import MyProjects from '../components/dashboard/MyProjects'
+import MyTasks from '../components/dashboard/MyTasks'
+import CalendarWidget from '../components/dashboard/CalendarWidget'
+import CompanyDirection from '../components/dashboard/CompanyDirection'
+import TeamChat from '../components/dashboard/TeamChat'
 
 export default function Dashboard() {
-  const { isZarzad } = useAuth()
-  const navigate = useNavigate()
+  const { profile, isZarzad } = useAuth()
   const [clients, setClients] = useState([])
-  const [projects, setProjects] = useState([])
+  const [myProjects, setMyProjects] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [events, setEvents] = useState([])
+  const [profiles, setProfiles] = useState([])
   const [txSum, setTxSum] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true)
-      const { data: clientsData } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-      const { data: projectsData } = await supabase.from('projects').select('*, clients(name)').eq('active', true)
-      setClients(clientsData || [])
-      setProjects(projectsData || [])
+  const loadDashboard = async () => {
+    if (!profile) return
+    setLoading(true)
+    const [clientsRes, myAssignRes, tasksRes, profilesRes, eventsRes] = await Promise.all([
+      supabase.from('clients').select('id,name'),
+      supabase.from('project_assignments').select('projects(*)').eq('user_id', profile.id),
+      supabase.from('tasks').select('*').eq('assigned_to', profile.id),
+      supabase.from('profiles').select('id,full_name'),
+      supabase.from('calendar_events').select('*, event_attendees(user_id, profiles(full_name))').order('start_at'),
+    ])
+    setClients(clientsRes.data || [])
+    setMyProjects((myAssignRes.data || []).map(r => r.projects).filter(Boolean).filter(p => p.active))
+    setTasks(tasksRes.data || [])
+    setProfiles(profilesRes.data || [])
+    setEvents(eventsRes.data || [])
 
-      if (isZarzad) {
-        const { data: kkData } = await supabase
-          .from('v_kontrola_kasy')
-          .select('row_label, value')
-          .eq('quarter', 'razem')
-        if (kkData) {
-          const wpływy = Number(kkData.find(r => r.row_label === 'wpływy (WN+)')?.value) || 0
-          const wypływy = Number(kkData.find(r => r.row_label === 'wypływy (MA-)')?.value) || 0
-          setTxSum({ wpływy, wypływy })
-        }
+    if (isZarzad) {
+      const { data: kkData } = await supabase.from('v_kontrola_kasy').select('row_label, value').eq('quarter', 'razem')
+      if (kkData) {
+        const wpływy = Number(kkData.find(r => r.row_label === 'wpływy (WN+)')?.value) || 0
+        const wypływy = Number(kkData.find(r => r.row_label === 'wypływy (MA-)')?.value) || 0
+        setTxSum({ wpływy, wypływy })
       }
-      setLoading(false)
-    })()
-  }, [isZarzad])
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadDashboard() }, [profile?.id])
+
+  const clientNameById = Object.fromEntries(clients.map(c => [c.id, c.name]))
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle={loading ? 'Ładowanie…' : `${clients.length} klientów widocznych dla Ciebie · ${projects.length} aktywnych projektów`} />
+      <PageHeader title="Dashboard" subtitle={loading ? 'Ładowanie…' : `Witaj, ${profile?.full_name || ''}`} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
+
+        {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
+
         {isZarzad && txSum && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 14 }}>
             <div style={{ background: C.navy, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
               <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>Wpływy (WN+)</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{fmt(txSum.wpływy, 0)} PLN</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wpływy).toLocaleString('pl-PL')} PLN</div>
             </div>
             <div style={{ background: C.navy2, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
               <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>Wypływy (MA-)</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{fmt(txSum.wypływy, 0)} PLN</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wypływy).toLocaleString('pl-PL')} PLN</div>
             </div>
           </div>
         )}
 
-        <SectionCard title="Klienci">
-          {clients.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted }}>Brak klientów widocznych dla Twojego konta — Zarząd może dodać ich w module Klienci.</div>}
-          {clients.slice(0, 8).map(c => (
-            <div key={c.id} onClick={() => navigate('/klienci')} style={{ padding: '7px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: C.blue }}>
-              {c.name}
-            </div>
-          ))}
-        </SectionCard>
+        <div style={{ marginBottom: 14 }}><WhoAmI profile={profile} isZarzad={isZarzad} /></div>
 
-        <SectionCard title="Aktywne projekty">
-          {projects.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted }}>Brak aktywnych projektów widocznych dla Twojego konta.</div>}
-          {projects.slice(0, 8).map(p => (
-            <div key={p.id} onClick={() => navigate('/projekty')} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>{p.clients?.name} — {p.order_label}</span>
-              <span style={{ fontSize: 11, color: C.muted }}>{p.stage}</span>
-            </div>
-          ))}
-        </SectionCard>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <MyProjects projects={myProjects} clientNameById={clientNameById} />
+          <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <CalendarWidget events={events} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: isZarzad ? '1fr 1fr' : '1fr', gap: 14 }}>
+          <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} accentColor={C.blue} />
+          {isZarzad && <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} accentColor={C.purple} />}
+        </div>
       </div>
     </div>
   )

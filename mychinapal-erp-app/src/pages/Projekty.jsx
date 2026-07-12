@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
 import { C } from '../lib/theme'
 import { avatarColor, initials } from '../components/klienci/utils'
 import ProjectTile from '../components/projekty/ProjectTile'
 import ProfitTable from '../components/projekty/ProfitTable'
 import RealCostsTable from '../components/projekty/RealCostsTable'
+import ProjectTeam from '../components/projekty/ProjectTeam'
 import StageTimeline from '../components/projekty/StageTimeline'
 import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
 
 export default function Projekty() {
+  const { profile } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
   const [clients, setClients] = useState([])
@@ -100,6 +103,7 @@ export default function Projekty() {
             </div>
           </div>
 
+          <ProjectTeam project={selected} currentUserId={profile?.id} />
           <ProfitTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
           <RealCostsTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
 
