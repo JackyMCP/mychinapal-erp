@@ -122,7 +122,7 @@ export default function KasaBank() {
   }
 
   const podatkiPayments = useMemo(() => (
-    txs.filter(t => (t.category || '').toUpperCase() === 'PODATKI' && t.direction === 'MA-')
+    txs.filter(t => (t.category || '').toUpperCase() === 'PODATKI' && t.direction === 'MA-' && t.flow_type !== 'nie_podlega')
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       .map(t => ({ date: t.date, label: t.desc || t.contractor, amount: t.amount }))
   ), [txs])

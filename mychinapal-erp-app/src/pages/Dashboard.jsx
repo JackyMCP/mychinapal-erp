@@ -23,10 +23,13 @@ export default function Dashboard() {
       setProjects(projectsData || [])
 
       if (isZarzad) {
-        const { data: txData } = await supabase.from('transactions').select('amount, direction')
-        if (txData) {
-          const wpływy = txData.filter(t => t.direction === 'WN+').reduce((s, t) => s + Number(t.amount), 0)
-          const wypływy = txData.filter(t => t.direction === 'MA-').reduce((s, t) => s + Number(t.amount), 0)
+        const { data: kkData } = await supabase
+          .from('v_kontrola_kasy')
+          .select('row_label, value')
+          .eq('quarter', 'razem')
+        if (kkData) {
+          const wpływy = Number(kkData.find(r => r.row_label === 'wpływy (WN+)')?.value) || 0
+          const wypływy = Number(kkData.find(r => r.row_label === 'wypływy (MA-)')?.value) || 0
           setTxSum({ wpływy, wypływy })
         }
       }
