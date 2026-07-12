@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
@@ -9,6 +10,7 @@ const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id,
 
 export default function Czat() {
   const { profile } = useAuth()
+  const [searchParams] = useSearchParams()
   const [channels, setChannels] = useState([])
   const [activeId, setActiveId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -30,7 +32,12 @@ export default function Czat() {
     if (error) { console.error(error); alert('Nie udało się wczytać kanałów: ' + error.message) }
     setChannels(data || [])
     setLoadingChannels(false)
-    if (!activeId && data && data.length > 0) setActiveId(data[0].id)
+    const wanted = searchParams.get('channel')
+    if (wanted && data && data.some(c => c.id === wanted)) {
+      setActiveId(wanted)
+    } else if (!activeId && data && data.length > 0) {
+      setActiveId(data[0].id)
+    }
   }
 
   useEffect(() => { loadChannels() }, [])

@@ -1,107 +1,153 @@
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
-import SectionCard from '../components/SectionCard'
-import { C, fmt } from '../lib/theme'
+import { C } from '../lib/theme'
+import { avatarColor, initials, daysSince, healthColor } from '../components/klienci/utils'
+import TabPrzeglad from '../components/klienci/TabPrzeglad'
+import TabZamowienia from '../components/klienci/TabZamowienia'
+import TabFinanse from '../components/klienci/TabFinanse'
+import TabDokumenty from '../components/klienci/TabDokumenty'
+import TabCzat from '../components/klienci/TabCzat'
+import TabNotatki from '../components/klienci/TabNotatki'
+
+const TABS = ['Przegląd', 'Zamówienia', 'Finanse', 'Dokumenty', 'Czat', 'Notatki']
 
 export default function Klienci() {
   const { isZarzad } = useAuth()
-  const [clients, setClients] = useState([])
-  const [selected, setSelected] = useState(null)
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [clients, setClients] = useState([])
+  const [marzaById, setMarzaById] = useState({})
+  const [activityById, setActivityById] = useState({})
   const [projects, setProjects] = useState([])
   const [documents, setDocuments] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [contacts, setContacts] = useState([])
+  const [selectedId, setSelectedId] = useState(null)
+  const [tab, setTab] = useState('Przegląd')
   const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     (async () => {
       setLoading(true)
-      const { data, error } = await supabase.from('clients').select('*').order('name')
-      if (error) console.error(error)
-      setClients(data || [])
+      const [clRes, mzRes, actRes, prRes] = await Promise.all([
+        supabase.from('clients').select('*').order('name'),
+        supabase.from('v_marza_klient').select('*'),
+        supabase.from('v_client_activity').select('*'),
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+      ])
+      if (clRes.error) console.error(clRes.error)
+      setClients(clRes.data || [])
+      setMarzaById(Object.fromEntries((mzRes.data || []).map(m => [m.client_id, m])))
+      setActivityById(Object.fromEntries((actRes.data || []).map(a => [a.client_id, a])))
+      setProjects(prRes.data || [])
       setLoading(false)
+
       const wanted = searchParams.get('client')
-      if (wanted) {
-        const match = (data || []).find(c => c.id === wanted)
-        if (match) setSelected(match)
-      }
+      if (wanted) setSelectedId(wanted)
     })()
   }, [])
 
   useEffect(() => {
-    if (!selected) { setProjects([]); setDocuments([]); return }
+    if (!selectedId) { setDocuments([]); setContacts([]); return }
     (async () => {
-      const { data } = await supabase.from('projects').select('*').eq('client_id', selected.id)
-      setProjects(data || [])
-    })()
-    ;(async () => {
-      const { data, error } = await supabase.from('documents').select('*').eq('client_id', selected.id).order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('documents').select('*').eq('client_id', selectedId).order('created_at', { ascending: false })
       if (error) console.error(error)
       setDocuments(data || [])
     })()
-  }, [selected])
+    ;(async () => {
+      const { data, error } = await supabase.from('client_contacts').select('*').eq('client_id', selectedId).order('created_at')
+      if (error) console.error(error)
+      setContacts(data || [])
+    })()
+  }, [selectedId])
 
-  const handleDownload = async (doc) => {
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+  const filtered = useMemo(
+    () => clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase())),
+    [clients, search]
+  )
+  const selected = clients.find(c => c.id === selectedId) || null
+  const selectedProjects = selected ? projects.filter(p => p.client_id === selected.id) : []
+  const selectedMarza = selected ? marzaById[selected.id] : null
+
+  const lastContactDays = (act) => {
+    if (!act) return null
+    const times = [act.last_message_at, act.last_project_at].filter(Boolean)
+    if (times.length === 0) return null
+    const latest = times.sort().pop()
+    return daysSince(latest)
   }
 
-  if (selected) {
-    return (
-      <div>
-        <PageHeader title={selected.name} subtitle={selected.full_name || 'Brak pełnej nazwy'} />
-        <div style={{ padding: '16px 22px', maxWidth: 1200 }}>
-          <div onClick={() => { setSelected(null); setSearchParams({}) }} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer', marginBottom: 12 }}>← Wróć do listy klientów</div>
-          <SectionCard title="Projekty klienta">
-            {projects.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak zarejestrowanych projektów.</div>}
-            {projects.map(p => (
-              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{p.order_label}</span>
-                <span style={{ fontSize: 11, color: C.muted }}>{p.stage}</span>
-              </div>
-            ))}
-          </SectionCard>
-          <SectionCard title="Dokumenty">
-            {documents.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>Brak dokumentów — pliki wysłane na czacie tego klienta pojawią się tutaj automatycznie.</div>}
-            {documents.map(d => (
-              <div key={d.id} onClick={() => handleDownload(d)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.blue }}>📎 {d.file_name}</span>
-                <span style={{ fontSize: 10, color: C.muted, display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ background: C.bg, padding: '1px 7px', borderRadius: 10 }}>{d.category}</span>
-                  {d.source === 'chat' ? 'z czatu' : 'ręcznie'}
-                </span>
-              </div>
-            ))}
-          </SectionCard>
-          <SectionCard title="Notatki">
-            <textarea placeholder="Dodaj notatkę…" style={{ width: '100%', minHeight: 70, border: `1px solid ${C.border}`, borderRadius: 7, padding: 8, fontSize: 11 }} />
-          </SectionCard>
-        </div>
-      </div>
-    )
+  const handleSelect = (c) => {
+    setSelectedId(c.id)
+    setTab('Przegląd')
+    setSearchParams({ client: c.id })
   }
 
-  const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
+  const handleOpenChat = (channelId) => navigate(`/czat?channel=${channelId}`)
 
   return (
     <div>
       <PageHeader title="Klienci & CRM" subtitle={loading ? 'Ładowanie…' : `${clients.length} kontrahentów widocznych dla Ciebie`}
         right={isZarzad && <button style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>+ Nowy klient</button>} />
-      <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Szukaj klienta…"
-          style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '8px 12px', fontSize: 11.5, width: 260, marginBottom: 12 }} />
-        <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
-          {filtered.map((c, i) => (
-            <div key={c.id} onClick={() => setSelected(c)}
-              style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : 'none', fontSize: 12, fontWeight: 600, color: C.blue }}>
-              {c.name}
-            </div>
-          ))}
+      <div style={{ padding: '16px 22px', maxWidth: 1500, display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16, alignItems: 'start' }}>
+
+        {/* ── lista klientów ── */}
+        <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Szukaj klienta…"
+            style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 12px', fontSize: 11.5, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
+          {filtered.map(c => {
+            const act = activityById[c.id]
+            const days = lastContactDays(act)
+            const m = marzaById[c.id]
+            const isActive = selectedId === c.id
+            return (
+              <div key={c.id} onClick={() => handleSelect(c)}
+                style={{ padding: '10px 12px', borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3, background: isActive ? C.blight : 'transparent', border: isActive ? `1px solid ${C.bmid}` : '1px solid transparent' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(c.name) }}>{initials(c.name)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{act?.project_count || 0} zamówień{m ? ` · ${Math.round(Number(m.przychod) || 0).toLocaleString('pl-PL')} PLN` : ''}</div>
+                </div>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: healthColor(days) }} title={days === null ? 'brak danych o kontakcie' : `ostatni kontakt ${days} dni temu`} />
+              </div>
+            )
+          })}
           {filtered.length === 0 && !loading && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>Brak klientów do wyświetlenia.</div>}
+        </div>
+
+        {/* ── rekord 360° ── */}
+        <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, minHeight: 400 }}>
+          {!selected && <div style={{ fontSize: 12, color: C.muted, padding: 20, textAlign: 'center' }}>Wybierz klienta z listy po lewej, żeby zobaczyć pełny widok 360°.</div>}
+          {selected && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(selected.name) }}>{initials(selected.name)}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{selected.full_name || 'Brak pełnej nazwy'}{selected.created_at ? ` · Klient od ${new Date(selected.created_at).toLocaleDateString('pl-PL')}` : ''}</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
+                {TABS.map(t => (
+                  <div key={t} onClick={() => setTab(t)}
+                    style={{ padding: '9px 14px', fontSize: 11.5, fontWeight: 600, color: tab === t ? C.blue : C.muted, cursor: 'pointer', borderBottom: tab === t ? `2px solid ${C.blue}` : '2px solid transparent', marginBottom: -1 }}>
+                    {t}{t === 'Zamówienia' ? ` (${selectedProjects.length})` : ''}{t === 'Dokumenty' ? ` (${documents.length})` : ''}
+                  </div>
+                ))}
+              </div>
+
+              {tab === 'Przegląd' && <TabPrzeglad client={selected} marza={selectedMarza} projects={selectedProjects} contacts={contacts} lastContactDays={lastContactDays(activityById[selected.id])} />}
+              {tab === 'Zamówienia' && <TabZamowienia projects={selectedProjects} />}
+              {tab === 'Finanse' && <TabFinanse marza={selectedMarza} />}
+              {tab === 'Dokumenty' && <TabDokumenty documents={documents} />}
+              {tab === 'Czat' && <TabCzat clientId={selected.id} projectIds={selectedProjects.map(p => p.id)} onOpenChat={handleOpenChat} />}
+              {tab === 'Notatki' && <TabNotatki client={selected} />}
+            </>
+          )}
         </div>
       </div>
     </div>
