@@ -48,7 +48,10 @@ export function LanguageProvider({ children }) {
 
       let fresh = {}
       if (missing.length > 0) {
-        const { data, error } = await supabase.functions.invoke('translate-batch', { body: { texts: missing } })
+                // UWAGA: w Supabase funkcja widnieje w liście jako "translate-batch", ale jej faktyczny
+        // adres/slug (przydzielony automatycznie przy tworzeniu) to "dynamic-task" — stąd wywołanie
+        // musi używać tej drugiej nazwy, inaczej dostajemy 404.
+        const { data, error } = await supabase.functions.invoke('dynamic-task', { body: { texts: missing } })
         if (!error && data?.translations) fresh = data.translations
       }
 
