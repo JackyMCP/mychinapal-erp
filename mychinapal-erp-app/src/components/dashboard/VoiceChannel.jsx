@@ -168,7 +168,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   // ── PL -> ZH: mintujemy krótkotrwały token OpenAI i łączymy się z nim wprost przez WebRTC ──
   // (mikrofon idzie do OpenAI, a to co OpenAI odeśle "ontrack" to już przetłumaczony na chiński głos)
   async function setupOpenAITranslator(targetLang) {
-    const { data, error: fnErr } = await supabase.functions.invoke('openai-realtime-token-ts', { body: { target_language: targetLang } })
+    const { data, error: fnErr } = await supabase.functions.invoke('openai-realtime-token-ts', { body: { target_language: targetLang, user_id: currentUserId } })
     if (fnErr) throw new Error('token: ' + fnErr.message)
     if (!data?.ok) throw new Error(data?.error || 'nieznany błąd tokenu OpenAI')
     const ephemeralKey = data.client_secret
@@ -180,16 +180,24 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     pc.ontrack = (e) => { e.streams[0]?.getTracks().forEach(tr => remoteStream.addTrack(tr)) }
 
     localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current))
+    pc.createDataChannel('oai-events') // wymagane przez OpenAI do negocjacji sesji tłumaczeniowej
 
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
 
-    const sdpRes = await fetch('https://api.openai.com/v1/realtime/calls', {
+    // UWAGA: sesje tłumaczeniowe (client_secret z /realtime/translations/client_secrets) łączy się
+    // z DEDYKOWANYM adresem /realtime/translations/calls — NIE z ogólnym /realtime/calls (ten drugi
+    // jest dla zwykłych sesji asystenta głosowego typu gpt-realtime-2 i odrzuci token tłumaczeniowy
+    // kodem 400, tak jak się stało przy pierwszym teście).
+    const sdpRes = await fetch('https://api.openai.com/v1/realtime/translations/calls', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${ephemeralKey}`, 'Content-Type': 'application/sdp' },
       body: offer.sdp,
     })
-    if (!sdpRes.ok) throw new Error('OpenAI odrzuciło połączenie (kod ' + sdpRes.status + ')')
+    if (!sdpRes.ok) {
+      const errBody = await sdpRes.text().catch(() => '')
+      throw new Error('OpenAI odrzuciło połączenie (kod ' + sdpRes.status + ') ' + errBody.slice(0, 200))
+    }
     const answerSdp = await sdpRes.text()
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
 
