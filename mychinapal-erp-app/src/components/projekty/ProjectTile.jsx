@@ -1,12 +1,15 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
+import { useState } from 'react'
 import { C, fmt } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import { STAGE_DEFS } from './stageDefs'
 
-export default function ProjectTile({ project, clientName, progress, marza, onClick }) {
+export default function ProjectTile({ project, clientName, progress, marza, onClick, clients, onAssignClient }) {
   const {
     t
   } = useLang();
+  const [assigning, setAssigning] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const { doneStages, currentIndex, progressPct } = progress
   const isDone = currentIndex === null
@@ -43,10 +46,40 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
 
   return (
     <div className="tile" onClick={onClick} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, cursor: 'pointer', transition: 'all .15s' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
         <div style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(clientName) }}>{initials(clientName)}</div>
-        <div>
-          <div style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>{clientName}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {assigning ? (
+            <select
+              autoFocus
+              defaultValue={project.client_id}
+              disabled={saving}
+              onClick={e => e.stopPropagation()}
+              onChange={async e => {
+                e.stopPropagation()
+                const newClientId = e.target.value
+                if (newClientId === project.client_id) { setAssigning(false); return }
+                setSaving(true)
+                await onAssignClient(project, newClientId)
+                setSaving(false)
+                setAssigning(false)
+              }}
+              style={{ fontSize: 10.5, border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 5px', maxWidth: 150 }}
+            >
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientName}</span>
+              {clients && onAssignClient && (
+                <span
+                  onClick={e => { e.stopPropagation(); setAssigning(true) }}
+                  title={t("Przypisz do innego klienta")}
+                  style={{ fontSize: 10, color: C.blue, cursor: 'pointer', flexShrink: 0 }}
+                >🔗</span>
+              )}
+            </div>
+          )}
           <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.35, marginTop: 1 }}>{project.order_label}</div>
         </div>
       </div>
