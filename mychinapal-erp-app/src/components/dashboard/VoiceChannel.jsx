@@ -57,8 +57,13 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
 
   // -- napisy na żywo: bieżąca wiadomość-"bąbelek" na czacie (jedna na wypowiedź) --
   const captionRowIdRef = useRef(null)   // id wiersza chat_messages aktualnie rosnącej wypowiedzi
-  const captionOrigRef = useRef('')      // narastający tekst oryginalny
-  const captionTransRef = useRef('')     // narastające tłumaczenie
+  const captionTransRef = useRef('')     // narastające tłumaczenie (aktualizowane fragmentami, wolniej)
+  // "content" (oryginał) aktualizujemy NATYCHMIAST, słowo po słowie — nie czekamy na
+  // interpunkcję/pauzę jak w przypadku tłumaczenia. Throttlujemy tylko zapisy do bazy
+  // (maks. ~1 na PREVIEW_THROTTLE_MS), żeby nie wysyłać zapytania przy każdej literze.
+  const previewPendingTextRef = useRef('')
+  const previewLastSentAtRef = useRef(0)
+  const previewTimerRef = useRef(null)
   // -- napisy na żywo: dedykowany nasłuch mowy, używany gdy NIE ma już innego nasłuchu
   // (czyli dla PL, albo dla ZH gdy tłumaczenie głosu jest wyłączone) --
   const captionRecognitionRef = useRef(null)
@@ -259,35 +264,73 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     return null
   }
 
-  // dopisuje nowy kawałek do BIEŻĄCEJ wiadomości-napisów na czacie (albo tworzy ją, jeśli
-  // to pierwszy kawałek tej wypowiedzi) — stąd użytkownicy widzą oryginał + tłumaczenie
-  // rosnące na żywo w tym samym czacie, w którym jest ten kanał głosowy
-  async function upsertCaptionRow(piece, translatedPiece, srcLangCode, targetLangCode) {
-    if (!chatChannelId || !piece.trim()) return
-    captionOrigRef.current = (captionOrigRef.current ? captionOrigRef.current + ' ' : '') + piece.trim()
-    captionTransRef.current = (captionTransRef.current ? captionTransRef.current + ' ' : '') + (translatedPiece || piece).trim()
+  const PREVIEW_THROTTLE_MS = 450
+
+  // aktualizuje TYLKO oryginalny tekst ("content") — natychmiast, słowo po słowie, w miarę
+  // jak rozpoznawanie mowy rozpoznaje kolejne słowa. Zapisy do bazy są throttlowane (maks.
+  // ~1 na PREVIEW_THROTTLE_MS) — bez tego wysyłalibyśmy zapytanie kilka razy na sekundę.
+  function scheduleLivePreview(fullTextSoFar, srcLangCode, targetLangCode) {
+    if (!chatChannelId) return
+    previewPendingTextRef.current = fullTextSoFar
+    const now = Date.now()
+    const elapsed = now - previewLastSentAtRef.current
+    if (elapsed >= PREVIEW_THROTTLE_MS) {
+      sendPreviewNow(srcLangCode, targetLangCode)
+    } else if (!previewTimerRef.current) {
+      previewTimerRef.current = setTimeout(() => {
+        previewTimerRef.current = null
+        sendPreviewNow(srcLangCode, targetLangCode)
+      }, PREVIEW_THROTTLE_MS - elapsed)
+    }
+  }
+
+  async function sendPreviewNow(srcLangCode, targetLangCode) {
+    previewLastSentAtRef.current = Date.now()
+    const text = previewPendingTextRef.current
+    if (!chatChannelId || !text || !text.trim()) return
     try {
       if (!captionRowIdRef.current) {
         const { data: inserted, error } = await supabase.from('chat_messages').insert({
           channel_id: chatChannelId, sender_id: currentUserId,
-          content: captionOrigRef.current, translated_content: captionTransRef.current,
+          content: text, translated_content: captionTransRef.current || null,
           original_language: srcLangCode, translated_language: targetLangCode,
           is_live_caption: true,
         }).select('id').single()
         if (!error && inserted) captionRowIdRef.current = inserted.id
       } else {
-        await supabase.from('chat_messages').update({
-          content: captionOrigRef.current, translated_content: captionTransRef.current,
-        }).eq('id', captionRowIdRef.current)
+        await supabase.from('chat_messages').update({ content: text }).eq('id', captionRowIdRef.current)
       }
-    } catch (e) { /* nie udało się zapisać napisów — nasłuch i rozmowa jedą dalej */ }
+    } catch (e) { /* pojedyncza aktualizacja podglądu się nie udała — kolejne i tak nadejdą */ }
+  }
+
+  // dopisuje nowo przetłumaczony kawałek do TŁUMACZENIA bieżącej wiadomości-napisów (druga
+  // linijka, pod oryginałem) — to aktualizuje się rzadziej niż oryginał, bo tłumaczenie
+  // wymaga kontekstu (nie da się dobrze tłumaczyć słowo po słowie)
+  async function upsertCaptionRow(piece, translatedPiece, srcLangCode, targetLangCode) {
+    if (!chatChannelId || !piece.trim()) return
+    captionTransRef.current = (captionTransRef.current ? captionTransRef.current + ' ' : '') + (translatedPiece || piece).trim()
+    try {
+      if (!captionRowIdRef.current) {
+        const { data: inserted, error } = await supabase.from('chat_messages').insert({
+          channel_id: chatChannelId, sender_id: currentUserId,
+          content: previewPendingTextRef.current || piece, translated_content: captionTransRef.current,
+          original_language: srcLangCode, translated_language: targetLangCode,
+          is_live_caption: true,
+        }).select('id').single()
+        if (!error && inserted) captionRowIdRef.current = inserted.id
+      } else {
+        await supabase.from('chat_messages').update({ translated_content: captionTransRef.current }).eq('id', captionRowIdRef.current)
+      }
+    } catch (e) { /* nie udało się zapisać tłumaczenia napisów — nasłuch i rozmowa jedą dalej */ }
   }
 
   // koniec wypowiedzi (dłuższa pauza w mówieniu) — następny kawałek zacznie NOWĄ wiadomość
   function resetCaptionRow() {
     captionRowIdRef.current = null
-    captionOrigRef.current = ''
     captionTransRef.current = ''
+    previewPendingTextRef.current = ''
+    previewLastSentAtRef.current = 0
+    if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null }
   }
 
   // dedykowany nasłuch mowy TYLKO do napisów (używany dla PL, oraz dla ZH gdy tłumaczenie
@@ -335,6 +378,9 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i]
         const text = res[0]?.transcript || ''
+        // oryginał aktualizuje się NATYCHMIAST, słowo po słowie — niezależnie od tego,
+        // kiedy tłumaczenie zdąży dogonić (poniżej)
+        scheduleLivePreview(text, srcLangCode, targetLangCode)
         if (res.isFinal) { flushC(i, text, true); continue }
         const already = captionChunkSentUpToRef.current[i] || 0
         const newPart = text.slice(already)
@@ -436,6 +482,9 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i]
         const text = res[0]?.transcript || ''
+        // napisy: oryginał aktualizuje się NATYCHMIAST, słowo po słowie (jeśli włączone) —
+        // niezależnie od tempa tłumaczenia/dubbingu głosowego poniżej
+        if (liveCaptions) scheduleLivePreview(text, 'zh', 'pl')
         if (res.isFinal) {
           flush(i, text, true)
           continue
@@ -549,6 +598,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     captionChunkTimersRef.current = {}
     captionChunkSentUpToRef.current = {}
     captionChunkLastTextRef.current = {}
+    if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null }
     resetCaptionRow()
     setCaptionsActive(false)
     setCaptionsError('')
