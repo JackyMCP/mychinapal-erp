@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider } from './lib/i18n/LanguageContext'
+import { UIProvider } from './lib/ui'
+import CommandPalette from './components/CommandPalette'
+import GlobalStyles from './components/ui/GlobalStyles'
 import Sidebar from './components/Sidebar'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -24,6 +27,7 @@ function Protected({ children }) {
 function Shell() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: C.bg }}>
+      <CommandPalette />
       <Sidebar />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Routes>
@@ -47,12 +51,15 @@ function Shell() {
 export default function App() {
   return (
     <LanguageProvider>
+      <GlobalStyles />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/*" element={<Protected><Shell /></Protected>} />
-          </Routes>
+          <UIProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/*" element={<Protected><Shell /></Protected>} />
+            </Routes>
+          </UIProvider>
         </AuthProvider>
       </BrowserRouter>
     </LanguageProvider>

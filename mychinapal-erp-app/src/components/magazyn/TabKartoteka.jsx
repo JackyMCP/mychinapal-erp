@@ -4,12 +4,14 @@ import { supabase } from '../../lib/supabaseClient'
 import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { photoGradient } from './utils'
+import { useUI } from '../../lib/ui'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
 
 export default function TabKartoteka({ products, loading, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [uploadingId, setUploadingId] = useState(null)
@@ -28,10 +30,10 @@ export default function TabKartoteka({ products, loading, onChanged }) {
     setUploadingId(product.id)
     const path = `${product.id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('produkty').upload(path, file)
-    if (upErr) { setUploadingId(null); alert('Nie udało się wgrać zdjęcia: ' + upErr.message); return }
+    if (upErr) { setUploadingId(null); toast.error('Nie udało się wgrać zdjęcia: ' + upErr.message); return }
     const { error } = await supabase.from('products').update({ photo_path: path }).eq('id', product.id)
     setUploadingId(null)
-    if (error) { alert('Nie udało się zapisać zdjęcia: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać zdjęcia: ' + error.message); return }
     onChanged && onChanged()
   }
 
@@ -58,7 +60,7 @@ export default function TabKartoteka({ products, loading, onChanged }) {
         const url = photoUrl(p.photo_path)
         const low = p.min_stock != null && Number(p.stock) < Number(p.min_stock)
         return (
-          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 10 }}>
+          <div key={p.id} className="ux-hover-lift" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', border: `1px solid ${C.border}`, borderRadius: 14, marginBottom: 10, background: C.white }}>
             <div style={{
               width: 60, height: 60, borderRadius: 14, flexShrink: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff', fontSize: p.is_service ? 22 : 0, background: url ? `url(${url})` : photoGradient(p.code), backgroundSize: 'cover', backgroundPosition: 'center',

@@ -3,11 +3,13 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { paymentStatus, daysOverdue } from './utils'
+import { useUI } from '../../lib/ui'
 
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
 
 export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState(null)
@@ -19,9 +21,9 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }
   }), [invoices, filter, search])
 
   const handleDownload = async (inv) => {
-    if (!inv.pdf_path) { alert('Ta faktura nie ma jeszcze wygenerowanego PDF.'); return }
+    if (!inv.pdf_path) { toast.error('Ta faktura nie ma jeszcze wygenerowanego PDF.'); return }
     const { data, error } = await supabase.storage.from('faktury').createSignedUrl(inv.pdf_path, 300)
-    if (error) { alert('Nie udało się pobrać PDF: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać PDF: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 

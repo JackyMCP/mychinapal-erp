@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
+import { useUI } from '../../lib/ui'
 
 export default function ProjectTeam({ project, currentUserId }) {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [profiles, setProfiles] = useState([])
   const [assignments, setAssignments] = useState([])
@@ -32,10 +34,10 @@ export default function ProjectTeam({ project, currentUserId }) {
     if (isAssigned(uid)) {
       const row = assignments.find(a => a.user_id === uid)
       const { error } = await supabase.from('project_assignments').delete().eq('id', row.id)
-      if (error) { alert('Nie udało się usunąć: ' + error.message); return }
+      if (error) { toast.error('Nie udało się usunąć: ' + error.message); return }
     } else {
       const { error } = await supabase.from('project_assignments').insert({ project_id: project.id, user_id: uid })
-      if (error) { alert('Nie udało się przypisać: ' + error.message); return }
+      if (error) { toast.error('Nie udało się przypisać: ' + error.message); return }
     }
     load()
   }

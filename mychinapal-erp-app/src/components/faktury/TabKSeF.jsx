@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, marginBottom: 16 }
 const fieldWrap = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }
@@ -12,6 +13,7 @@ const KEYS = ['company_name', 'company_nip', 'company_address', 'company_bank_ac
 
 export default function TabKSeF({ invoices, onCompanySettingsChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -31,7 +33,7 @@ export default function TabKSeF({ invoices, onCompanySettingsChanged }) {
     const rows = KEYS.map(k => ({ key: k, value: settings[k] ?? '' }))
     const { error } = await supabase.from('company_settings').upsert(rows, { onConflict: 'key' })
     setSaving(false)
-    if (error) { alert('Nie udało się zapisać ustawień: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać ustawień: ' + error.message); return }
     onCompanySettingsChanged && onCompanySettingsChanged()
   }
 

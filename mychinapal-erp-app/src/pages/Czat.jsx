@@ -8,6 +8,8 @@ import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
 import VoiceChannel from '../components/dashboard/VoiceChannel'
 import { DOC_CATEGORIES } from '../components/projekty/stageDefs'
+import { useUI } from '../lib/ui'
+import EmptyState from '../components/ui/EmptyState'
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
 
 const TYPE_STYLE = {
@@ -31,6 +33,7 @@ const smallBtn = (st, active) => ({
 
 export default function Czat() {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const { profile, isZarzad } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -56,7 +59,7 @@ export default function Czat() {
       .from('chat_channels')
       .select('*, clients(name), projects(order_label)')
       .order('created_at', { ascending: false })
-    if (error) { console.error(error); alert('Nie udało się wczytać kanałów: ' + error.message) }
+    if (error) { console.error(error); toast.error('Nie udało się wczytać kanałów: ' + error.message) }
     setChannels(data || [])
     setLoadingChannels(false)
     const wanted = searchParams.get('channel')
@@ -81,7 +84,7 @@ export default function Czat() {
         .select(MSG_SELECT)
         .eq('channel_id', activeId)
         .order('created_at', { ascending: true })
-      if (error) { console.error(error); alert('Nie udało się wczytać historii wiadomości: ' + error.message); return }
+      if (error) { console.error(error); toast.error('Nie udało się wczytać historii wiadomości: ' + error.message); return }
       if (!cancelled) setMessages(data || [])
     })()
 
@@ -115,18 +118,18 @@ export default function Czat() {
     if (attachFile) {
       if (!active?.client_id) {
         setSending(false)
-        alert('Ten kanał nie jest powiązany z klientem — załączniki można wysyłać tylko na kanałach klienta/projektu.')
+        toast.error('Ten kanał nie jest powiązany z klientem — załączniki można wysyłać tylko na kanałach klienta/projektu.')
         return
       }
       const path = `${active.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
-      if (upErr) { setSending(false); alert('Nie udało się wysłać pliku: ' + upErr.message); return }
+      if (upErr) { setSending(false); toast.error('Nie udało się wysłać pliku: ' + upErr.message); return }
       const { data: doc, error: docErr } = await supabase.from('documents').insert({
         client_id: active.client_id, project_id: active.project_id || null,
         category: attachCategory, file_path: path, file_name: attachFile.name,
         uploaded_by: user.id, source: 'chat',
       }).select().single()
-      if (docErr) { setSending(false); alert('Nie udało się zapisać dokumentu: ' + docErr.message); return }
+      if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
 
@@ -135,7 +138,7 @@ export default function Czat() {
       attachment_document_id: attachmentDocId,
     }).select(MSG_SELECT).single()
     setSending(false)
-    if (error) { console.error(error); alert('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (error) { console.error(error); toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     // pokaż wiadomość natychmiast, niezależnie od tego czy zdarzenie realtime dotrze
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
     setText('')
@@ -146,7 +149,7 @@ export default function Czat() {
   const handleDownload = async (doc) => {
     if (!doc) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 
@@ -156,8 +159,8 @@ export default function Czat() {
     setRenameSaving(true)
     const { data, error } = await supabase.from('chat_channels').update({ name: renameValue.trim() }).eq('id', active.id).select()
     setRenameSaving(false)
-    if (error) { alert('Nie udało się zmienić nazwy: ' + error.message); return }
-    if (!data || data.length === 0) { alert('Brak uprawnień do zmiany nazwy tego kanału — może to zrobić tylko Zarząd albo osoba, która utworzyła kanał.'); return }
+    if (error) { toast.error('Nie udało się zmienić nazwy: ' + error.message); return }
+    if (!data || data.length === 0) { toast.error('Brak uprawnień do zmiany nazwy tego kanału — może to zrobić tylko Zarząd albo osoba, która utworzyła kanał.'); return }
     setRenaming(false)
     loadChannels()
   }
@@ -190,7 +193,7 @@ export default function Czat() {
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
           {loadingChannels && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>}
-          {!loadingChannels && channels.length === 0 && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Brak kanałów — utwórz pierwszy.")}</div>}
+          {!loadingChannels && channels.length === 0 && <EmptyState icon="💬" title={t("Brak kanałów")} subtitle={t("Utwórz pierwszy kanał, żeby zacząć rozmowę.")} />}
           {channels.map((ch, i) => {
             const type = channelType(ch)
             const st = TYPE_STYLE[type]
@@ -266,7 +269,7 @@ export default function Czat() {
                 <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} />
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 20 }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
+                {messages.length === 0 && <EmptyState icon="✉️" title={t("Brak wiadomości")} subtitle={t("Napisz pierwszą wiadomość na tym kanale.")} />}
                 {messages.map(m => {
                   const mine = m.sender_id === profile?.id
                   const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents

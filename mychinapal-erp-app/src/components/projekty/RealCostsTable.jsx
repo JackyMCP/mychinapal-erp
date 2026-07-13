@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6 }
 const fieldWrap = { display: 'flex', flexDirection: 'column' }
@@ -22,6 +23,7 @@ export default function RealCostsTable({ project, onSaved }) {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [values, setValues] = useState(Object.fromEntries(FIELDS.map(([k]) => [k, project[k] ?? ''])))
   const [saving, setSaving] = useState(false)
@@ -43,7 +45,7 @@ export default function RealCostsTable({ project, onSaved }) {
     const payload = Object.fromEntries(FIELDS.map(([k]) => [k, values[k] === '' ? null : Number(values[k])]))
     const { error } = await supabase.from('projects').update(payload).eq('id', project.id)
     setSaving(false)
-    if (error) { alert('Nie udało się zapisać: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać: ' + error.message); return }
     onSaved && onSaved({ ...project, ...payload })
   }
 

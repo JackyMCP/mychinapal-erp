@@ -3,12 +3,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
+import CountUp from '../components/ui/CountUp'
 import TabRejestr from '../components/faktury/TabRejestr'
 import TabNowaFaktura from '../components/faktury/TabNowaFaktura'
 import TabNaleznosci from '../components/faktury/TabNaleznosci'
 import TabVAT from '../components/faktury/TabVAT'
 import TabKSeF from '../components/faktury/TabKSeF'
 import { paymentStatus } from '../components/faktury/utils'
+import { useUI } from '../lib/ui'
 
 const TABS = [
   { key: 'rejestr', label: 'Rejestr faktur', icon: '📋' },
@@ -20,6 +22,7 @@ const TABS = [
 
 export default function Faktury() {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const { profile } = useAuth()
   const [invoices, setInvoices] = useState([])
   const [clients, setClients] = useState([])
@@ -61,8 +64,8 @@ export default function Faktury() {
 
   const handleRetryKsef = async (invoice) => {
     const { data, error } = await supabase.functions.invoke('ksef-send-invoice', { body: { invoice_id: invoice.id } })
-    if (error) { alert('Nie udało się wywołać wysyłki do KSeF: ' + error.message); return }
-    if (data && !data.ok) alert('KSeF zwrócił błąd: ' + data.error)
+    if (error) { toast.error('Nie udało się wywołać wysyłki do KSeF: ' + error.message); return }
+    if (data && !data.ok) toast.error('KSeF zwrócił błąd: ' + data.error)
     await loadInvoices()
   }
 
@@ -106,19 +109,19 @@ export default function Faktury() {
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Wystawione w tym miesiącu")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{stats.wystawioneWMiesiacu}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={stats.wystawioneWMiesiacu} /></div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Suma należności")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{Math.round(stats.sumaNaleznosci).toLocaleString('pl-PL')} {t("PLN")}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.sumaNaleznosci)} /> {t("PLN")}</div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Przeterminowane")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{stats.przeterminowane}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={stats.przeterminowane} /></div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Wysłane do KSeF")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{stats.wyslaneKsef} / {stats.wszystkieWMiesiacu}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={stats.wyslaneKsef} /> / <CountUp value={stats.wszystkieWMiesiacu} /></div>
               </div>
             </div>
           </div>

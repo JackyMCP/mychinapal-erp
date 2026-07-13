@@ -3,9 +3,11 @@ import { useMemo } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { paymentStatus, daysOverdue } from './utils'
+import { useUI } from '../../lib/ui'
 
 export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
 
   const unpaid = useMemo(() => invoices
     .filter(inv => !inv.paid_at && inv.typ !== 'pro forma')
@@ -19,7 +21,7 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
 
   const handleMarkPaid = async (inv) => {
     const { error } = await supabase.from('invoices').update({ paid_at: new Date().toISOString() }).eq('id', inv.id)
-    if (error) { alert('Nie udało się oznaczyć jako opłaconej: ' + error.message); return }
+    if (error) { toast.error('Nie udało się oznaczyć jako opłaconej: ' + error.message); return }
     onChanged && onChanged()
   }
 
@@ -36,8 +38,8 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
       client_id: inv.client_id, assigned_to: currentUserId, assigned_by: currentUserId,
       due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
     })
-    if (error) { alert('Nie udało się utworzyć zadania: ' + error.message); return }
-    alert('Zadanie utworzone.')
+    if (error) { toast.error('Nie udało się utworzyć zadania: ' + error.message); return }
+    toast.error('Zadanie utworzone.')
   }
 
   return (

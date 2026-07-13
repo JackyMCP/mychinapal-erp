@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
+import { useUI } from '../../lib/ui'
 
 const DOW = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const EVENT_COLORS = [C.blue, C.purple, C.orange, C.green]
@@ -21,6 +22,7 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const today = new Date()
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -66,11 +68,11 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
     const { data: ev, error } = await supabase.from('calendar_events').insert({
       title: title.trim(), start_at: startAt, end_at: endAt, created_by: currentUserId,
     }).select().single()
-    if (error) { setSaving(false); alert('Nie udało się dodać wydarzenia: ' + error.message); return }
+    if (error) { setSaving(false); toast.error('Nie udało się dodać wydarzenia: ' + error.message); return }
     const uniqueAttendees = [...new Set([...attendeeIds, currentUserId])]
     const { error: attErr } = await supabase.from('event_attendees').insert(uniqueAttendees.map(uid => ({ event_id: ev.id, user_id: uid })))
     setSaving(false)
-    if (attErr) { alert('Wydarzenie dodane, ale nie udało się przypisać uczestników: ' + attErr.message) }
+    if (attErr) { toast.error('Wydarzenie dodane, ale nie udało się przypisać uczestników: ' + attErr.message) }
     setTitle(''); setAttendeeIds([currentUserId]); setShowAdd(false)
     onChanged && onChanged()
   }
@@ -78,7 +80,7 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
   const handleDelete = async (eventId) => {
     if (!confirm('Usunąć to wydarzenie?')) return
     const { error } = await supabase.from('calendar_events').delete().eq('id', eventId)
-    if (error) { alert('Nie udało się usunąć: ' + error.message); return }
+    if (error) { toast.error('Nie udało się usunąć: ' + error.message); return }
     onChanged && onChanged()
   }
 

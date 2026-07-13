@@ -5,6 +5,7 @@ import { C } from '../../lib/theme'
 import { nextInvoiceNumber, computeTotals } from './utils'
 import { nextDocNumber } from '../magazyn/utils'
 import { generateInvoicePdf } from './pdf'
+import { useUI } from '../../lib/ui'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const fieldWrap = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }
@@ -15,6 +16,7 @@ const emptyItem = () => ({ product_id: '', description: '', quantity: 1, unit: '
 
 export default function TabNowaFaktura({ clients, projects, products, company, onCreated }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [typ, setTyp] = useState('sprzedaży')
   const [clientId, setClientId] = useState(clients[0]?.id || '')
   const [projectId, setProjectId] = useState('')
@@ -56,9 +58,9 @@ export default function TabNowaFaktura({ clients, projects, products, company, o
   }
 
   const handleSubmit = async () => {
-    if (!clientId) { alert('Wybierz klienta.'); return }
+    if (!clientId) { toast.error('Wybierz klienta.'); return }
     const validItems = items.filter(it => it.product_id && Number(it.quantity) > 0)
-    if (validItems.length === 0) { alert('Dodaj przynajmniej jedną pozycję z magazynu.'); return }
+    if (validItems.length === 0) { toast.error('Dodaj przynajmniej jedną pozycję z magazynu.'); return }
 
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -71,7 +73,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, o
       subtotal_net: t2.net, vat_total: t2.vat, total_gross: t2.gross,
       amount: t2.gross, status: 'nieopłacona', created_by: user?.id,
     }).select().single()
-    if (invErr) { setSaving(false); alert('Nie udało się zapisać faktury: ' + invErr.message); return }
+    if (invErr) { setSaving(false); toast.error('Nie udało się zapisać faktury: ' + invErr.message); return }
 
     const itemRows = validItems.map(it => {
       const net = (Number(it.quantity) || 0) * (Number(it.unit_price_net) || 0)
@@ -83,7 +85,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, o
       }
     })
     const { error: itemsErr } = await supabase.from('invoice_items').insert(itemRows)
-    if (itemsErr) { setSaving(false); alert('Faktura zapisana, ale nie udało się zapisać pozycji: ' + itemsErr.message); return }
+    if (itemsErr) { setSaving(false); toast.error('Faktura zapisana, ale nie udało się zapisać pozycji: ' + itemsErr.message); return }
 
     // automatyczne WZ dla towarów (nie usług)
     for (const it of validItems) {

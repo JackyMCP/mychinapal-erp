@@ -2,16 +2,18 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
+import LoadingButton from './../ui/LoadingButton'
 
 export default function CompanyDirection({ currentUserId }) {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [row, setRow] = useState(null)
   const [text, setText] = useState('')
   const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -25,20 +27,19 @@ export default function CompanyDirection({ currentUserId }) {
   }, [])
 
   const handleSave = async () => {
-    setSaving(true)
     if (row) {
       const { error } = await supabase.from('company_direction').update({ content: text, updated_by: currentUserId, updated_at: new Date().toISOString() }).eq('id', row.id)
-      if (error) { setSaving(false); alert('Nie udało się zapisać: ' + error.message); return }
+      if (error) { toast.error('Nie udało się zapisać: ' + error.message); throw error }
     } else {
       const { data, error } = await supabase.from('company_direction').insert({ content: text, updated_by: currentUserId }).select().single()
-      if (error) { setSaving(false); alert('Nie udało się zapisać: ' + error.message); return }
+      if (error) { toast.error('Nie udało się zapisać: ' + error.message); throw error }
       setRow(data)
     }
     // odśwież z joinem, żeby mieć nazwisko autora
     const { data: fresh } = await supabase.from('company_direction').select('*, profiles(full_name)').order('updated_at', { ascending: false }).limit(1).maybeSingle()
     if (fresh) setRow(fresh)
-    setSaving(false)
     setEditing(false)
+    toast.success(t('Zapisano kierunek firmy'))
   }
 
   if (loading) return null
@@ -87,7 +88,7 @@ export default function CompanyDirection({ currentUserId }) {
           <textarea value={text} onChange={e => setText(e.target.value)} placeholder={t("Opisz aktualne priorytety i kierunek firmy…")} autoFocus
             style={{ width: '100%', minHeight: 100, background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.18)', borderRadius: 10, padding: 14, fontSize: 15, color: '#fff', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={handleSave} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{saving ? t("Zapisywanie…") : t("Zapisz")}</button>
+            <LoadingButton onClick={handleSave}>{t("Zapisz")}</LoadingButton>
             <button onClick={() => { setEditing(false); setText(row?.content || '') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{t("Anuluj")}</button>
           </div>
         </div>

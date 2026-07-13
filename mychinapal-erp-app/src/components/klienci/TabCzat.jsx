@@ -6,11 +6,13 @@ import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
+import { useUI } from '../../lib/ui'
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function TabCzat({ clientId, clientName, projectIds }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const navigate = useNavigate()
   const [channelId, setChannelId] = useState(null)
   const [projectChannels, setProjectChannels] = useState([])
@@ -78,11 +80,11 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
     if (attachFile) {
       const path = `${clientId}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
-      if (upErr) { setSending(false); alert('Nie udało się wysłać pliku: ' + upErr.message); return }
+      if (upErr) { setSending(false); toast.error('Nie udało się wysłać pliku: ' + upErr.message); return }
       const { data: doc, error: docErr } = await supabase.from('documents').insert({
         client_id: clientId, category: attachCategory, file_path: path, file_name: attachFile.name, uploaded_by: user.id, source: 'chat',
       }).select().single()
-      if (docErr) { setSending(false); alert('Nie udało się zapisać dokumentu: ' + docErr.message); return }
+      if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
@@ -90,7 +92,7 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
       attachment_document_id: attachmentDocId,
     }).select(MSG_SELECT).single()
     setSending(false)
-    if (error) { alert('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
@@ -99,7 +101,7 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
   const handleDownload = async (doc) => {
     if (!doc) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 

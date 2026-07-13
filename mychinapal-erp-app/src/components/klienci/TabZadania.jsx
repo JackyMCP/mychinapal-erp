@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 function dueLabel(due, t) {
   if (!due) return null
@@ -13,6 +14,7 @@ function dueLabel(due, t) {
 
 export default function TabZadania({ tasks, profiles, currentUserId, clientId, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [showAdd, setShowAdd] = useState(false)
   const [title, setTitle] = useState('')
   const [assignee, setAssignee] = useState(currentUserId)
@@ -27,7 +29,7 @@ export default function TabZadania({ tasks, profiles, currentUserId, clientId, o
       due_date: dueDate || null, status: 'todo',
     })
     setSaving(false)
-    if (error) { alert('Nie udało się dodać zadania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się dodać zadania: ' + error.message); return }
     setTitle(''); setDueDate(''); setShowAdd(false)
     onChanged && onChanged()
   }
@@ -36,7 +38,7 @@ export default function TabZadania({ tasks, profiles, currentUserId, clientId, o
     const nextStatus = task.status === 'done' ? 'todo' : 'done'
     const patch = { status: nextStatus, completed_at: nextStatus === 'done' ? new Date().toISOString() : null }
     const { error } = await supabase.from('tasks').update(patch).eq('id', task.id)
-    if (error) { alert('Nie udało się zaktualizować zadania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zaktualizować zadania: ' + error.message); return }
     onChanged && onChanged()
   }
 

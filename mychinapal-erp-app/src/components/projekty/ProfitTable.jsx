@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6, whiteSpace: 'nowrap' }
 const fieldWrap = { display: 'flex', flexDirection: 'column' }
@@ -11,6 +12,7 @@ export default function ProfitTable({ project, onSaved }) {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [koszt, setKoszt] = useState(project.value ?? '')
   const [zakup, setZakup] = useState(project.est_zakup ?? '')
@@ -38,7 +40,7 @@ export default function ProfitTable({ project, onSaved }) {
       est_clo: clo === '' ? null : Number(clo),
     }).eq('id', project.id)
     setSaving(false)
-    if (error) { alert('Nie udało się zapisać: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać: ' + error.message); return }
     onSaved && onSaved({ ...project, value: Number(koszt) || null, est_zakup: Number(zakup) || null, est_transport: Number(transport) || null, est_clo: Number(clo) || null })
   }
 

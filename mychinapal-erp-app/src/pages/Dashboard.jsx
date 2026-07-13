@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
 import { C } from '../lib/theme'
+import CountUp from '../components/ui/CountUp'
 import WhoAmI from '../components/dashboard/WhoAmI'
 import MyProjects from '../components/dashboard/MyProjects'
 import MyTasks from '../components/dashboard/MyTasks'
@@ -67,11 +68,11 @@ export default function Dashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 14 }}>
             <div style={{ background: C.navy, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
               <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wpływy (WN+)")}</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wpływy).toLocaleString('pl-PL')} {t("PLN")}</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}><CountUp value={Math.round(txSum.wpływy)} /> {t("PLN")}</div>
             </div>
             <div style={{ background: C.navy2, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
               <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wypływy (MA-)")}</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}>{Math.round(txSum.wypływy).toLocaleString('pl-PL')} {t("PLN")}</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}><CountUp value={Math.round(txSum.wypływy)} /> {t("PLN")}</div>
             </div>
           </div>
         )}

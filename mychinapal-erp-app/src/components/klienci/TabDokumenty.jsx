@@ -1,6 +1,8 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { C } from '../../lib/theme'
 import { supabase } from '../../lib/supabaseClient'
+import { useUI } from '../../lib/ui'
+import EmptyState from '../ui/EmptyState'
 
 const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }
 
@@ -20,28 +22,29 @@ const CAT_STYLE = {
 
 export default function TabDokumenty({ documents, projects, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const projectLabelById = Object.fromEntries((projects || []).map(p => [p.id, p.order_label]))
 
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 
   const handleDelete = async (doc, e) => {
     e.stopPropagation()
-    if (!window.confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
+    if (!await confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
     const { error: stErr } = await supabase.storage.from('dokumenty').remove([doc.file_path])
-    if (stErr) { alert('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
+    if (stErr) { toast.error('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
     const { data: delRows, error: dbErr } = await supabase.from('documents').delete().eq('id', doc.id).select()
-    if (dbErr) { alert('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
-    if (!delRows || delRows.length === 0) { alert(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
+    if (dbErr) { toast.error('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
+    if (!delRows || delRows.length === 0) { toast.error(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
     onChanged && onChanged()
   }
 
   if (documents.length === 0) return (
-    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, fontSize: 11, color: C.muted }}>
-      {t("Brak dokumentów — pliki wysłane na czacie tego klienta pojawią się tutaj automatycznie.")}
+    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 4 }}>
+      <EmptyState icon="📁" title={t("Brak dokumentów")} subtitle={t("Pliki wysłane na czacie tego klienta pojawią się tutaj automatycznie.")} />
     </div>
   )
 

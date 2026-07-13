@@ -14,11 +14,14 @@ import StageTimeline from '../components/projekty/StageTimeline'
 import ProjectFiles from '../components/projekty/ProjectFiles'
 import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
+import { useUI } from '../lib/ui'
+import EmptyState from '../components/ui/EmptyState'
 
 export default function Projekty() {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const { profile } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -89,7 +92,7 @@ export default function Projekty() {
 
   const handleAssignClient = async (project, newClientId) => {
     const { error } = await supabase.from('projects').update({ client_id: newClientId, updated_at: new Date().toISOString() }).eq('id', project.id)
-    if (error) { alert('Nie udało się zaktualizować powiązania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zaktualizować powiązania: ' + error.message); return }
     await loadAll()
   }
 
@@ -147,7 +150,7 @@ export default function Projekty() {
           ))}
         </div>
 
-        {filtered.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted, padding: 20, textAlign: 'center' }}>{t("Brak zamówień do wyświetlenia.")}</div>}
+        {filtered.length === 0 && !loading && <EmptyState icon="📦" title={t("Brak zamówień")} subtitle={t("Nie znaleziono zamówień spełniających kryteria wyszukiwania.")} />}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(p => (

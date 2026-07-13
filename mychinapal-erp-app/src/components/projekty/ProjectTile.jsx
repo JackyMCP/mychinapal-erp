@@ -45,7 +45,7 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
   }
 
   return (
-    <div className="tile" onClick={onClick} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, cursor: 'pointer', transition: 'all .15s' }}>
+    <div className="ux-hover-lift" onClick={onClick} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
         <div style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(clientName) }}>{initials(clientName)}</div>
         <div style={{ flex: 1, minWidth: 0 }}>

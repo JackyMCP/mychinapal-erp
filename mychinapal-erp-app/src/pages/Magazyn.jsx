@@ -2,6 +2,7 @@ import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { C } from '../lib/theme'
+import CountUp from '../components/ui/CountUp'
 import TabKartoteka from '../components/magazyn/TabKartoteka'
 import TabDokumenty from '../components/magazyn/TabDokumenty'
 import TabNowy from '../components/magazyn/TabNowy'
@@ -73,11 +74,11 @@ export default function Magazyn() {
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Wartość magazynu")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{Math.round(stats.wartosc).toLocaleString('pl-PL')} {t("PLN")}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.wartosc)} /> {t("PLN")}</div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Liczba indeksów")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{stats.liczbaIndeksow}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={stats.liczbaIndeksow} /></div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Poniżej minimum")}</div>
@@ -88,7 +89,7 @@ export default function Magazyn() {
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Przyjęcia w tym miesiącu (PZ)")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}>{stats.pzWTymMiesiacu}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={stats.pzWTymMiesiacu} /></div>
               </div>
             </div>
           </div>

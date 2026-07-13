@@ -158,7 +158,7 @@ export default function Klienci() {
               const days = lastContactDays(act)
               const m = marzaById[c.id]
               return (
-                <div key={c.id} onClick={() => handleSelect(c)}
+                <div key={c.id} onClick={() => handleSelect(c)} className="ux-row-hover"
                   style={{ padding: '14px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(c.name) }}>{initials(c.name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>

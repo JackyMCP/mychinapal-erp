@@ -4,9 +4,12 @@ import { supabase } from '../../lib/supabaseClient'
 import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
+import { useUI } from '../../lib/ui'
+import EmptyState from '../ui/EmptyState'
 
 export default function ProjectFiles({ project, documents, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [category, setCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1] || DOC_CATEGORIES[0])
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef(null)
@@ -17,31 +20,31 @@ export default function ProjectFiles({ project, documents, onChanged }) {
     const { data: { user } } = await supabase.auth.getUser()
     const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, file)
-    if (upErr) { setUploading(false); alert('Nie udało się wgrać pliku: ' + upErr.message); return }
+    if (upErr) { setUploading(false); toast.error('Nie udało się wgrać pliku: ' + upErr.message); return }
     const { error: docErr } = await supabase.from('documents').insert({
       client_id: project.client_id, project_id: project.id,
       category, file_path: path, file_name: file.name, uploaded_by: user.id, source: 'manual',
     })
     setUploading(false)
-    if (docErr) { alert('Nie udało się zapisać dokumentu: ' + docErr.message); return }
+    if (docErr) { toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
     onChanged && onChanged()
     if (fileRef.current) fileRef.current.value = ''
   }
 
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 
   const handleDelete = async (doc, e) => {
     e.stopPropagation()
-    if (!window.confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
+    if (!await confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
     const { error: stErr } = await supabase.storage.from('dokumenty').remove([doc.file_path])
-    if (stErr) { alert('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
+    if (stErr) { toast.error('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
     const { data: delRows, error: dbErr } = await supabase.from('documents').delete().eq('id', doc.id).select()
-    if (dbErr) { alert('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
-    if (!delRows || delRows.length === 0) { alert(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
+    if (dbErr) { toast.error('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
+    if (!delRows || delRows.length === 0) { toast.error(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
     onChanged && onChanged()
   }
 
@@ -65,9 +68,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
       </div>
 
       {sorted.length === 0 && (
-        <div style={{ fontSize: 11, color: C.muted }}>
-          {t('Brak plików — pliki wysłane na czacie tego zamówienia pojawią się tutaj automatycznie, albo wgraj je ręcznie powyżej.')}
-        </div>
+        <EmptyState icon="📁" title={t('Brak plików')} subtitle={t('Pliki wysłane na czacie tego zamówienia pojawią się tutaj automatycznie, albo wgraj je ręcznie powyżej.')} />
       )}
       {sorted.map(doc => (
         <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>

@@ -1,11 +1,11 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLang } from '../lib/i18n/LanguageContext'
 import { C } from '../lib/theme'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import InstallAppButton from './InstallAppButton'
 
-const MODULES = [
+export const MODULES = [
   { path: '/', label: 'Dashboard', icon: '🏠', end: true },
   { path: '/kasa', label: 'Kasa & Bank', icon: '💰' },
   { path: '/klienci', label: 'Klienci & CRM', icon: '🧑‍💼' },
@@ -19,13 +19,31 @@ const MODULES = [
   { path: '/ustawienia', label: 'Ustawienia', icon: '⚙️' },
 ]
 
-const ZARZAD_ONLY_PATHS = ['/kasa', '/faktury']
+export const ZARZAD_ONLY_PATHS = ['/kasa', '/faktury']
+
+function isModActive(m, pathname) {
+  if (m.end) return pathname === m.path
+  return pathname === m.path || pathname.startsWith(m.path + '/')
+}
 
 export default function Sidebar() {
   const { profile, signOut, isZarzad } = useAuth()
   const { lang, setLang, t } = useLang()
   const [collapsed, setCollapsed] = useState(false)
   const modules = MODULES.filter(m => isZarzad || !ZARZAD_ONLY_PATHS.includes(m.path))
+  const location = useLocation()
+  const navRefs = useRef({})
+  const [pill, setPill] = useState({ top: 0, height: 0, opacity: 0 })
+
+  useEffect(() => {
+    const activeMod = modules.find(m => isModActive(m, location.pathname))
+    const el = activeMod && navRefs.current[activeMod.path]
+    if (el) {
+      setPill({ top: el.offsetTop, height: el.offsetHeight, opacity: 1 })
+    } else {
+      setPill(p => ({ ...p, opacity: 0 }))
+    }
+  }, [location.pathname, collapsed, modules.length])
 
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
@@ -54,13 +72,20 @@ export default function Sidebar() {
           }}>{t("中文")}</button>
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px', position: 'relative' }}>
+        <div style={{
+          position: 'absolute', left: 6, right: 6, borderRadius: 7, background: 'linear-gradient(135deg, rgba(37,99,235,.9), rgba(59,130,246,.75))',
+          boxShadow: '0 4px 14px rgba(37,99,235,.35)', zIndex: 0, pointerEvents: 'none',
+          top: pill.top, height: pill.height, opacity: pill.opacity,
+          transition: 'top .28s cubic-bezier(.3,.9,.4,1.1), height .2s ease, opacity .15s ease',
+        }} />
         {modules.map(m => (
-          <NavLink key={m.path} to={m.path} end={m.end}
+          <NavLink key={m.path} ref={el => { if (el) navRefs.current[m.path] = el }} to={m.path} end={m.end}
             style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 9, padding: '9px 9px', borderRadius: 7, textDecoration: 'none',
-              marginBottom: 2, background: isActive ? 'rgba(37,99,235,.28)' : 'transparent',
+              marginBottom: 2, position: 'relative', zIndex: 1,
               color: isActive ? '#fff' : 'rgba(255,255,255,.62)', fontSize: 11.5, fontWeight: isActive ? 700 : 500,
+              transition: 'color .15s ease',
             })}>
             <span style={{ fontSize: 15, width: 18, textAlign: 'center', flexShrink: 0 }}>{m.icon}</span>
             {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(m.label)}</span>}

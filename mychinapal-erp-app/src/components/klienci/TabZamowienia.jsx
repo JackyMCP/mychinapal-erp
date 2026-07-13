@@ -3,20 +3,22 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import ProjectTile from '../projekty/ProjectTile'
+import { useUI } from '../../lib/ui'
 
 export default function TabZamowienia({ projects, marzaByProject, progressByProject, allProjects, clientNameById, clientId, onProjectsChanged, onOpenProject }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [managerOpen, setManagerOpen] = useState(false)
   const [busyId, setBusyId] = useState(null)
   const clientName = clientNameById[clientId] || ''
 
   const handleAssign = async (project) => {
     const ownerName = clientNameById[project.client_id] || t('inny klient')
-    if (!window.confirm(`${t('Przypisać')} „${project.order_label}” ${t('do')} ${clientName}? ${t('Zamówienie zostanie odpięte od')}: ${ownerName}.`)) return
+    if (!await confirm(`${t('Przypisać')} „${project.order_label}” ${t('do')} ${clientName}? ${t('Zamówienie zostanie odpięte od')}: ${ownerName}.`)) return
     setBusyId(project.id)
     const { error } = await supabase.from('projects').update({ client_id: clientId, updated_at: new Date().toISOString() }).eq('id', project.id)
     setBusyId(null)
-    if (error) { alert('Nie udało się zaktualizować powiązania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zaktualizować powiązania: ' + error.message); return }
     onProjectsChanged && onProjectsChanged()
   }
 

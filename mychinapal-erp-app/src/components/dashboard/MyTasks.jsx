@@ -2,6 +2,8 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
+import EmptyState from '../ui/EmptyState'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -17,6 +19,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [showAdd, setShowAdd] = useState(false)
   const [title, setTitle] = useState('')
@@ -32,7 +35,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
       due_date: dueDate || null, status: 'todo',
     })
     setSaving(false)
-    if (error) { alert('Nie udało się dodać zadania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się dodać zadania: ' + error.message); return }
     setTitle(''); setDueDate(''); setShowAdd(false)
     onChanged && onChanged()
   }
@@ -42,7 +45,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
     if (status === 'in_progress') patch.started_at = new Date().toISOString()
     if (status === 'done') patch.completed_at = new Date().toISOString()
     const { error } = await supabase.from('tasks').update(patch).eq('id', task.id)
-    if (error) { alert('Nie udało się zaktualizować zadania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zaktualizować zadania: ' + error.message); return }
     onChanged && onChanged()
   }
 
@@ -67,7 +70,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
           </div>
         </div>
       )}
-      {active.length === 0 && !showAdd && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak aktywnych zadań.")}</div>}
+      {active.length === 0 && !showAdd && <EmptyState icon="✅" title={t("Brak aktywnych zadań")} subtitle={t("Wszystko odhaczone — możesz dodać nowe zadanie.")} />}
       {active.map(task => {
         const due = dueLabel(task.due_date)
         return (

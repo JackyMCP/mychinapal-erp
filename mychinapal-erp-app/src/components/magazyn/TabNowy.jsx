@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { nextDocNumber } from './utils'
+import { useUI } from '../../lib/ui'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, marginBottom: 16 }
 const fieldWrap = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }
@@ -11,6 +12,7 @@ const input = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 9,
 
 export default function TabNowy({ products, projects, onChanged, onGoTab }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
 
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
@@ -31,7 +33,7 @@ export default function TabNowy({ products, projects, onChanged, onGoTab }) {
   const goodsOnly = products.filter(p => !p.is_service)
 
   const handleAddProduct = async () => {
-    if (!code.trim() || !name.trim()) { alert('Uzupełnij kod i nazwę towaru.'); return }
+    if (!code.trim() || !name.trim()) { toast.error('Uzupełnij kod i nazwę towaru.'); return }
     setSavingProduct(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('products').insert({
@@ -40,14 +42,14 @@ export default function TabNowy({ products, projects, onChanged, onGoTab }) {
       created_by: user?.id,
     })
     setSavingProduct(false)
-    if (error) { alert('Nie udało się dodać towaru: ' + error.message); return }
+    if (error) { toast.error('Nie udało się dodać towaru: ' + error.message); return }
     setCode(''); setName(''); setSalePrice(''); setMinStock(''); setIsService(false)
     onChanged && onChanged()
     onGoTab && onGoTab('kartoteka')
   }
 
   const handleAddPz = async () => {
-    if (!pzProductId || !pzQty || Number(pzQty) <= 0) { alert('Wybierz towar i podaj ilość większą od zera.'); return }
+    if (!pzProductId || !pzQty || Number(pzQty) <= 0) { toast.error('Wybierz towar i podaj ilość większą od zera.'); return }
     setSavingPz(true)
     const { data: { user } } = await supabase.auth.getUser()
     const docNumber = await nextDocNumber(supabase, 'PZ', pzDate)
@@ -57,7 +59,7 @@ export default function TabNowy({ products, projects, onChanged, onGoTab }) {
       created_by: user?.id,
     })
     setSavingPz(false)
-    if (error) { alert('Nie udało się zapisać przyjęcia: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać przyjęcia: ' + error.message); return }
     setPzProductId(''); setPzQty(''); setPzPrice(''); setPzProjectId('')
     onChanged && onChanged()
     onGoTab && onGoTab('dokumenty')

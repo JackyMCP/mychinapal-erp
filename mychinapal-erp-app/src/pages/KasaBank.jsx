@@ -11,6 +11,7 @@ import TabVAT from '../components/kasabank/TabVAT'
 import TabMarza from '../components/kasabank/TabMarza'
 import TabCykliczne from '../components/kasabank/TabCykliczne'
 import TabPrognoza from '../components/kasabank/TabPrognoza'
+import { useUI } from '../lib/ui'
 
 function mapTx(row) {
   return {
@@ -41,6 +42,7 @@ export default function KasaBank() {
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const { isZarzad } = useAuth()
   const navigate = useNavigate()
@@ -115,7 +117,7 @@ export default function KasaBank() {
       payload.vat_amount = rate > 0 ? Math.round(current.amount * rate / (100 + rate) * 100) / 100 : 0
     }
     const { error } = await supabase.from('transactions').update(payload).eq('id', id)
-    if (error) { console.error(error); alert('Nie udało się zapisać zmian: ' + error.message); return }
+    if (error) { console.error(error); toast.error('Nie udało się zapisać zmian: ' + error.message); return }
     const client = clients.find(c => c.id === changes.client_id)
     const project = projects.find(p => p.id === changes.project_id)
     setTxs(prev => prev.map(row => row.id === id ? {

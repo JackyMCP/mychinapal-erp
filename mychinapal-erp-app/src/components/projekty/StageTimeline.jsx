@@ -4,11 +4,13 @@ import { supabase } from '../../lib/supabaseClient'
 import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { STAGE_DEFS } from './stageDefs'
+import { useUI } from '../../lib/ui'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg })
 
 function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const [open, setOpen] = useState(status === 'current')
   const [uploading, setUploading] = useState(false)
   const [category, setCategory] = useState(stage.categories[0])
@@ -20,30 +22,30 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
     const { data: { user } } = await supabase.auth.getUser()
     const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, file)
-    if (upErr) { setUploading(false); alert('Nie udało się wgrać pliku: ' + upErr.message); return }
+    if (upErr) { setUploading(false); toast.error('Nie udało się wgrać pliku: ' + upErr.message); return }
     const { error: docErr } = await supabase.from('documents').insert({
       client_id: project.client_id, project_id: project.id,
       category, file_path: path, file_name: file.name, uploaded_by: user.id, source: 'manual',
     })
     setUploading(false)
-    if (docErr) { alert('Nie udało się zapisać dokumentu: ' + docErr.message); return }
+    if (docErr) { toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
     onUploaded && onUploaded()
     if (fileRef.current) fileRef.current.value = ''
   }
 
   const handleDelete = async (doc) => {
-    if (!window.confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
+    if (!await confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
     const { error: stErr } = await supabase.storage.from('dokumenty').remove([doc.file_path])
-    if (stErr) { alert('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
+    if (stErr) { toast.error('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
     const { data: delRows, error: dbErr } = await supabase.from('documents').delete().eq('id', doc.id).select()
-    if (dbErr) { alert('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
-    if (!delRows || delRows.length === 0) { alert(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
+    if (dbErr) { toast.error('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
+    if (!delRows || delRows.length === 0) { toast.error(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
     onUploaded && onUploaded()
   }
 
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
-    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     window.open(data.signedUrl, '_blank')
   }
 
@@ -74,8 +76,8 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
               <span style={{ fontSize: 11, color: C.muted, transform: open ? 'rotate(180deg)' : 'none', display: 'inline-block' }}>▾</span>
             </div>
           </div>
-          {open && (
-            <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${C.border}` }}>
+          <div style={{ maxHeight: open ? 2000 : 0, overflow: 'hidden', transition: 'max-height .32s ease', borderTop: open ? `1px solid ${C.border}` : 'none' }}>
+            <div style={{ padding: '0 16px 16px' }}>
               <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', margin: '14px 0 6px' }}>{t("Wymagane dokumenty")}</div>
               {stage.categories.map(cat => {
                 const docs = docsByCategory[cat] || []
@@ -122,7 +124,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

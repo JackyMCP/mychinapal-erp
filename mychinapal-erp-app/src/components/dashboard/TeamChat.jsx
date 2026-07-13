@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import VoiceChannel from './VoiceChannel'
+import { useUI } from '../../lib/ui'
 
 const MSG_SELECT = '*, profiles(full_name)'
 
@@ -11,6 +12,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   const {
     t
   } = useLang();
+  const { toast, confirm } = useUI()
 
   const [channelId, setChannelId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -60,7 +62,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
       channel_id: channelId, sender_id: currentUserId, content: text.trim(),
     }).select(MSG_SELECT).single()
     setSending(false)
-    if (error) { alert('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
     setText('')
   }

@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt, fmtPct } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const secTitle = { fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 14 }
@@ -25,6 +26,7 @@ function ring(pct, done) {
 
 export default function TabPrzeglad({ client, marza, contacts, projects, progressByProject, documents, tasks, lastContactDays, onClientSaved, onOpenProject }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
 
   const [notes, setNotes] = useState(client.notes || '')
   const [savingNotes, setSavingNotes] = useState(false)
@@ -35,7 +37,7 @@ export default function TabPrzeglad({ client, marza, contacts, projects, progres
     setSavingNotes(true)
     const { data, error } = await supabase.from('clients').update({ notes, updated_at: new Date().toISOString() }).eq('id', client.id).select().single()
     setSavingNotes(false)
-    if (error) { alert('Nie udało się zapisać notatki: ' + error.message); return }
+    if (error) { toast.error('Nie udało się zapisać notatki: ' + error.message); return }
     setSavedAt(new Date())
     if (data && onClientSaved) onClientSaved(data)
   }

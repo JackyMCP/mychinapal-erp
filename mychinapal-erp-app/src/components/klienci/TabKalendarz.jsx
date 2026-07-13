@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
+import { useUI } from '../../lib/ui'
 
 const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień']
@@ -16,6 +17,7 @@ function eventColor(task) {
 
 export default function TabKalendarz({ tasks, clientId, onChanged }) {
   const { t } = useLang()
+  const { toast, confirm } = useUI()
   const withDue = tasks.filter(tk => tk.due_date)
   const initialMonth = withDue.length > 0 ? new Date(withDue[0].due_date) : new Date()
   const [viewDate, setViewDate] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1))
@@ -53,7 +55,7 @@ export default function TabKalendarz({ tasks, clientId, onChanged }) {
       assigned_to: user?.id, assigned_by: user?.id,
     })
     setSaving(false)
-    if (error) { alert('Nie udało się dodać zadania: ' + error.message); return }
+    if (error) { toast.error('Nie udało się dodać zadania: ' + error.message); return }
     setTitle(''); setDueDate(''); setShowAdd(false)
     onChanged && onChanged()
   }
