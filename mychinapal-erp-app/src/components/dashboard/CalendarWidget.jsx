@@ -6,7 +6,7 @@ import { avatarColor, initials } from '../klienci/utils'
 import { useUI } from '../../lib/ui'
 
 const DOW = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
-const EVENT_COLORS = [C.blue, C.purple, C.orange, C.green]
+const EVENT_COLORS = [C.blue, C.purple, C.orange, C.green, '#DB2777', '#0891B2']
 
 function buildMonthGrid(year, month) {
   const first = new Date(year, month, 1)
@@ -97,36 +97,67 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
           <span onClick={() => { setSelectedDay(today); setDate(today.toISOString().slice(0, 10)); setShowAdd(s => !s) }} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer', marginLeft: 6 }}>{showAdd ? '✕' : t("+ Nowe")}</span>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, marginBottom: 16 }}>
-        {DOW.map(d => <div key={d} style={{ fontSize: 9, color: C.muted, textAlign: 'center', fontWeight: 700, paddingBottom: 4 }}>{d}</div>)}
+      <style>{`
+        @keyframes calGridIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes calTodayPulse { 0%,100% { box-shadow: 0 6px 18px rgba(37,99,235,.35), 0 0 0 0 rgba(37,99,235,.35); } 50% { box-shadow: 0 6px 18px rgba(37,99,235,.4), 0 0 0 5px rgba(37,99,235,0); } }
+        .cal-day-cell { transition: transform .16s cubic-bezier(.3,.9,.4,1.1), box-shadow .16s ease, background .16s ease; }
+        .cal-day-cell:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 10px 22px rgba(15,23,42,.10); z-index: 3; }
+        .cal-event-chip { transition: transform .12s ease; }
+        .cal-day-cell:hover .cal-event-chip { transform: translateX(1px); }
+      `}</style>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 7, marginBottom: 16, animation: 'calGridIn .25s ease both' }}>
+        {DOW.map((d, i) => (
+          <div key={d} style={{
+            fontSize: 9.5, textAlign: 'center', fontWeight: 800, paddingBottom: 6, letterSpacing: '.4px',
+            color: i >= 5 ? C.orange : C.muted,
+          }}>{d}</div>
+        ))}
         {cells.map((d, i) => {
           const isToday = d && d.toDateString() === today.toDateString()
           const isSelected = d && selectedDay && d.toDateString() === selectedDay.toDateString()
+          const isWeekend = i % 7 >= 5
           const dayEvents = d ? (eventsByDay[d.toDateString()] || []) : []
-          const visible = dayEvents.slice(0, 2)
+          const visible = dayEvents.slice(0, 3)
           const extra = dayEvents.length - visible.length
           return (
-            <div key={i} onClick={() => d && setSelectedDay(prev => (prev && prev.toDateString() === d.toDateString() ? null : d))}
+            <div key={i} className="cal-day-cell" onClick={() => d && setSelectedDay(prev => (prev && prev.toDateString() === d.toDateString() ? null : d))}
               style={{
-                minHeight: 68, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '6px 5px',
+                minHeight: 98, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '8px 7px',
                 fontSize: 10.5, position: 'relative', cursor: d ? 'pointer' : 'default', boxSizing: 'border-box',
-                background: isToday ? C.blue : isSelected ? C.bmid : d ? C.bg : 'transparent',
+                background: isToday
+                  ? `linear-gradient(150deg, ${C.blue}, ${C.blue3})`
+                  : isSelected ? C.bmid
+                  : d ? (isWeekend ? C.olight : C.bg) : 'transparent',
                 border: isSelected && !isToday ? `1.5px solid ${C.blue}` : '1.5px solid transparent',
                 transform: isSelected ? 'scale(1.045)' : 'scale(1)',
                 boxShadow: isSelected ? '0 8px 20px rgba(37,99,235,.18)' : 'none',
+                animation: isToday ? 'calTodayPulse 2.6s ease-in-out infinite' : 'none',
                 zIndex: isSelected ? 2 : 1,
-                transition: 'transform .15s ease, box-shadow .15s ease, background .15s ease',
               }}>
-              <div style={{ fontWeight: isToday ? 800 : 600, color: isToday ? '#fff' : d ? C.text2 : 'transparent', fontSize: 11, marginBottom: 3 }}>{d ? d.getDate() : ''}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{
+                  fontWeight: isToday ? 800 : 600, color: isToday ? '#fff' : d ? (isWeekend ? C.orange : C.text2) : 'transparent',
+                  fontSize: 12.5, width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: isToday ? 'rgba(255,255,255,.22)' : 'transparent',
+                }}>{d ? d.getDate() : ''}</div>
+                {dayEvents.length > 0 && !isToday && (
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    {dayEvents.slice(0, 3).map((ev, j) => (
+                      <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: EVENT_COLORS[j % EVENT_COLORS.length] }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
                 {visible.map((ev, j) => (
-                  <div key={j} style={{
-                    fontSize: 8.5, fontWeight: 700, padding: '1.5px 5px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    background: isToday ? 'rgba(255,255,255,.25)' : EVENT_COLORS[j % EVENT_COLORS.length] + '1A',
+                  <div key={j} className="cal-event-chip" style={{
+                    fontSize: 9, fontWeight: 700, padding: '3px 6px', borderRadius: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    borderLeft: `2.5px solid ${isToday ? 'rgba(255,255,255,.8)' : EVENT_COLORS[j % EVENT_COLORS.length]}`,
+                    background: isToday ? 'rgba(255,255,255,.22)' : EVENT_COLORS[j % EVENT_COLORS.length] + '1A',
                     color: isToday ? '#fff' : EVENT_COLORS[j % EVENT_COLORS.length],
                   }}>{ev.title}</div>
                 ))}
-                {extra > 0 && <div style={{ fontSize: 8, fontWeight: 700, color: isToday ? 'rgba(255,255,255,.8)' : C.muted }}>+{extra} {t("więcej")}</div>}
+                {extra > 0 && <div style={{ fontSize: 8.5, fontWeight: 700, color: isToday ? 'rgba(255,255,255,.85)' : C.muted }}>+{extra} {t("więcej")}</div>}
               </div>
             </div>
           );

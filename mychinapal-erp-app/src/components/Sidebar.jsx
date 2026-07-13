@@ -47,16 +47,31 @@ export default function Sidebar() {
 
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
-      <div style={{ padding: '14px 12px', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26 }}>
-          {collapsed
-            ? <img src="/mark-white.png" alt="MyChinaPal" style={{ height: 24, width: 'auto', flexShrink: 0 }} />
-            : <img src="/logo-white.png" alt="MyChinaPal" style={{ height: 22, width: 'auto', flexShrink: 0 }} />}
+      <div style={{ padding: collapsed ? '18px 10px 16px' : '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 40 }}>
+          <div className="logo-type-wrap" style={{ position: 'relative', display: 'inline-block', overflow: 'hidden' }}>
+            {collapsed
+              ? <img src="/mark-white.png" alt="MyChinaPal" className="logo-type-img" style={{ height: 32, width: 'auto', flexShrink: 0, display: 'block' }} />
+              : <img src="/logo-white.png" alt="MyChinaPal" className="logo-type-img" style={{ height: 34, width: 'auto', flexShrink: 0, display: 'block' }} />}
+            <div className="logo-type-cursor" />
+          </div>
+          <style>{`
+            @keyframes logoTypeReveal { 0% { clip-path: inset(0 100% 0 0); } 16% { clip-path: inset(0 0% 0 0); } 94% { clip-path: inset(0 0% 0 0); } 100% { clip-path: inset(0 100% 0 0); } }
+            @keyframes logoCursorMove { 0% { left: 0%; opacity: 1; } 16% { left: 100%; opacity: 1; } 18% { opacity: 0; } 94% { opacity: 0; } 96% { left: 0%; opacity: 1; } 100% { left: 0%; opacity: 1; } }
+            @keyframes logoGlow { 0%,100% { filter: drop-shadow(0 0 0 rgba(59,130,246,0)); } 50% { filter: drop-shadow(0 0 6px rgba(59,130,246,.55)); } }
+            .logo-type-img { animation: logoTypeReveal 10s ease-in-out infinite, logoGlow 10s ease-in-out infinite; }
+            .logo-type-cursor {
+              position: absolute; top: 1px; bottom: 1px; width: 2px; border-radius: 2px;
+              background: linear-gradient(180deg, rgba(147,197,253,.95), rgba(59,130,246,.85));
+              box-shadow: 0 0 8px rgba(59,130,246,.85);
+              animation: logoCursorMove 10s ease-in-out infinite;
+            }
+          `}</style>
         </div>
 
         {/* przełącznik języka — zawsze widoczny, tuż pod logo */}
         <div style={{
-          display: 'flex', marginTop: 10, background: 'rgba(255,255,255,.06)', borderRadius: 8, padding: 3,
+          display: 'flex', marginTop: 14, background: 'rgba(255,255,255,.06)', borderRadius: 8, padding: 3,
           gap: 2, justifyContent: collapsed ? 'center' : 'stretch',
         }}>
           <button onClick={() => setLang('pl')} title={t("Polski")} style={{
