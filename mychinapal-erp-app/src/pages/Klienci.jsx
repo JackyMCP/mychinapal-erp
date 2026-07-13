@@ -271,7 +271,7 @@ export default function Klienci() {
           <TabZadania tasks={tasks} profiles={profiles} currentUserId={profile?.id} clientId={selected.id}
             onChanged={() => reloadDetail(selected.id)} />
         )}
-        {tab === 'Czat' && <TabCzat clientId={selected.id} clientName={selected.name} projectIds={selectedProjects.map(p => p.id)} />}
+        {tab === 'Czat' && <TabCzat clientId={selected.id} clientName={selected.name} projects={selectedProjects} />}
       </div>
     </div>
   )

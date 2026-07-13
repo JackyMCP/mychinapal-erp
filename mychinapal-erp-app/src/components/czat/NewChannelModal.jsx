@@ -9,26 +9,22 @@ export default function NewChannelModal({ onClose, onCreated }) {
   } = useLang();
 
   const [name, setName] = useState('')
-  const [linkType, setLinkType] = useState('brak') // brak | klient | projekt
+  const [linkType, setLinkType] = useState('brak') // brak | klient
   const [clients, setClients] = useState([])
-  const [projects, setProjects] = useState([])
   const [clientId, setClientId] = useState('')
-  const [projectId, setProjectId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     (async () => {
-      const [{ data: c }, { data: p }] = await Promise.all([
-        supabase.from('clients').select('id,name').order('name'),
-        supabase.from('projects').select('id,client_id,order_label').order('order_label'),
-      ])
+      const { data: c } = await supabase.from('clients').select('id,name').order('name')
       setClients(c || [])
-      setProjects(p || [])
     })()
   }, [])
 
-  const clientProjects = projects.filter(p => p.client_id === clientId)
+  // Kanały zamówień (projekt) NIE są tworzone tutaj — powstają automatycznie
+  // z panelu Projekty/Zamówienia (jeden na zamówienie) i są dostępne tylko
+  // przez odnośnik z tego panelu albo z czatu klienta, do którego należą.
 
   const handleCreate = async () => {
     if (!name.trim()) { setError('Podaj nazwę kanału'); return }
@@ -38,8 +34,8 @@ export default function NewChannelModal({ onClose, onCreated }) {
     const payload = {
       name: name.trim(),
       created_by: user.id,
-      client_id: linkType === 'klient' && clientId ? clientId : (linkType === 'projekt' && projectId ? (projects.find(p => p.id === projectId)?.client_id || null) : null),
-      project_id: linkType === 'projekt' && projectId ? projectId : null,
+      client_id: linkType === 'klient' && clientId ? clientId : null,
+      project_id: null,
     }
     const { data, error: err } = await supabase.from('chat_channels').insert(payload).select().single()
     setSaving(false)
@@ -58,7 +54,7 @@ export default function NewChannelModal({ onClose, onCreated }) {
 
         <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Powiązanie")}</label>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {[['brak', 'Brak (ogólny)'], ['klient', 'Klient'], ['projekt', 'Projekt/zamówienie']].map(([k, l]) => (
+          {[['brak', 'Brak (ogólny)'], ['klient', 'Klient']].map(([k, l]) => (
             <div key={k} onClick={() => setLinkType(k)} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${linkType === k ? C.blue : C.border}`, background: linkType === k ? C.blue : 'transparent', color: linkType === k ? '#fff' : C.muted }}>{t(l)}</div>
           ))}
         </div>
@@ -69,17 +65,10 @@ export default function NewChannelModal({ onClose, onCreated }) {
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        {linkType === 'projekt' && (
-          <>
-            <select value={clientId} onChange={e => { setClientId(e.target.value); setProjectId('') }} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, width: '100%', outline: 'none', marginBottom: 8 }}>
-              <option value="">{t("— wybierz klienta —")}</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <select value={projectId} onChange={e => setProjectId(e.target.value)} disabled={!clientId} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 12, width: '100%', outline: 'none', marginBottom: 14 }}>
-              <option value="">{t("— wybierz zamówienie —")}</option>
-              {clientProjects.map(p => <option key={p.id} value={p.id}>{p.order_label}</option>)}
-            </select>
-          </>
+        {linkType === 'klient' && (
+          <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14, marginTop: -6 }}>
+            {t("Kanały zamówień powstają automatycznie w panelu Projekty/Zamówienia — nie trzeba (i nie da się) tworzyć ich tutaj.")}
+          </div>
         )}
 
         {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 10 }}>{error}</div>}

@@ -193,6 +193,10 @@ export default function Czat() {
   }
 
   const active = channels.find(c => c.id === activeId)
+  // Czaty zamówień są dostępne wyłącznie przez odnośnik z czatu klienta albo z
+  // panelu zamówienia (deep-link ?channel=...) — nie mają się przewijać na
+  // ogólnej liście kanałów, żeby nie zaśmiecać jej dziesiątkami zamówień.
+  const visibleChannels = channels.filter(ch => channelType(ch) !== 'projekt')
   const activeType = active ? channelType(active) : 'ogolny'
   const activeStyle = TYPE_STYLE[activeType]
   const canRename = active && (isZarzad || active.created_by === profile?.id)
@@ -220,8 +224,8 @@ export default function Czat() {
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
           {loadingChannels && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>}
-          {!loadingChannels && channels.length === 0 && <EmptyState icon="💬" title={t("Brak kanałów")} subtitle={t("Utwórz pierwszy kanał, żeby zacząć rozmowę.")} />}
-          {channels.map((ch, i) => {
+          {!loadingChannels && visibleChannels.length === 0 && <EmptyState icon="💬" title={t("Brak kanałów")} subtitle={t("Utwórz pierwszy kanał, żeby zacząć rozmowę.")} />}
+          {visibleChannels.map((ch, i) => {
             const type = channelType(ch)
             const st = TYPE_STYLE[type]
             const isActive = activeId === ch.id

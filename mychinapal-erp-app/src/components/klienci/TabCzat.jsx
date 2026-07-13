@@ -12,7 +12,7 @@ const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na sta
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
-export default function TabCzat({ clientId, clientName, projectIds }) {
+export default function TabCzat({ clientId, clientName, projects }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const navigate = useNavigate()
@@ -33,9 +33,10 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
   useEffect(() => {
     (async () => {
       setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+
       let { data: ch } = await supabase.from('chat_channels').select('id').eq('client_id', clientId).is('project_id', null).limit(1).maybeSingle()
       if (!ch) {
-        const { data: { user } } = await supabase.auth.getUser()
         const { data: created, error } = await supabase.from('chat_channels').insert({
           name: clientName, client_id: clientId, created_by: user.id,
         }).select().single()
@@ -44,15 +45,33 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
       }
       setChannelId(ch.id)
 
-      if (projectIds && projectIds.length > 0) {
-        const { data: pch } = await supabase.from('chat_channels').select('id,name,project_id').in('project_id', projectIds)
-        setProjectChannels(pch || [])
+      // Każde zamówienie tego klienta musi mieć swój kanał czatu, żeby dało
+      // się do niego zrobić odnośnik tutaj — jeśli ktoś jeszcze nie otworzył
+      // czatu tego zamówienia z panelu Projekty (gdzie normalnie powstaje
+      // automatycznie), doszczelniamy to właśnie tutaj.
+      if (projects && projects.length > 0) {
+        const projectIds = projects.map(p => p.id)
+        const { data: existing } = await supabase.from('chat_channels').select('id,name,project_id').in('project_id', projectIds)
+        const existingByProject = new Map((existing || []).map(c => [c.project_id, c]))
+        const result = []
+        for (const p of projects) {
+          let pc = existingByProject.get(p.id)
+          if (!pc) {
+            const { data: created, error } = await supabase.from('chat_channels').insert({
+              name: p.order_label, client_id: clientId, project_id: p.id, created_by: user.id,
+            }).select('id,name,project_id').single()
+            if (error) { console.error(error); continue }
+            pc = created
+          }
+          result.push(pc)
+        }
+        setProjectChannels(result)
       } else {
         setProjectChannels([])
       }
       setLoading(false)
     })()
-  }, [clientId, JSON.stringify(projectIds)])
+  }, [clientId, JSON.stringify((projects || []).map(p => p.id))])
 
   useEffect(() => {
     if (!channelId) return
