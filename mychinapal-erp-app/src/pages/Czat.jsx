@@ -53,6 +53,11 @@ export default function Czat() {
   const [renameSaving, setRenameSaving] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [clientOrderChannels, setClientOrderChannels] = useState([])
+
+  // UWAGA: musi być zdefiniowane PRZED efektami, które z niego korzystają
+  // (referencja do `active` w tablicy zależności useEffect nie może wystąpić
+  // wcześniej w kodzie niż ta deklaracja — inaczej ReferenceError/TDZ crash).
+  const active = channels.find(c => c.id === activeId)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
@@ -231,7 +236,6 @@ export default function Czat() {
     loadChannels()
   }
 
-  const active = channels.find(c => c.id === activeId)
   // Czaty zamówień są dostępne wyłącznie przez odnośnik z czatu klienta albo z
   // panelu zamówienia (deep-link ?channel=...) — nie mają się przewijać na
   // ogólnej liście kanałów, żeby nie zaśmiecać jej dziesiątkami zamówień.
