@@ -1,7 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
@@ -23,6 +23,8 @@ export default function ProjectChat({ project }) {
   const [loading, setLoading] = useState(true)
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
+  const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [imgUrls, setImgUrls] = useState({})
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
@@ -73,6 +75,33 @@ export default function ProjectChat({ project }) {
   }, [channelId])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [scrollTick])
+
+  useEffect(() => {
+    if (attachFile && isImageFile(attachFile.name)) {
+      const url = URL.createObjectURL(attachFile)
+      setAttachPreviewUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setAttachPreviewUrl(null)
+  }, [attachFile])
+
+  useEffect(() => {
+    const imgDocs = messages
+      .map(m => Array.isArray(m.documents) ? m.documents[0] : m.documents)
+      .filter(doc => doc && isImageFile(doc.file_name) && !imgUrls[doc.id])
+    if (imgDocs.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(imgDocs.map(async doc => {
+        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60 * 60 * 24)
+        return error ? null : [doc.id, data.signedUrl]
+      }))
+      if (cancelled) return
+      const fresh = Object.fromEntries(entries.filter(Boolean))
+      if (Object.keys(fresh).length > 0) setImgUrls(prev => ({ ...prev, ...fresh }))
+    })()
+    return () => { cancelled = true }
+  }, [messages])
 
   const loadOlder = async () => {
     if (!channelId || loadingMore || !messages.length) return
@@ -148,7 +177,14 @@ export default function ProjectChat({ project }) {
               </div>
               <div style={{ fontSize: 12, marginTop: 2 }}>{m.content}</div>
               {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
-              {doc && (
+              {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
+                <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
+                  style={{ display: 'block', marginTop: 6, maxWidth: 240, maxHeight: 240, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+              )}
+              {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
+                <div style={{ marginTop: 6, width: 160, height: 110, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>{t("Ładowanie zdjęcia…")}</div>
+              )}
+              {doc && !isImageFile(doc.file_name) && (
                 <div onClick={() => handleDownload(doc)} style={{ fontSize: 11, color: C.blue, marginTop: 4, cursor: 'pointer', fontWeight: 600 }}>📎 {doc.file_name} <span style={{ color: C.muted, fontWeight: 400 }}>({t(doc.category)})</span></div>
               )}
             </div>
@@ -158,7 +194,9 @@ export default function ProjectChat({ project }) {
       </div>
       {attachFile && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, fontSize: 11 }}>
-          <span>📎 {attachFile.name}</span>
+          {attachPreviewUrl
+            ? <img src={attachPreviewUrl} alt={attachFile.name} style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+            : <span>📎 {attachFile.name}</span>}
           <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5 }}>
             {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
           </select>

@@ -2,7 +2,7 @@ import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../lib/files'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
@@ -48,6 +48,8 @@ export default function Czat() {
   const [sending, setSending] = useState(false)
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
+  const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [imgUrls, setImgUrls] = useState({})
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
@@ -126,6 +128,37 @@ export default function Czat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [scrollTick])
+
+  // Podgląd zdjęcia od razu po jego wybraniu, jeszcze przed wysłaniem
+  useEffect(() => {
+    if (attachFile && isImageFile(attachFile.name)) {
+      const url = URL.createObjectURL(attachFile)
+      setAttachPreviewUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setAttachPreviewUrl(null)
+  }, [attachFile])
+
+  // Podpisane URL-e obrazków-załączników, żeby zdjęcia w czacie wyświetlały
+  // się od razu jako miniatura (tak jak w typowych komunikatorach), zamiast
+  // samego linku do pobrania.
+  useEffect(() => {
+    const imgDocs = messages
+      .map(m => Array.isArray(m.documents) ? m.documents[0] : m.documents)
+      .filter(doc => doc && isImageFile(doc.file_name) && !imgUrls[doc.id])
+    if (imgDocs.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(imgDocs.map(async doc => {
+        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60 * 60 * 24)
+        return error ? null : [doc.id, data.signedUrl]
+      }))
+      if (cancelled) return
+      const fresh = Object.fromEntries(entries.filter(Boolean))
+      if (Object.keys(fresh).length > 0) setImgUrls(prev => ({ ...prev, ...fresh }))
+    })()
+    return () => { cancelled = true }
+  }, [messages])
 
   useEffect(() => {
     const type = active ? channelType(active) : null
@@ -376,7 +409,16 @@ export default function Czat() {
                             🌐 {m.translated_content}
                           </div>
                         )}
-                        {doc && (
+                        {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
+                          <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
+                            style={{ display: 'block', marginTop: 6, maxWidth: 260, maxHeight: 260, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+                        )}
+                        {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
+                          <div style={{ marginTop: 6, width: 180, height: 120, borderRadius: 8, background: mine ? 'rgba(255,255,255,.15)' : C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: mine ? 'rgba(255,255,255,.7)' : C.muted }}>
+                            {t("Ładowanie zdjęcia…")}
+                          </div>
+                        )}
+                        {doc && !isImageFile(doc.file_name) && (
                           <div onClick={() => handleDownload(doc)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
                             📎 <span style={{ textDecoration: 'underline' }}>{doc.file_name}</span>
                             <span style={{ fontSize: 9, opacity: 0.75 }}>({t(doc.category)})</span>
@@ -392,7 +434,9 @@ export default function Czat() {
               <div style={{ padding: '12px 20px', borderTop: `1px solid ${C.border}`, background: C.white }}>
                 {attachFile && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: C.bg, borderRadius: 8, padding: '6px 10px' }}>
-                    <span style={{ fontSize: 11.5 }}>📎 {attachFile.name}</span>
+                    {attachPreviewUrl
+                      ? <img src={attachPreviewUrl} alt={attachFile.name} style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      : <span style={{ fontSize: 11.5 }}>📎 {attachFile.name}</span>}
                     <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
                       {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
                     </select>
