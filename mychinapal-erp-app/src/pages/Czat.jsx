@@ -340,7 +340,7 @@ export default function Czat() {
                     </button>
                   </div>
                 </div>
-                <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} />
+                <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} chatChannelId={active.id} />
               </div>
               {activeType === 'klient' && clientOrderChannels.length > 0 && (
                 <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, background: C.white, display: 'flex', flexWrap: 'wrap', gap: 8 }}>

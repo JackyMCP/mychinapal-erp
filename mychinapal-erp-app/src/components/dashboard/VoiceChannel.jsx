@@ -6,7 +6,7 @@ import { avatarColor, initials } from '../klienci/utils'
 
 const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
-export default function VoiceChannel({ roomId, currentUserId, currentUserName, accentColor }) {
+export default function VoiceChannel({ roomId, currentUserId, currentUserName, accentColor, chatChannelId }) {
   const {
     t
   } = useLang();
@@ -23,6 +23,11 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const [aiTranslate, setAiTranslate] = useState(false) // czy inni mają usłyszeć mnie przetłumaczonego
   const [translateError, setTranslateError] = useState('')
   const [translateActive, setTranslateActive] = useState(false)
+
+  // ── napisy na żywo (oryginał + tłumaczenie, rosnące na bieżąco jako wiadomość w czacie) ──
+  const [liveCaptions, setLiveCaptions] = useState(false)
+  const [captionsActive, setCaptionsActive] = useState(false)
+  const [captionsError, setCaptionsError] = useState('')
 
   const channelRef = useRef(null)
   const localStreamRef = useRef(null)     // surowy strumień z mikrofonu
@@ -48,7 +53,19 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const chunkSentUpToRef = useRef({})   // { [resultIndex]: liczba już wysłanych znaków }
   const chunkTimersRef = useRef({})     // { [resultIndex]: setTimeout id }
   const chunkLastTextRef = useRef({})   // { [resultIndex]: ostatni widziany tekst }
-  const playQueueRef = useRef(Promise.resolve()) // kolejka odtwarzania — żeby fragmenty grały w kolejności wypowiadania
+  const playQueueRef = useRef(Promise.resolve()) // kolejka odtwarzania/zapisów — żeby fragmenty szły w kolejności wypowiadania
+
+  // -- napisy na żywo: bieżąca wiadomość-"bąbelek" na czacie (jedna na wypowiedź) --
+  const captionRowIdRef = useRef(null)   // id wiersza chat_messages aktualnie rosnącej wypowiedzi
+  const captionOrigRef = useRef('')      // narastający tekst oryginalny
+  const captionTransRef = useRef('')     // narastające tłumaczenie
+  // -- napisy na żywo: dedykowany nasłuch mowy, używany gdy NIE ma już innego nasłuchu
+  // (czyli dla PL, albo dla ZH gdy tłumaczenie głosu jest wyłączone) --
+  const captionRecognitionRef = useRef(null)
+  const captionRecognitionActiveRef = useRef(false)
+  const captionChunkSentUpToRef = useRef({})
+  const captionChunkTimersRef = useRef({})
+  const captionChunkLastTextRef = useRef({})
 
   // ── presence-only subscription: żeby widzieć kto jest na kanale, nawet zanim dołączymy ──
   useEffect(() => {
@@ -232,6 +249,115 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const CHUNK_SILENCE_MS = 900
   const MIN_CHUNK_CHARS = 2
 
+  // tłumaczy jeden kawałek tekstu (Claude, przez naszą funkcję translate-text-ts) — zwraca
+  // null jeśli się nie uda (wtedy pokazujemy przynajmniej oryginał, żeby napisy nie "zamarły")
+  async function translateChunk(text, to) {
+    try {
+      const { data: trData } = await supabase.functions.invoke('translate-text-ts', { body: { text, to } })
+      if (trData?.ok && trData.translated) return trData.translated
+    } catch (e) { /* ignore — spróbujemy dalej z samym oryginałem */ }
+    return null
+  }
+
+  // dopisuje nowy kawałek do BIEŻĄCEJ wiadomości-napisów na czacie (albo tworzy ją, jeśli
+  // to pierwszy kawałek tej wypowiedzi) — stąd użytkownicy widzą oryginał + tłumaczenie
+  // rosnące na żywo w tym samym czacie, w którym jest ten kanał głosowy
+  async function upsertCaptionRow(piece, translatedPiece, srcLangCode, targetLangCode) {
+    if (!chatChannelId || !piece.trim()) return
+    captionOrigRef.current = (captionOrigRef.current ? captionOrigRef.current + ' ' : '') + piece.trim()
+    captionTransRef.current = (captionTransRef.current ? captionTransRef.current + ' ' : '') + (translatedPiece || piece).trim()
+    try {
+      if (!captionRowIdRef.current) {
+        const { data: inserted, error } = await supabase.from('chat_messages').insert({
+          channel_id: chatChannelId, sender_id: currentUserId,
+          content: captionOrigRef.current, translated_content: captionTransRef.current,
+          original_language: srcLangCode, translated_language: targetLangCode,
+          is_live_caption: true,
+        }).select('id').single()
+        if (!error && inserted) captionRowIdRef.current = inserted.id
+      } else {
+        await supabase.from('chat_messages').update({
+          content: captionOrigRef.current, translated_content: captionTransRef.current,
+        }).eq('id', captionRowIdRef.current)
+      }
+    } catch (e) { /* nie udało się zapisać napisów — nasłuch i rozmowa jedą dalej */ }
+  }
+
+  // koniec wypowiedzi (dłuższa pauza w mówieniu) — następny kawałek zacznie NOWĄ wiadomość
+  function resetCaptionRow() {
+    captionRowIdRef.current = null
+    captionOrigRef.current = ''
+    captionTransRef.current = ''
+  }
+
+  // dedykowany nasłuch mowy TYLKO do napisów (używany dla PL, oraz dla ZH gdy tłumaczenie
+  // głosu jest wyłączone — bo wtedy nie ma już innego nasłuchu, z którego moglibyśmy skorzystać)
+  function startCaptionOnlyRecognition(recLang, srcLangCode, targetLangCode) {
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognitionCtor) throw new Error('ta przeglądarka nie wspiera rozpoznawania mowy (działa w Chrome/Edge)')
+
+    captionChunkSentUpToRef.current = {}
+    captionChunkTimersRef.current = {}
+    captionChunkLastTextRef.current = {}
+
+    function pushChunk(piece) {
+      playQueueRef.current = playQueueRef.current.then(async () => {
+        const translated = await translateChunk(piece, targetLangCode)
+        await upsertCaptionRow(piece, translated, srcLangCode, targetLangCode)
+      })
+    }
+    function flushC(i, text, isFinal) {
+      const already = captionChunkSentUpToRef.current[i] || 0
+      const piece = text.slice(already).trim()
+      if (isFinal) {
+        captionChunkSentUpToRef.current[i] = text.length
+        if (captionChunkTimersRef.current[i]) { clearTimeout(captionChunkTimersRef.current[i]); delete captionChunkTimersRef.current[i] }
+        delete captionChunkLastTextRef.current[i]
+      } else {
+        captionChunkSentUpToRef.current[i] = text.length
+      }
+      if (piece.length >= MIN_CHUNK_CHARS) pushChunk(piece)
+      if (isFinal) resetCaptionRow()
+    }
+    function scheduleC(i, text) {
+      captionChunkLastTextRef.current[i] = text
+      if (captionChunkTimersRef.current[i]) clearTimeout(captionChunkTimersRef.current[i])
+      captionChunkTimersRef.current[i] = setTimeout(() => {
+        if (captionChunkLastTextRef.current[i] === text) flushC(i, text, false)
+      }, CHUNK_SILENCE_MS)
+    }
+
+    const recognition = new SpeechRecognitionCtor()
+    recognition.lang = recLang
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i]
+        const text = res[0]?.transcript || ''
+        if (res.isFinal) { flushC(i, text, true); continue }
+        const already = captionChunkSentUpToRef.current[i] || 0
+        const newPart = text.slice(already)
+        const m = newPart.match(SENTENCE_END_RE)
+        if (m) {
+          const cut = already + m.index + 1
+          flushC(i, text.slice(0, cut), false)
+          captionChunkSentUpToRef.current[i] = cut
+        } else {
+          scheduleC(i, text)
+        }
+      }
+    }
+    recognition.onerror = () => { /* np. chwila ciszy — ignorujemy, onend zadba o restart */ }
+    recognition.onend = () => {
+      if (captionRecognitionActiveRef.current) { try { recognition.start() } catch (e) { /* ignore */ } }
+    }
+
+    captionRecognitionActiveRef.current = true
+    recognition.start()
+    captionRecognitionRef.current = recognition
+  }
+
   function setupSpeechToTextPipeline() {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognitionCtor) throw new Error('ta przeglądarka nie wspiera rozpoznawania mowy (działa w Chrome/Edge)')
@@ -251,8 +377,11 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
       // gdy poprzedni jest już zlecony do odtworzenia, więc kolejność wypowiedzi jest zachowana
       playQueueRef.current = playQueueRef.current.then(async () => {
         try {
-          const { data: trData } = await supabase.functions.invoke('translate-text-ts', { body: { text, to: 'pl' } })
-          if (!trData?.ok || !trData.translated) return
+          const translated = await translateChunk(text, 'pl')
+          // napisy na żywo (jeśli włączone) korzystają z tego samego nasłuchu i tego samego
+          // tłumaczenia co dubbing głosowy — nie odpalamy przez to drugiego nasłuchu mikrofonu
+          if (liveCaptions) await upsertCaptionRow(text, translated, 'zh', 'pl')
+          if (!translated) return
 
           const { data: sessionData } = await supabase.auth.getSession()
           const token = sessionData?.session?.access_token || supabaseAnonKey
@@ -260,7 +389,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
           const ttsRes = await fetch(`${supabaseUrl}/functions/v1/tts-speak-ts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ text: trData.translated }),
+            body: JSON.stringify({ text: translated }),
           })
           if (!ttsRes.ok || !audioCtxRef.current) return
           const arrBuf = await ttsRes.arrayBuffer()
@@ -286,6 +415,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
         chunkSentUpToRef.current[i] = text.length
       }
       if (piece.length >= MIN_CHUNK_CHARS) speakChunk(piece)
+      if (isFinal && liveCaptions) resetCaptionRow()
     }
 
     function scheduleInterimCheck(i, text) {
@@ -339,15 +469,23 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     setError('')
     setTranslateError('')
     setTranslateActive(false)
+    setCaptionsError('')
+    setCaptionsActive(false)
     setConnecting(true)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       localStreamRef.current = stream
 
       let outgoing = stream
+      let zhDubActive = false
       if (aiTranslate) {
         try {
-          outgoing = myLang === 'pl' ? await setupOpenAITranslator('zh') : setupSpeechToTextPipeline()
+          if (myLang === 'pl') {
+            outgoing = await setupOpenAITranslator('zh')
+          } else {
+            outgoing = setupSpeechToTextPipeline()
+            zhDubActive = true
+          }
           setTranslateActive(true)
         } catch (e) {
           setTranslateError(t('Tłumaczenie AI niedostępne (') + e.message + t(') — rozmowa idzie dalej Twoim naturalnym głosem.'))
@@ -355,6 +493,24 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
         }
       }
       outgoingStreamRef.current = outgoing
+
+      if (liveCaptions) {
+        resetCaptionRow()
+        try {
+          // jeśli mowa ZH jest już nasłuchiwana pod dubbing głosowy — napisy dopisują się
+          // do TEGO SAMEGO nasłuchu (patrz speakChunk). W innym wypadku (PL, albo ZH bez
+          // dubbingu głosu) potrzebny jest osobny, dedykowany nasłuch tylko do napisów.
+          if (!zhDubActive) {
+            const recLang = myLang === 'pl' ? 'pl-PL' : 'zh-CN'
+            const srcCode = myLang === 'pl' ? 'pl' : 'zh'
+            const dstCode = myLang === 'pl' ? 'zh' : 'pl'
+            startCaptionOnlyRecognition(recLang, srcCode, dstCode)
+          }
+          setCaptionsActive(true)
+        } catch (e) {
+          setCaptionsError(t('Napisy na żywo niedostępne (') + e.message + t(')'))
+        }
+      }
 
       attachAnalyser(currentUserId, stream)
       startSpeakingLoop()
@@ -387,6 +543,16 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     chunkLastTextRef.current = {}
     playQueueRef.current = Promise.resolve()
 
+    captionRecognitionActiveRef.current = false
+    if (captionRecognitionRef.current) { try { captionRecognitionRef.current.stop() } catch (e) { /* ignore */ } ; captionRecognitionRef.current = null }
+    Object.values(captionChunkTimersRef.current).forEach(id => clearTimeout(id))
+    captionChunkTimersRef.current = {}
+    captionChunkSentUpToRef.current = {}
+    captionChunkLastTextRef.current = {}
+    resetCaptionRow()
+    setCaptionsActive(false)
+    setCaptionsError('')
+
     outgoingStreamRef.current?.getTracks().forEach(tr => { try { tr.stop() } catch (e) { /* ignore */ } })
     outgoingStreamRef.current = null
 
@@ -410,6 +576,10 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
       if (muted) { recognitionActiveRef.current = true; try { recognitionRef.current.start() } catch (e) { /* ignore */ } }
       else { recognitionActiveRef.current = false; try { recognitionRef.current.stop() } catch (e) { /* ignore */ } }
     }
+    if (captionRecognitionRef.current) {
+      if (muted) { captionRecognitionActiveRef.current = true; try { captionRecognitionRef.current.start() } catch (e) { /* ignore */ } }
+      else { captionRecognitionActiveRef.current = false; try { captionRecognitionRef.current.stop() } catch (e) { /* ignore */ } }
+    }
   }
 
   const others = Object.entries(participants)
@@ -425,6 +595,9 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
             <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>
               🌐 {myLang === 'pl' ? t('PL→中文') : t('中文→PL')}
             </span>
+          )}
+          {joined && captionsActive && (
+            <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>📝 {t('napisy na żywo')}</span>
           )}
         </div>
         {!joined ? (
@@ -451,6 +624,10 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
             <input type="checkbox" checked={aiTranslate} onChange={e => setAiTranslate(e.target.checked)} />
             {t("🌐 Tłumacz mój głos AI na drugi język")}
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={liveCaptions} onChange={e => setLiveCaptions(e.target.checked)} disabled={!chatChannelId} />
+            {t("📝 Napisy na żywo (oryginał + tłumaczenie) na czacie")}
+          </label>
         </div>
       )}
       {!joined && aiTranslate && (
@@ -458,9 +635,15 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
           {t("Inni usłyszą Twój głos automatycznie przetłumaczony w czasie rzeczywistym. Korzysta z płatnego API OpenAI — nowa funkcja, może wymagać drobnych poprawek przy pierwszym użyciu.")}
         </div>
       )}
+      {!joined && liveCaptions && (
+        <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>
+          {t("W tym czacie pojawi się rosnąca na żywo wiadomość: oryginał tego co mówisz + tłumaczenie pod nim. Nowa wypowiedź (po dłuższej pauzie) = nowa wiadomość.")}
+        </div>
+      )}
 
       {error && <div style={{ fontSize: 10, color: C.red, marginTop: 6 }}>{error}</div>}
       {translateError && <div style={{ fontSize: 10, color: C.red, marginTop: 6 }}>{translateError}</div>}
+      {captionsError && <div style={{ fontSize: 10, color: C.red, marginTop: 6 }}>{captionsError}</div>}
 
       {others.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>

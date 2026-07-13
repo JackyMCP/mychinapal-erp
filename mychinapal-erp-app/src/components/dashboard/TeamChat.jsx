@@ -94,7 +94,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>💬 {channelName}</div>
-      {channelId && <VoiceChannel roomId={`voice-${channelId}`} currentUserId={currentUserId} currentUserName={currentUserName || 'Użytkownik'} accentColor={accentColor} />}
+      {channelId && <VoiceChannel roomId={`voice-${channelId}`} currentUserId={currentUserId} currentUserName={currentUserName || 'Użytkownik'} accentColor={accentColor} chatChannelId={channelId} />}
       {loading ? <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div> : (
         <>
           <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 10 }}>
@@ -116,6 +116,9 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
                     <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ fontSize: 12 }}>{m.content}</div>
+                  {m.translated_content && m.translated_content !== m.content && (
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>
+                  )}
                 </div>
               </div>
             ))}
