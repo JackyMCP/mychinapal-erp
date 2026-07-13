@@ -168,7 +168,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   // ── PL -> ZH: mintujemy krótkotrwały token OpenAI i łączymy się z nim wprost przez WebRTC ──
   // (mikrofon idzie do OpenAI, a to co OpenAI odeśle "ontrack" to już przetłumaczony na chiński głos)
   async function setupOpenAITranslator(targetLang) {
-    const { data, error: fnErr } = await supabase.functions.invoke('openai-realtime-token', { body: { target_language: targetLang } })
+    const { data, error: fnErr } = await supabase.functions.invoke('openai-realtime-token-ts', { body: { target_language: targetLang } })
     if (fnErr) throw new Error('token: ' + fnErr.message)
     if (!data?.ok) throw new Error(data?.error || 'nieznany błąd tokenu OpenAI')
     const ephemeralKey = data.client_secret
@@ -224,13 +224,13 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
       const text = result[0]?.transcript?.trim()
       if (!text) return
       try {
-        const { data: trData } = await supabase.functions.invoke('translate-text', { body: { text, to: 'pl' } })
+        const { data: trData } = await supabase.functions.invoke('translate-text-ts', { body: { text, to: 'pl' } })
         if (!trData?.ok || !trData.translated) return
 
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token || supabaseAnonKey
 
-        const ttsRes = await fetch(`${supabaseUrl}/functions/v1/tts-speak`, {
+        const ttsRes = await fetch(`${supabaseUrl}/functions/v1/tts-speak-ts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
           body: JSON.stringify({ text: trData.translated }),
