@@ -2,7 +2,7 @@ import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { safeFileName } from '../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../lib/files'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
@@ -10,6 +10,8 @@ import VoiceChannel from '../components/dashboard/VoiceChannel'
 import { DOC_CATEGORIES } from '../components/projekty/stageDefs'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
+
+const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
 
 const TYPE_STYLE = {
@@ -50,6 +52,9 @@ export default function Czat() {
   const [renameValue, setRenameValue] = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [scrollTick, setScrollTick] = useState(0)
   const bottomRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -73,19 +78,25 @@ export default function Czat() {
   useEffect(() => { loadChannels() }, [])
 
   useEffect(() => {
-    if (!activeId) { setMessages([]); return }
+    if (!activeId) { setMessages([]); setHasMore(false); return }
     let cancelled = false
     setShowFiles(false)
     setRenaming(false)
+    setHasMore(false)
 
     ;(async () => {
       const { data, error } = await supabase
         .from('chat_messages')
         .select(MSG_SELECT)
         .eq('channel_id', activeId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(LIMIT)
       if (error) { console.error(error); toast.error('Nie udało się wczytać historii wiadomości: ' + error.message); return }
-      if (!cancelled) setMessages(data || [])
+      if (!cancelled) {
+        setMessages((data || []).slice().reverse())
+        setHasMore((data || []).length === LIMIT)
+        setScrollTick(tk => tk + 1)
+      }
     })()
 
     const sub = supabase
@@ -95,6 +106,7 @@ export default function Czat() {
         if (error) { console.error(error); return }
         const row = data || payload.new
         setMessages(prev => (prev.some(m => m.id === row.id) ? prev : [...prev, row]))
+        setScrollTick(tk => tk + 1)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${activeId}` }, (payload) => {
         // np. dotarło tłumaczenie z funkcji translate-chat-message
@@ -107,10 +119,25 @@ export default function Czat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [scrollTick])
+
+  const loadOlder = async () => {
+    if (!activeId || loadingMore || !messages.length) return
+    setLoadingMore(true)
+    const oldest = messages[0].created_at
+    const { data, error } = await supabase.from('chat_messages').select(MSG_SELECT)
+      .eq('channel_id', activeId).lt('created_at', oldest)
+      .order('created_at', { ascending: false }).limit(LIMIT)
+    setLoadingMore(false)
+    if (error) { toast.error(t('Nie udało się wczytać starszych wiadomości: ') + error.message); return }
+    const older = (data || []).slice().reverse()
+    setHasMore(older.length === LIMIT)
+    setMessages(prev => [...older, ...prev])
+  }
 
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !activeId) return
+    if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -269,6 +296,14 @@ export default function Czat() {
                 <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} />
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {hasMore && (
+                  <div style={{ textAlign: 'center', marginBottom: 4 }}>
+                    <button onClick={loadOlder} disabled={loadingMore}
+                      style={{ border: `1px solid ${C.border}`, background: C.white, color: C.blue, borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? .6 : 1 }}>
+                      {loadingMore ? t('Wczytywanie…') : t('Wczytaj starsze wiadomości')}
+                    </button>
+                  </div>
+                )}
                 {messages.length === 0 && <EmptyState icon="✉️" title={t("Brak wiadomości")} subtitle={t("Napisz pierwszą wiadomość na tym kanale.")} />}
                 {messages.map(m => {
                   const mine = m.sender_id === profile?.id

@@ -6,6 +6,8 @@ import { avatarColor, initials } from '../klienci/utils'
 import VoiceChannel from './VoiceChannel'
 import { useUI } from '../../lib/ui'
 
+const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
+
 const MSG_SELECT = '*, profiles(full_name)'
 
 export default function TeamChat({ channelName, zarzadOnly, currentUserId, currentUserName, accentColor }) {
@@ -19,6 +21,9 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [scrollTick, setScrollTick] = useState(0)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -39,12 +44,17 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     if (!channelId) return
     let cancelled = false
     ;(async () => {
-      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at')
-      if (!cancelled) setMessages(data || [])
+      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at', { ascending: false }).limit(LIMIT)
+      if (!cancelled) {
+        setMessages((data || []).slice().reverse())
+        setHasMore((data || []).length === LIMIT)
+        setScrollTick(tk => tk + 1)
+      }
     })()
     const sub = supabase.channel(`team-chat-${channelId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => (prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]))
+        setScrollTick(tk => tk + 1)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => prev.map(m => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
@@ -53,7 +63,21 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     return () => { cancelled = true; supabase.removeChannel(sub) }
   }, [channelId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [scrollTick])
+
+  const loadOlder = async () => {
+    if (!channelId || loadingMore || !messages.length) return
+    setLoadingMore(true)
+    const oldest = messages[0].created_at
+    const { data, error } = await supabase.from('chat_messages').select(MSG_SELECT)
+      .eq('channel_id', channelId).lt('created_at', oldest)
+      .order('created_at', { ascending: false }).limit(LIMIT)
+    setLoadingMore(false)
+    if (error) { toast.error(t('Nie udało się wczytać starszych wiadomości: ') + error.message); return }
+    const older = (data || []).slice().reverse()
+    setHasMore(older.length === LIMIT)
+    setMessages(prev => [...older, ...prev])
+  }
 
   const handleSend = async () => {
     if (!text.trim() || !channelId) return
@@ -74,7 +98,15 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
       {loading ? <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div> : (
         <>
           <div style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 10 }}>
-            {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
+            {hasMore && (
+            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+              <button onClick={loadOlder} disabled={loadingMore}
+                style={{ border: `1px solid ${C.border}`, background: C.white, color: C.blue, borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? .6 : 1 }}>
+                {loadingMore ? t('Wczytywanie…') : t('Wczytaj starsze wiadomości')}
+              </button>
+            </div>
+          )}
+          {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
             {messages.map(m => (
               <div key={m.id} style={{ display: 'flex', gap: 8, padding: '6px 0' }}>
                 <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(m.profiles?.full_name || '') }}>{initials(m.profiles?.full_name || '?')}</div>

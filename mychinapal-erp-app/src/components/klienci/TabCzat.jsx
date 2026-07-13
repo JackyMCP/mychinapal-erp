@@ -2,11 +2,13 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
-import { safeFileName } from '../../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
 import { useUI } from '../../lib/ui'
+
+const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
@@ -22,6 +24,9 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
   const [loading, setLoading] = useState(true)
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [scrollTick, setScrollTick] = useState(0)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -53,14 +58,19 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
     if (!channelId) return
     let cancelled = false
     ;(async () => {
-      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at')
-      if (!cancelled) setMessages(data || [])
+      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at', { ascending: false }).limit(LIMIT)
+      if (!cancelled) {
+        setMessages((data || []).slice().reverse())
+        setHasMore((data || []).length === LIMIT)
+        setScrollTick(tk => tk + 1)
+      }
     })()
 
     const sub = supabase
       .channel(`client-chat-${channelId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => (prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]))
+        setScrollTick(tk => tk + 1)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => prev.map(m => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
@@ -70,10 +80,25 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
     return () => { cancelled = true; supabase.removeChannel(sub) }
   }, [channelId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [scrollTick])
+
+  const loadOlder = async () => {
+    if (!channelId || loadingMore || !messages.length) return
+    setLoadingMore(true)
+    const oldest = messages[0].created_at
+    const { data, error } = await supabase.from('chat_messages').select(MSG_SELECT)
+      .eq('channel_id', channelId).lt('created_at', oldest)
+      .order('created_at', { ascending: false }).limit(LIMIT)
+    setLoadingMore(false)
+    if (error) { toast.error(t('Nie udało się wczytać starszych wiadomości: ') + error.message); return }
+    const older = (data || []).slice().reverse()
+    setHasMore(older.length === LIMIT)
+    setMessages(prev => [...older, ...prev])
+  }
 
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !channelId) return
+    if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
@@ -110,17 +135,34 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
   return (
     <div>
       {projectChannels.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {projectChannels.map(c => (
-            <div key={c.id} onClick={() => navigate(`/czat?channel=${c.id}`)}
-              style={{ fontSize: 11, fontWeight: 600, padding: '7px 13px', borderRadius: 8, background: C.blight, color: C.blue, cursor: 'pointer' }}>💬 {c.name} {t("— czat tego zamówienia")}</div>
-          ))}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 8 }}>{t("Czaty zamówień tego klienta")}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+            {projectChannels.map(c => (
+              <div key={c.id} onClick={() => navigate(`/czat?channel=${c.id}`)} className="ux-hover-lift"
+                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, background: C.olight, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                <span style={{ width: 30, height: 30, borderRadius: 8, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>📦</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{t("Czat zamówienia →")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', height: 480 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>💬 {t("Czat z")} {clientName}</div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '2px 2px' }}>
+          {hasMore && (
+            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+              <button onClick={loadOlder} disabled={loadingMore}
+                style={{ border: `1px solid ${C.border}`, background: C.white, color: C.blue, borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? .6 : 1 }}>
+                {loadingMore ? t('Wczytywanie…') : t('Wczytaj starsze wiadomości')}
+              </button>
+            </div>
+          )}
           {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą poniżej.")}</div>}
           {messages.map(m => {
             const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents

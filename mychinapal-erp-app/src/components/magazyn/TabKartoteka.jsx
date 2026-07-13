@@ -1,7 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { safeFileName } from '../../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { photoGradient } from './utils'
 import { useUI } from '../../lib/ui'
@@ -27,6 +27,7 @@ export default function TabKartoteka({ products, loading, onChanged }) {
 
   const handlePhoto = async (product, file) => {
     if (!file) return
+    if (isFileTooBig(file)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
     setUploadingId(product.id)
     const path = `${product.id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('produkty').upload(path, file)

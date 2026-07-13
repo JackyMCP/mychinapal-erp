@@ -1,10 +1,12 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { safeFileName } from '../../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
+
+const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
@@ -21,6 +23,9 @@ export default function ProjectChat({ project }) {
   const [loading, setLoading] = useState(true)
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [scrollTick, setScrollTick] = useState(0)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -45,14 +50,19 @@ export default function ProjectChat({ project }) {
     if (!channelId) return
     let cancelled = false
     ;(async () => {
-      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at')
-      if (!cancelled) setMessages(data || [])
+      const { data } = await supabase.from('chat_messages').select(MSG_SELECT).eq('channel_id', channelId).order('created_at', { ascending: false }).limit(LIMIT)
+      if (!cancelled) {
+        setMessages((data || []).slice().reverse())
+        setHasMore((data || []).length === LIMIT)
+        setScrollTick(tk => tk + 1)
+      }
     })()
 
     const sub = supabase
       .channel(`project-chat-${channelId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => (prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]))
+        setScrollTick(tk => tk + 1)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
         setMessages(prev => prev.map(m => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
@@ -62,10 +72,25 @@ export default function ProjectChat({ project }) {
     return () => { cancelled = true; supabase.removeChannel(sub) }
   }, [channelId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages.length])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [scrollTick])
+
+  const loadOlder = async () => {
+    if (!channelId || loadingMore || !messages.length) return
+    setLoadingMore(true)
+    const oldest = messages[0].created_at
+    const { data, error } = await supabase.from('chat_messages').select(MSG_SELECT)
+      .eq('channel_id', channelId).lt('created_at', oldest)
+      .order('created_at', { ascending: false }).limit(LIMIT)
+    setLoadingMore(false)
+    if (error) { toast.error(t('Nie udało się wczytać starszych wiadomości: ') + error.message); return }
+    const older = (data || []).slice().reverse()
+    setHasMore(older.length === LIMIT)
+    setMessages(prev => [...older, ...prev])
+  }
 
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !channelId) return
+    if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
@@ -104,7 +129,15 @@ export default function ProjectChat({ project }) {
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>{t("💬 Czat tego zamówienia")}</div>
       <div style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 10 }}>
-        {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą poniżej.")}</div>}
+        {hasMore && (
+            <div style={{ textAlign: 'center', marginBottom: 8 }}>
+              <button onClick={loadOlder} disabled={loadingMore}
+                style={{ border: `1px solid ${C.border}`, background: C.white, color: C.blue, borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? .6 : 1 }}>
+                {loadingMore ? t('Wczytywanie…') : t('Wczytaj starsze wiadomości')}
+              </button>
+            </div>
+          )}
+          {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą poniżej.")}</div>}
         {messages.map(m => {
           const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
           return (

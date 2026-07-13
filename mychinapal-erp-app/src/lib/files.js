@@ -15,3 +15,13 @@ export function safeFileName(name) {
   const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 10)
   return safeExt ? `${safeBase}.${safeExt}` : safeBase
 }
+
+// Limit rozmiaru pliku wgrywanego z aplikacji (ochrona limitu Storage na
+// koncie Supabase — plan Free ma tylko 1GB, Pro 100GB w cenie). 40MB
+// pokrywa z dużym zapasem skany, zdjęcia i większość PDF-ów/arkuszy.
+export const MAX_FILE_SIZE_MB = 40
+export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+export function isFileTooBig(file) {
+  return !!file && file.size > MAX_FILE_SIZE_BYTES
+}

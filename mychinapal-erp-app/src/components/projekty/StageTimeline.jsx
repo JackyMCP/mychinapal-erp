@@ -1,7 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { safeFileName } from '../../lib/files'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { STAGE_DEFS } from './stageDefs'
 import { useUI } from '../../lib/ui'
@@ -18,6 +18,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
 
   const handleUpload = async (file) => {
     if (!file) return
+    if (isFileTooBig(file)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
