@@ -56,7 +56,13 @@ export function LanguageProvider({ children }) {
         console.log('[i18n] invoking dynamic-task with', missing.length, 'texts:', missing)
         const { data, error } = await supabase.functions.invoke('dynamic-task', { body: { texts: missing } })
         console.log('[i18n] dynamic-task result ->', { data, error })
-        if (!error && data?.translations) fresh = data.translations
+        // zabezpieczenie: jeśli odpowiedź przyjdzie jako string zamiast rozpoznanego JSON-a
+        // (np. brakujący nagłówek Content-Type po stronie funkcji), sparsuj ją ręcznie
+        let parsedData = data
+        if (typeof parsedData === 'string') {
+          try { parsedData = JSON.parse(parsedData) } catch (e) { console.error('[i18n] could not parse string response', e) }
+        }
+        if (!error && parsedData?.translations) fresh = parsedData.translations
       }
 
       const merged = {}
