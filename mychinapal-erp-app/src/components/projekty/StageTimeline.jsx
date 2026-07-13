@@ -31,6 +31,22 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  const handleDelete = async (doc) => {
+    if (!window.confirm(t('Usunąć plik „' + doc.file_name + '”? Tej operacji nie da się cofnąć.'))) return
+    const { error: stErr } = await supabase.storage.from('dokumenty').remove([doc.file_path])
+    if (stErr) { alert('Nie udało się usunąć pliku z magazynu: ' + stErr.message); return }
+    const { data: delRows, error: dbErr } = await supabase.from('documents').delete().eq('id', doc.id).select()
+    if (dbErr) { alert('Nie udało się usunąć wpisu dokumentu: ' + dbErr.message); return }
+    if (!delRows || delRows.length === 0) { alert(t('Brak uprawnień do usunięcia tego pliku — możesz usuwać tylko własne pliki (chyba że masz rolę Zarządu).')); return }
+    onUploaded && onUploaded()
+  }
+
+  const handleDownload = async (doc) => {
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
+    if (error) { alert('Nie udało się pobrać pliku: ' + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
   const isLocked = status === 'locked'
   const dotColor = status === 'done' ? C.green : status === 'current' ? C.blue : C.border
   const dotBg = status === 'locked' ? { background: C.border, color: C.muted } : { background: dotColor, color: '#fff' }
@@ -64,9 +80,25 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
               {stage.categories.map(cat => {
                 const docs = docsByCategory[cat] || []
                 return (
-                  <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
-                    <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: docs.length ? C.glight : C.rlight, color: docs.length ? C.green : C.red }}>{docs.length ? '✓' : '✗'}</div>
-                    {t(cat)}{docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`) : t(" — brakuje")}
+                  <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12 }}>
+                      <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: docs.length ? C.glight : C.rlight, color: docs.length ? C.green : C.red }}>{docs.length ? '✓' : '✗'}</div>
+                      {t(cat)}{docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`) : t(" — brakuje")}
+                    </div>
+                    {docs.length > 0 && (
+                      <div style={{ marginTop: 6, marginLeft: 28, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {docs.map(doc => (
+                          <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span onClick={() => handleDownload(doc)} style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', color: C.blue }}>{doc.file_name}</span>
+                            <span onClick={() => handleDelete(doc)} title={t('Usuń plik')}
+                              style={{ fontSize: 12, color: C.muted, padding: '2px 5px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}
+                              onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
+                            >🗑</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -262,7 +262,7 @@ export default function Klienci() {
           <TabKalendarz tasks={tasks} clientId={selected.id} onChanged={() => reloadDetail(selected.id)} />
         )}
         {tab === 'Galeria' && <TabGaleria documents={documents} />}
-        {tab === 'Dokumenty' && <TabDokumenty documents={documents} projects={selectedProjects} />}
+        {tab === 'Dokumenty' && <TabDokumenty documents={documents} projects={selectedProjects} onChanged={() => reloadDetail(selected.id)} />}
         {tab === 'Zadania' && (
           <TabZadania tasks={tasks} profiles={profiles} currentUserId={profile?.id} clientId={selected.id}
             onChanged={() => reloadDetail(selected.id)} />
