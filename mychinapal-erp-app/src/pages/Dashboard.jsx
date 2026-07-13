@@ -59,7 +59,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title={t("Dashboard")} subtitle={loading ? 'Ładowanie…' : `Witaj, ${profile?.full_name || ''}`} />
+      <PageHeader title={t("Dashboard")} subtitle={loading ? 'Ładowanie…' : `${t("Witaj")}, ${(profile?.full_name || '').trim().split(/\s+/)[0] || ''} 👋`} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
 
         {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}

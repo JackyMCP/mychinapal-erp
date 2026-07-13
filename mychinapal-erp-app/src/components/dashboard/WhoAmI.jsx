@@ -8,12 +8,15 @@ export default function WhoAmI({ profile, isZarzad }) {
   } = useLang();
 
   if (!profile) return null
+  const firstName = (profile.full_name || '').trim().split(/\s+/)[0] || ''
   return (
-    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+    <div className="ux-fade-in" style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(profile.full_name) }}>{initials(profile.full_name)}</div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800 }}>{profile.full_name}</div>
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{profile.email}</div>
+        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800, color: C.navy, display: 'flex', alignItems: 'center', gap: 7 }}>
+          {t("Witaj")}, {firstName} <span style={{ fontSize: 16 }}>👋</span>
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{profile.full_name} · {profile.email}</div>
       </div>
       <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 11px', borderRadius: 20, background: isZarzad ? C.plight : C.blight, color: isZarzad ? C.purple : C.blue }}>
         {isZarzad ? t("Zarząd") : t("Pracownik")}
