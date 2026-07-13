@@ -11,19 +11,30 @@ function isMacSafari() {
   const isSafari = /safari/i.test(ua) && !/chrome|chromium|crios|edg|opr|firefox|fxios/i.test(ua)
   return isMac && isSafari
 }
+function isWindows() {
+  return /windows/i.test(window.navigator.userAgent)
+}
+function isChromiumBased() {
+  const ua = window.navigator.userAgent
+  return /chrome|chromium|edg/i.test(ua) && !/opr/i.test(ua)
+}
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
 }
 
 export default function InstallAppButton({ collapsed }) {
   const { t } = useLang()
-  const [deferredPrompt, setDeferredPrompt] = useState(null)
-  const [modal, setModal] = useState(null) // 'ios' | 'mac' | null
+  const [deferredPrompt, setDeferredPrompt] = useState(() => window.__pwaInstallEvent || null)
+  const [modal, setModal] = useState(null) // 'ios' | 'mac' | 'windows' | null
   const [installed, setInstalled] = useState(isStandalone())
 
   useEffect(() => {
+    // na wypadek gdyby zdarzenie odpaliło się już przed zamontowaniem komponentu
+    if (window.__pwaInstallEvent) setDeferredPrompt(window.__pwaInstallEvent)
+
     const onBeforeInstall = (e) => {
       e.preventDefault()
+      window.__pwaInstallEvent = e
       setDeferredPrompt(e)
     }
     const onInstalled = () => setInstalled(true)
@@ -38,14 +49,17 @@ export default function InstallAppButton({ collapsed }) {
   if (installed) return null
   const showIos = isIos()
   const showMac = !showIos && isMacSafari()
-  if (!deferredPrompt && !showIos && !showMac) return null // brak wsparcia w tej przeglądarce (np. Firefox)
+  const showWindowsFallback = !showIos && !showMac && isWindows() && isChromiumBased() && !deferredPrompt
+  // Firefox i inne przeglądarki bez wsparcia dla instalacji PWA — nic nie pokazujemy
+  if (!deferredPrompt && !showIos && !showMac && !showWindowsFallback) return null
 
   const handleClick = async () => {
     if (showIos) { setModal('ios'); return }
     if (showMac && !deferredPrompt) { setModal('mac'); return }
-    if (!deferredPrompt) return
+    if (!deferredPrompt) { setModal('windows'); return }
     deferredPrompt.prompt()
     await deferredPrompt.userChoice
+    window.__pwaInstallEvent = null
     setDeferredPrompt(null)
   }
 
@@ -62,8 +76,8 @@ export default function InstallAppButton({ collapsed }) {
 
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 340, color: C.text }}>
-            {modal === 'ios' ? (
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 360, color: C.text }}>
+            {modal === 'ios' && (
               <>
                 <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>{t('Zainstaluj aplikację na iPhone/iPad')}</div>
                 <ol style={{ paddingLeft: 18, fontSize: 13, lineHeight: 1.7, margin: 0 }}>
@@ -72,7 +86,8 @@ export default function InstallAppButton({ collapsed }) {
                   <li>{t('Potwierdź, stukając „Dodaj”')}</li>
                 </ol>
               </>
-            ) : (
+            )}
+            {modal === 'mac' && (
               <>
                 <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>{t('Zainstaluj aplikację na Macu')}</div>
                 <ol style={{ paddingLeft: 18, fontSize: 13, lineHeight: 1.7, margin: 0 }}>
@@ -80,6 +95,17 @@ export default function InstallAppButton({ collapsed }) {
                   <li>{t('Wybierz „Dodaj do Docka”')} <span style={{ color: C.muted }}>({t('albo ikona Udostępnij w pasku Safari → „Dodaj do Docka”')})</span></li>
                   <li>{t('Kliknij „Dodaj” — aplikacja pojawi się w Docku')}</li>
                 </ol>
+              </>
+            )}
+            {modal === 'windows' && (
+              <>
+                <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>{t('Zainstaluj aplikację na Windows')}</div>
+                <ol style={{ paddingLeft: 18, fontSize: 13, lineHeight: 1.7, margin: 0 }}>
+                  <li>{t('W Chrome lub Edge spójrz na prawy koniec paska adresu — powinna tam być ikonka instalacji (komputer ze strzałką ⊕)')}</li>
+                  <li>{t('Kliknij ją i wybierz „Zainstaluj”')}</li>
+                  <li>{t('Jeśli nie widzisz tej ikonki: kliknij menu (⋮) w prawym górnym rogu przeglądarki → „Zainstaluj MyChinaPal ERP…” / „Aplikacje” → „Zainstaluj tę witrynę jako aplikację”')}</li>
+                </ol>
+                <div style={{ marginTop: 10, fontSize: 11.5, color: C.muted }}>{t('Uwaga: instalacja PWA działa w Chrome i Edge. Firefox tego nie obsługuje.')}</div>
               </>
             )}
             <button onClick={() => setModal(null)} style={{ marginTop: 16, width: '100%', padding: '9px 12px', borderRadius: 7, border: 'none', background: C.blue, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>{t('Rozumiem')}</button>

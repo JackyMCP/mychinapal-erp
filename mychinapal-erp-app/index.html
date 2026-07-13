@@ -6,6 +6,17 @@
 <title>MyChinaPal ERP</title>
 <meta name="description" content="System ERP MyChinaPal Sp. z o.o." />
 <meta name="theme-color" content="#0A1628" />
+<script>
+  // Przechwytujemy zdarzenie instalacji PWA jak najwcześniej — w Chrome/Edge
+  // na Windowsie potrafi ono odpalić się zanim React zdąży się zamontować
+  // i podpiąć nasłuchiwanie, więc bez tego przycisk "Zainstaluj aplikację"
+  // czasem w ogóle się nie pokazywał na desktopie z Windowsem.
+  window.__pwaInstallEvent = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    window.__pwaInstallEvent = e;
+  });
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
