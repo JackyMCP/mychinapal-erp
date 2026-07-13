@@ -37,37 +37,44 @@ export function LanguageProvider({ children }) {
   const flush = useCallback(async () => {
     timerRef.current = null
     const batch = Array.from(pendingRef.current).filter(t => !inFlightRef.current.has(t)).slice(0, BATCH_MAX)
+    console.log('[i18n] flush() start, batch size:', batch.length, batch)
     if (batch.length === 0) return
     batch.forEach(t => { pendingRef.current.delete(t); inFlightRef.current.add(t) })
 
     try {
       // 1) sprawdź co już jest w współdzielonym cache w bazie
-      const { data: existing } = await supabase.from('ui_translations').select('source_text, zh_text').in('source_text', batch)
+      const { data: existing, error: selErr } = await supabase.from('ui_translations').select('source_text, zh_text').in('source_text', batch)
+      console.log('[i18n] ui_translations select ->', { existing, selErr })
       const found = new Map((existing || []).map(r => [r.source_text, r.zh_text]))
       const missing = batch.filter(t => !found.has(t))
 
       let fresh = {}
       if (missing.length > 0) {
-                // UWAGA: w Supabase funkcja widnieje w liście jako "translate-batch", ale jej faktyczny
+        // UWAGA: w Supabase funkcja widnieje w liście jako "translate-batch", ale jej faktyczny
         // adres/slug (przydzielony automatycznie przy tworzeniu) to "dynamic-task" — stąd wywołanie
         // musi używać tej drugiej nazwy, inaczej dostajemy 404.
+        console.log('[i18n] invoking dynamic-task with', missing.length, 'texts:', missing)
         const { data, error } = await supabase.functions.invoke('dynamic-task', { body: { texts: missing } })
+        console.log('[i18n] dynamic-task result ->', { data, error })
         if (!error && data?.translations) fresh = data.translations
       }
 
       const merged = {}
       found.forEach((v, k) => { merged[k] = v })
       Object.entries(fresh).forEach(([k, v]) => { merged[k] = v })
+      console.log('[i18n] merged translations this batch:', merged)
 
       if (Object.keys(merged).length > 0) {
         setCache(prev => ({ ...prev, ...merged }))
         // zapisz nowo przetłumaczone teksty do wspólnego cache w bazie, żeby
         // kolejni użytkownicy (i kolejne wizyty) mieli je już gotowe od razu
         const toUpsert = Object.entries(fresh).map(([source_text, zh_text]) => ({ source_text, zh_text }))
-        if (toUpsert.length > 0) supabase.from('ui_translations').upsert(toUpsert, { onConflict: 'source_text' }).then(() => {})
+        if (toUpsert.length > 0) supabase.from('ui_translations').upsert(toUpsert, { onConflict: 'source_text' }).then(({ error: upErr }) => {
+          if (upErr) console.error('[i18n] upsert to ui_translations failed:', upErr)
+        })
       }
     } catch (e) {
-      console.error('translation flush failed', e)
+      console.error('[i18n] flush() threw an exception:', e)
     } finally {
       batch.forEach(t => inFlightRef.current.delete(t))
       if (pendingRef.current.size > 0) scheduleFlush()
