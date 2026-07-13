@@ -198,9 +198,9 @@ export default function KasaBank() {
             { l: 'Nierozliczonych', v: getKK('Nierozliczonych', selQ), fmt: false, bl: getKK('Nierozliczonych', selQ) > 0 ? C.orange : C.green, delta: `Rozliczonych: ${getKK('Rozliczonych całkowicie', selQ)}` },
           ].map((k, i) => (
             <div key={i} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 9, padding: '10px 13px', borderLeft: `3px solid ${k.bl}` }}>
-              <div style={{ fontSize: 9.5, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{k.l} — {Q_LABELS[qi]}</div>
+              <div style={{ fontSize: 9.5, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{t(k.l)} — {Q_LABELS[qi]}</div>
               <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: k.bl }}>{k.fmt ? ((k.v > 0 ? '+' : '') + fmt(k.v, 0) + ' PLN') : k.v}</div>
-              {k.delta && <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{k.delta}</div>}
+              {k.delta && <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{t(k.delta)}</div>}
             </div>
           ))}
         </div>
@@ -209,7 +209,7 @@ export default function KasaBank() {
           <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 16px', overflowX: 'auto' }}>
             {TABS.map(row => (
               <div key={row.k} onClick={() => setTab(row.k)} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `2px solid ${tab === row.k ? C.blue : 'transparent'}`, marginBottom: -1, color: tab === row.k ? C.blue : row.danger ? C.red : C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {row.l}
+                {t(row.l)}
                 {row.badge ? <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>{row.badge}</span> : null}
               </div>
             ))}

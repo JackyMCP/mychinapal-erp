@@ -133,7 +133,7 @@ export default function Projekty() {
           {[['all', 'Wszystkie'], ['progress', 'W toku'], ['done', 'Zakończone']].map(([key, label]) => (
             <div key={key} onClick={() => setFilter(key)}
               style={{ padding: '7px 13px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: filter === key ? C.navy : '#fff', color: filter === key ? '#fff' : C.text2, borderColor: filter === key ? C.navy : C.border }}>
-              {label}
+              {t(label)}
             </div>
           ))}
         </div>

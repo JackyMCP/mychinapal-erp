@@ -35,7 +35,7 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
             padding: '4px 10px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: 600,
             border: `1px solid ${selQ === k ? C.blue : C.border}`,
             background: selQ === k ? C.blue : 'transparent', color: selQ === k ? '#fff' : C.muted,
-          }}>{l}</div>
+          }}>{t(l)}</div>
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>

@@ -47,7 +47,7 @@ export default function TabPrognoza({ items }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: C.bg }}>
               {['Data', 'Nazwa', 'Kategoria', 'Kwota'].map((h, i) => (
-                <th key={i} style={{ textAlign: i === 3 ? 'right' : 'left', padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                <th key={i} style={{ textAlign: i === 3 ? 'right' : 'left', padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}` }}>{t(h)}</th>
               ))}
             </tr></thead>
             <tbody>

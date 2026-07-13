@@ -32,7 +32,7 @@ export default function TabCykliczne({ items }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: C.bg }}>
               {['Nazwa', 'Kategoria', 'Dzień', 'Kwota/mies.', 'Kwota/rok', 'Status'].map((h, i) => (
-                <th key={i} style={{ textAlign: i > 1 ? 'right' : i === 1 ? 'left' : 'left', padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                <th key={i} style={{ textAlign: i > 1 ? 'right' : i === 1 ? 'left' : 'left', padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}` }}>{t(h)}</th>
               ))}
             </tr></thead>
             <tbody>

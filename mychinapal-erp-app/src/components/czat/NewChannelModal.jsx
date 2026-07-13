@@ -59,7 +59,7 @@ export default function NewChannelModal({ onClose, onCreated }) {
         <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Powiązanie")}</label>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           {[['brak', 'Brak (ogólny)'], ['klient', 'Klient'], ['projekt', 'Projekt/zamówienie']].map(([k, l]) => (
-            <div key={k} onClick={() => setLinkType(k)} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${linkType === k ? C.blue : C.border}`, background: linkType === k ? C.blue : 'transparent', color: linkType === k ? '#fff' : C.muted }}>{l}</div>
+            <div key={k} onClick={() => setLinkType(k)} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${linkType === k ? C.blue : C.border}`, background: linkType === k ? C.blue : 'transparent', color: linkType === k ? '#fff' : C.muted }}>{t(l)}</div>
           ))}
         </div>
 

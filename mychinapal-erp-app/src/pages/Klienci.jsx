@@ -140,7 +140,7 @@ export default function Klienci() {
                 {TABS.map(row => (
                   <div key={row} onClick={() => setTab(row)}
                     style={{ padding: '9px 14px', fontSize: 11.5, fontWeight: 600, color: tab === row ? C.blue : C.muted, cursor: 'pointer', borderBottom: tab === row ? `2px solid ${C.blue}` : '2px solid transparent', marginBottom: -1 }}>
-                    {row}{row === 'Zamówienia' ? ` (${selectedProjects.length})` : ''}{row === 'Dokumenty' ? ` (${documents.length})` : ''}
+                    {t(row)}{row === 'Zamówienia' ? ` (${selectedProjects.length})` : ''}{row === 'Dokumenty' ? ` (${documents.length})` : ''}
                   </div>
                 ))}
               </div>

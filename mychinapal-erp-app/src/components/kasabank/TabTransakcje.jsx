@@ -69,7 +69,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
 
   const SortTh = ({ col, label, right = false }) => (
     <th onClick={() => handleSort(col)} style={{ textAlign: right ? 'right' : 'left', padding: '6px 8px', fontSize: 9, fontWeight: 700, color: sortCol === col ? C.blue : C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none' }}>
-      {label}{sortCol === col ? (sortAsc ? ' ↑' : ' ↓') : ''}
+      {t(label)}{sortCol === col ? (sortAsc ? ' ↑' : ' ↓') : ''}
     </th>
   )
 
@@ -97,7 +97,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
             padding: '3px 9px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: 600,
             border: `1px solid ${selQ === k ? C.blue : C.border}`,
             background: selQ === k ? C.blue : 'transparent', color: selQ === k ? '#fff' : C.muted,
-          }}>{l}</div>
+          }}>{t(l)}</div>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: C.muted, cursor: 'pointer' }}>
@@ -115,7 +115,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
             border: `1px solid ${filter === k ? C.blue : danger ? C.rmid : C.border}`,
             background: filter === k ? C.blue : danger ? C.rlight : 'transparent',
             color: filter === k ? '#fff' : danger ? C.red : C.muted,
-          }}>{l}</div>
+          }}>{t(l)}</div>
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 10.5, color: C.muted }}>
@@ -133,7 +133,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {[['#F0FDF4', 'Przychód/WN+'], ['#EFF6FF', 'Zakup Chiny'], ['#FEF3E8', 'Transport'], ['#FFF0F5', 'Odprawa'], ['#F5F3FF', 'Podatki/ZUS'], ['#FFFBEB', 'Do weryfikacji'], ['#F8F8F8', 'Wydatki/pomocnicze']].map(([bg, l]) => (
           <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9.5, color: C.muted }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: bg, border: `1px solid ${C.border}` }}></div>{l}
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: bg, border: `1px solid ${C.border}` }}></div>{t(l)}
           </div>
         ))}
       </div>

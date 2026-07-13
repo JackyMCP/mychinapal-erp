@@ -34,13 +34,13 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         {[{ k: 'kontrahent', l: 'Per kontrahent' }, { k: 'zlecenie', l: 'Per zlecenie' }].map(({ k, l }) => (
-          <div key={k} onClick={() => setView(k)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${view === k ? C.blue : C.border}`, background: view === k ? C.blue : 'transparent', color: view === k ? '#fff' : C.muted }}>{l}</div>
+          <div key={k} onClick={() => setView(k)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${view === k ? C.blue : C.border}`, background: view === k ? C.blue : 'transparent', color: view === k ? '#fff' : C.muted }}>{t(l)}</div>
         ))}
         {view === 'kontrahent' && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', fontSize: 10.5, color: C.muted }}>
             {t("Sortuj:")}
             {[{ k: 'm', l: 'Marża PLN' }, { k: 'p', l: 'Przychód' }, { k: 'mp', l: 'Marża %' }, { k: 'k', l: 'A→Z' }].map(({ k, l }) => (
-              <div key={k} onClick={() => setSortBy(k)} style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, cursor: 'pointer', fontWeight: 600, border: `1px solid ${sortBy === k ? C.blue : C.border}`, background: sortBy === k ? C.blight : 'transparent', color: sortBy === k ? C.blue : C.muted }}>{l}</div>
+              <div key={k} onClick={() => setSortBy(k)} style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, cursor: 'pointer', fontWeight: 600, border: `1px solid ${sortBy === k ? C.blue : C.border}`, background: sortBy === k ? C.blight : 'transparent', color: sortBy === k ? C.blue : C.muted }}>{t(l)}</div>
             ))}
           </div>
         )}
@@ -58,7 +58,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead><tr style={{ background: C.bg }}>
               {[['left', 'Kontrahent'], ['right', 'Przychód netto'], ['right', 'Zakup Chiny'], ['right', 'Transport'], ['right', 'Cło/Odprawa'], ['right', 'Marża PLN'], ['right', 'Marża %'], ['right', 'VAT należny'], ['right', 'VAT import']].map(([a, h], i) => (
-                <th key={i} style={{ textAlign: a, padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={i} style={{ textAlign: a, padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{t(h)}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -98,7 +98,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead><tr style={{ background: C.bg }}>
               {[['left', 'Kontrahent'], ['left', 'Zlecenie'], ['right', 'Przychód'], ['right', 'Zakup'], ['right', 'Transport'], ['right', 'Cło'], ['right', 'VAT import'], ['right', 'Marża PLN'], ['left', 'Etap zamówienia']].map(([a, h], i) => (
-                <th key={i} style={{ textAlign: a, padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={i} style={{ textAlign: a, padding: '7px 10px', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{t(h)}</th>
               ))}
             </tr></thead>
             <tbody>
