@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLang } from '../lib/i18n/LanguageContext'
 import { C } from '../lib/theme'
 import { useState } from 'react'
+import InstallAppButton from './InstallAppButton'
 
 const MODULES = [
   { path: '/', label: 'Dashboard', icon: '🏠', end: true },
@@ -67,6 +68,7 @@ export default function Sidebar() {
         ))}
       </div>
       <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.08)', fontSize: 10.5 }}>
+        <InstallAppButton collapsed={collapsed} />
         {!collapsed && profile && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontWeight: 700 }}>{profile.full_name}</div>
