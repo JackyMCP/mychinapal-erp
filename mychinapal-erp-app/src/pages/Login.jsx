@@ -40,9 +40,8 @@ export default function Login() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
       <form onSubmit={handleSubmit} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: '32px 28px', width: 340 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg,${C.blue},${C.blue3})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 800, color: '#fff', fontSize: 12 }}>{t("MC")}</div>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, color: C.navy }}>{t("My")}<span style={{ color: C.blue3 }}>{t("China")}</span>{t("Pal")}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 26 }}>
+          <img src="/logo-navy.png" alt="MyChinaPal" style={{ height: 44, width: 'auto' }} />
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16 }}>{t("Zaloguj się")}</div>
         <input type="email" required placeholder={t("E-mail")} value={email} onChange={e => setEmail(e.target.value)}

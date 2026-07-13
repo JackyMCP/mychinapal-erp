@@ -48,9 +48,10 @@ export default function Sidebar() {
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
       <div style={{ padding: '14px 12px', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: `linear-gradient(135deg,${C.blue},${C.blue3})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 11, flexShrink: 0 }}>MC</div>
-          {!collapsed && <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap' }}>My<span style={{ color: C.blue3 }}>China</span>Pal</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26 }}>
+          {collapsed
+            ? <img src="/mark-white.png" alt="MyChinaPal" style={{ height: 24, width: 'auto', flexShrink: 0 }} />
+            : <img src="/logo-white.png" alt="MyChinaPal" style={{ height: 22, width: 'auto', flexShrink: 0 }} />}
         </div>
 
         {/* przełącznik języka — zawsze widoczny, tuż pod logo */}
