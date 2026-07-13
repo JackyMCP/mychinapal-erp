@@ -86,6 +86,12 @@ export default function Projekty() {
   const handleSelect = (p) => { setSelectedId(p.id); setSearchParams({ project: p.id }) }
   const handleBack = () => { setSelectedId(null); setSearchParams({}) }
 
+  const handleAssignClient = async (project, newClientId) => {
+    const { error } = await supabase.from('projects').update({ client_id: newClientId, updated_at: new Date().toISOString() }).eq('id', project.id)
+    if (error) { alert('Nie udało się zaktualizować powiązania: ' + error.message); return }
+    await loadAll()
+  }
+
   if (selected) {
     const progress = progressByProject[selected.id] || computeStageProgress([])
     const clientName = clientNameById[selected.client_id] || 'Nieznany klient'
@@ -143,7 +149,8 @@ export default function Projekty() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(p => (
             <ProjectTile key={p.id} project={p} clientName={clientNameById[p.client_id] || 'Nieznany klient'}
-              progress={progressByProject[p.id]} marza={marzaByProject[p.id]} onClick={() => handleSelect(p)} />
+              progress={progressByProject[p.id]} marza={marzaByProject[p.id]} onClick={() => handleSelect(p)}
+              clients={clients} onAssignClient={handleAssignClient} />
           ))}
         </div>
       </div>
