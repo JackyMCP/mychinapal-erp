@@ -10,6 +10,8 @@ import MyProjects from '../components/dashboard/MyProjects'
 import MyTasks from '../components/dashboard/MyTasks'
 import CalendarWidget from '../components/dashboard/CalendarWidget'
 import CompanyDirection from '../components/dashboard/CompanyDirection'
+import WorldClocks from '../components/dashboard/WorldClocks'
+import { computeStageProgress, STAGE_DEFS } from '../components/projekty/stageDefs'
 import TeamChat from '../components/dashboard/TeamChat'
 
 export default function Dashboard() {
@@ -20,6 +22,7 @@ export default function Dashboard() {
   const { profile, isZarzad } = useAuth()
   const [clients, setClients] = useState([])
   const [myProjects, setMyProjects] = useState([])
+  const [stageByProject, setStageByProject] = useState({})
   const [tasks, setTasks] = useState([])
   const [events, setEvents] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -37,10 +40,36 @@ export default function Dashboard() {
       supabase.from('calendar_events').select('*, event_attendees(user_id, profiles(full_name))').order('start_at'),
     ])
     setClients(clientsRes.data || [])
-    setMyProjects((myAssignRes.data || []).map(r => r.projects).filter(Boolean).filter(p => p.active))
+    const myActiveProjects = (myAssignRes.data || []).map(r => r.projects).filter(Boolean).filter(p => p.active)
+    setMyProjects(myActiveProjects)
     setTasks(tasksRes.data || [])
     setProfiles(profilesRes.data || [])
     setEvents(eventsRes.data || [])
+
+    // realny etap każdego projektu — liczony z faktycznie wgranych dokumentów (te same
+    // reguły co w panelu Zamówienia, żeby etap na Dashboardzie zawsze zgadzał się z realnym)
+    if (myActiveProjects.length > 0) {
+      const { data: docsData } = await supabase.from('documents').select('project_id, category').in('project_id', myActiveProjects.map(p => p.id))
+      const docsByProject = {}
+      for (const d of (docsData || [])) {
+        if (!d.project_id) continue
+        if (!docsByProject[d.project_id]) docsByProject[d.project_id] = []
+        docsByProject[d.project_id].push(d)
+      }
+      const stages = {}
+      for (const p of myActiveProjects) {
+        const { currentIndex, progressPct } = computeStageProgress(docsByProject[p.id] || [])
+        const stageDef = currentIndex ? STAGE_DEFS.find(s => s.key === currentIndex) : null
+        stages[p.id] = {
+          label: stageDef ? stageDef.name : 'Zakończone (wszystkie etapy)',
+          progressPct,
+          missingCategories: stageDef ? stageDef.categories.filter(c => !(docsByProject[p.id] || []).some(d => d.category === c)) : [],
+        }
+      }
+      setStageByProject(stages)
+    } else {
+      setStageByProject({})
+    }
 
     if (isZarzad) {
       const { data: kkData } = await supabase.from('v_kontrola_kasy').select('row_label, value').eq('quarter', 'razem')
@@ -62,6 +91,8 @@ export default function Dashboard() {
       <PageHeader title={t("Dashboard")} subtitle={loading ? 'Ładowanie…' : `${t("Witaj")}, ${(profile?.full_name || '').trim().split(/\s+/)[0] || ''} 👋`} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
 
+        <WorldClocks />
+
         {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
 
         {isZarzad && txSum && (
@@ -80,7 +111,7 @@ export default function Dashboard() {
         <div style={{ marginBottom: 14 }}><WhoAmI profile={profile} isZarzad={isZarzad} /></div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-          <MyProjects projects={myProjects} clientNameById={clientNameById} />
+          <MyProjects projects={myProjects} clientNameById={clientNameById} stageByProject={stageByProject} />
           <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
         </div>
 

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
+import { useNavigate } from 'react-router-dom'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -20,6 +21,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
     t
   } = useLang();
   const { toast, confirm } = useUI()
+  const navigate = useNavigate()
 
   const [showAdd, setShowAdd] = useState(false)
   const [title, setTitle] = useState('')
@@ -74,19 +76,28 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
       {active.map(task => {
         const due = dueLabel(task.due_date)
         return (
-          <div key={task.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
+          <div key={task.id} className="mytask-row" style={{ padding: '9px 6px', borderRadius: 9, borderBottom: `1px solid ${C.border}`, transition: 'background .15s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 600 }}>{t(task.title)}</div>
               {due && <span style={pill(due.cls === 'overdue' ? C.rlight : due.cls === 'today' ? C.olight : C.bg, due.cls === 'overdue' ? C.red : due.cls === 'today' ? C.orange : C.muted)}>{t(due.text)}</span>}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-              {task.status === 'todo' && <button onClick={() => setStatus(task, 'in_progress')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer' }}>{t("▶ Rozpocznij")}</button>}
-              {task.status === 'in_progress' && <button onClick={() => setStatus(task, 'done')} style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer' }}>{t("✓ Zakończ")}</button>}
+              {task.status === 'todo' && <button onClick={() => setStatus(task, 'in_progress')} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("▶ Rozpocznij")}</button>}
+              {task.status === 'in_progress' && <button onClick={() => setStatus(task, 'done')} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("✓ Zakończ")}</button>}
               {task.status === 'in_progress' && <span style={pill(C.blight, C.blue)}>{t("w trakcie")}</span>}
             </div>
           </div>
         );
       })}
+      {tasks.length > 0 && (
+        <a onClick={() => navigate('/moje-zadania')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer', marginTop: 10 }}>
+          {t("Zobacz więcej")} →
+        </a>
+      )}
+      <style>{`
+        .mytask-row:hover { background: ${C.bg}; padding-left: 10px; }
+        .mytask-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(37,99,235,.18); }
+      `}</style>
     </div>
   );
 }

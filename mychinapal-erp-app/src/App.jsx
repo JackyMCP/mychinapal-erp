@@ -14,6 +14,8 @@ import Projekty from './pages/Projekty'
 import KasaBank from './pages/KasaBank'
 import Czat from './pages/Czat'
 import ComingSoon from './pages/ComingSoon'
+import MojeProjekty from './pages/MojeProjekty'
+import MojeZadania from './pages/MojeZadania'
 import { C } from './lib/theme'
 
 function Protected({ children }) {
@@ -32,6 +34,8 @@ function Shell() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/moje-projekty" element={<MojeProjekty />} />
+          <Route path="/moje-zadania" element={<MojeZadania />} />
           <Route path="/kasa" element={<KasaBank />} />
           <Route path="/klienci" element={<Klienci />} />
           <Route path="/projekty" element={<Projekty />} />
