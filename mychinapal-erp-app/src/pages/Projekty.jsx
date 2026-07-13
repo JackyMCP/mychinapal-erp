@@ -11,6 +11,7 @@ import ProfitTable from '../components/projekty/ProfitTable'
 import RealCostsTable from '../components/projekty/RealCostsTable'
 import ProjectTeam from '../components/projekty/ProjectTeam'
 import StageTimeline from '../components/projekty/StageTimeline'
+import ProjectFiles from '../components/projekty/ProjectFiles'
 import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
 
@@ -120,6 +121,8 @@ export default function Projekty() {
 
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', margin: '4px 0 10px' }}>{t("Etapy zamówienia")}</div>
           <StageTimeline project={selected} documents={projectDocs} onDocumentsChanged={loadAll} />
+
+          <ProjectFiles project={selected} documents={projectDocs} onChanged={loadAll} />
 
           <div style={{ marginTop: 8 }}>
             <ProjectChat project={selected} />
