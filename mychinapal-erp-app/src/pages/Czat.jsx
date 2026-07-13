@@ -52,6 +52,7 @@ export default function Czat() {
   const [renameValue, setRenameValue] = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  const [clientOrderChannels, setClientOrderChannels] = useState([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
@@ -120,6 +121,44 @@ export default function Czat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [scrollTick])
+
+  useEffect(() => {
+    const type = active ? channelType(active) : null
+    if (!active || type !== 'klient' || !active.client_id) { setClientOrderChannels([]); return }
+    let cancelled = false
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: projs } = await supabase.from('projects').select('id,order_label').eq('client_id', active.client_id)
+      if (!projs || projs.length === 0) { if (!cancelled) setClientOrderChannels([]); return }
+      const projectIds = projs.map(p => p.id)
+      const { data: existing } = await supabase.from('chat_channels').select('id,name,project_id,client_id,created_by').in('project_id', projectIds)
+      const existingByProject = new Map((existing || []).map(c => [c.project_id, c]))
+      const result = []
+      for (const p of projs) {
+        let pc = existingByProject.get(p.id)
+        if (!pc) {
+          const { data: created, error } = await supabase.from('chat_channels').insert({
+            name: p.order_label, client_id: active.client_id, project_id: p.id, created_by: user.id,
+          }).select('id,name,project_id,client_id,created_by').single()
+          if (error) { console.error(error); continue }
+          pc = created
+        }
+        result.push(pc)
+      }
+      if (!cancelled) {
+        setClientOrderChannels(result)
+        // dopisz nowe/nieznane kanały do głównej listy, żeby "active" dało się
+        // znaleźć po kliknięciu kafelka, nawet jeśli kanał dopiero co powstał
+        setChannels(prev => {
+          const byId = new Map(prev.map(c => [c.id, c]))
+          let changed = false
+          for (const c of result) { if (!byId.has(c.id)) { byId.set(c.id, c); changed = true } }
+          return changed ? Array.from(byId.values()) : prev
+        })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [active?.id])
 
   const loadOlder = async () => {
     if (!activeId || loadingMore || !messages.length) return
@@ -299,6 +338,17 @@ export default function Czat() {
                 </div>
                 <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} />
               </div>
+              {activeType === 'klient' && clientOrderChannels.length > 0 && (
+                <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, background: C.white, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {clientOrderChannels.map(c => (
+                    <div key={c.id} onClick={() => setActiveId(c.id)} className="ux-hover-lift"
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, background: C.olight, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                      <span style={{ fontSize: 13 }}>📦</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: C.orange }}>{c.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {hasMore && (
                   <div style={{ textAlign: 'center', marginBottom: 4 }}>
