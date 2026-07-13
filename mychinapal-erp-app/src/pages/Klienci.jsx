@@ -14,6 +14,7 @@ import TabGaleria from '../components/klienci/TabGaleria'
 import TabDokumenty from '../components/klienci/TabDokumenty'
 import TabZadania from '../components/klienci/TabZadania'
 import TabCzat from '../components/klienci/TabCzat'
+import ClientTeam from '../components/klienci/ClientTeam'
 
 const TABS = [
   { key: 'Przegląd', icon: '🧭' },
@@ -249,9 +250,12 @@ export default function Klienci() {
         </div>
 
         {tab === 'Przegląd' && (
-          <TabPrzeglad client={selected} marza={selectedMarza} contacts={contacts} projects={selectedProjects}
-            progressByProject={progressByProject} documents={documents} tasks={tasks}
-            lastContactDays={health} onClientSaved={handleClientSaved} onOpenProject={(id) => navigate(`/projekty?project=${id}`)} />
+          <>
+            <ClientTeam client={selected} currentUserId={profile?.id} />
+            <TabPrzeglad client={selected} marza={selectedMarza} contacts={contacts} projects={selectedProjects}
+              progressByProject={progressByProject} documents={documents} tasks={tasks}
+              lastContactDays={health} onClientSaved={handleClientSaved} onOpenProject={(id) => navigate(`/projekty?project=${id}`)} />
+          </>
         )}
         {tab === 'Zamówienia' && (
           <TabZamowienia projects={selectedProjects} marzaByProject={marzaByProject} progressByProject={progressByProject}

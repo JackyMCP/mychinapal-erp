@@ -2,13 +2,11 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
-import { avatarColor, initials } from '../klienci/utils'
+import { avatarColor, initials } from './utils'
 import { useUI } from '../../lib/ui'
 
-export default function ProjectTeam({ project, currentUserId }) {
-  const {
-    t
-  } = useLang();
+export default function ClientTeam({ client, currentUserId }) {
+  const { t } = useLang();
   const { toast } = useUI()
 
   const [profiles, setProfiles] = useState([])
@@ -19,14 +17,14 @@ export default function ProjectTeam({ project, currentUserId }) {
     setLoading(true)
     const [{ data: pr }, { data: as }] = await Promise.all([
       supabase.from('profiles').select('id,full_name'),
-      supabase.from('project_assignments').select('id,user_id,role,profiles(full_name)').eq('project_id', project.id),
+      supabase.from('client_assignments').select('id,user_id,role,profiles(full_name)').eq('client_id', client.id),
     ])
     setProfiles(pr || [])
     setAssignments(as || [])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [project.id])
+  useEffect(() => { load() }, [client.id])
 
   const assignmentFor = (uid) => assignments.find(a => a.user_id === uid)
   const isAssigned = (uid) => !!assignmentFor(uid)
@@ -34,10 +32,10 @@ export default function ProjectTeam({ project, currentUserId }) {
   const toggle = async (uid) => {
     const row = assignmentFor(uid)
     if (row) {
-      const { error } = await supabase.from('project_assignments').delete().eq('id', row.id)
+      const { error } = await supabase.from('client_assignments').delete().eq('id', row.id)
       if (error) { toast.error(t('Nie udało się usunąć: ') + error.message); return }
     } else {
-      const { error } = await supabase.from('project_assignments').insert({ project_id: project.id, user_id: uid })
+      const { error } = await supabase.from('client_assignments').insert({ client_id: client.id, user_id: uid })
       if (error) { toast.error(t('Nie udało się przypisać: ') + error.message); return }
     }
     load()
@@ -48,17 +46,17 @@ export default function ProjectTeam({ project, currentUserId }) {
     const row = assignmentFor(uid)
     if (!row) return
     if (row.role === role) {
-      const { error } = await supabase.from('project_assignments').update({ role: null }).eq('id', row.id)
+      const { error } = await supabase.from('client_assignments').update({ role: null }).eq('id', row.id)
       if (error) { toast.error(t('Nie udało się zmienić: ') + error.message); return }
       load()
       return
     }
     const prevHolder = assignments.find(a => a.role === role && a.user_id !== uid)
     if (prevHolder) {
-      const { error: e1 } = await supabase.from('project_assignments').update({ role: null }).eq('id', prevHolder.id)
+      const { error: e1 } = await supabase.from('client_assignments').update({ role: null }).eq('id', prevHolder.id)
       if (e1) { toast.error(t('Nie udało się zmienić: ') + e1.message); return }
     }
-    const { error: e2 } = await supabase.from('project_assignments').update({ role }).eq('id', row.id)
+    const { error: e2 } = await supabase.from('client_assignments').update({ role }).eq('id', row.id)
     if (e2) { toast.error(t('Nie udało się ustawić: ') + e2.message); return }
     load()
   }
@@ -70,7 +68,7 @@ export default function ProjectTeam({ project, currentUserId }) {
 
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>{t("Zespół przypisany do zamówienia")}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>{t("Zespół przypisany do klienta")}</div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontSize: 12 }}>
         <div><span style={{ color: C.muted }}>{t("Główny opiekun PL: ")}</span><b style={{ color: C.text }}>{mainPl?.profiles?.full_name || t("nie wybrano")}</b></div>
@@ -99,7 +97,7 @@ export default function ProjectTeam({ project, currentUserId }) {
         })}
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t(
-        "Kliknij osobę żeby dodać/usunąć z zespołu tego zamówienia — pojawi się wtedy na jej dashboardzie w \"Moje aktywne projekty\". Przy przypisanej osobie kliknij PL/CN żeby ustawić głównego opiekuna polskiego/chińskiego."
+        "Kliknij osobę żeby dodać/usunąć z zespołu tego klienta. Przy przypisanej osobie kliknij PL/CN żeby ustawić ją jako głównego opiekuna polskiego/chińskiego (tylko jedna osoba na raz w każdej z tych ról)."
       )}</div>
     </div>
   );
