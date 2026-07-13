@@ -41,6 +41,14 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const recognitionActiveRef = useRef(false)
   const audioCtxRef = useRef(null)
   const destNodeRef = useRef(null)
+  // chunkowanie "na żywo" (żeby nie czekać na koniec CAŁEJ wypowiedzi):
+  // dla każdego rozpoznawanego fragmentu (results[i]) pamiętamy ile znaków
+  // już wysłaliśmy do tłumaczenia, i wysyłamy nowy kawałek jak tylko wykryjemy
+  // koniec zdania (。！？.!?) albo krótką pauzę w mówieniu (~900ms bez zmiany tekstu)
+  const chunkSentUpToRef = useRef({})   // { [resultIndex]: liczba już wysłanych znaków }
+  const chunkTimersRef = useRef({})     // { [resultIndex]: setTimeout id }
+  const chunkLastTextRef = useRef({})   // { [resultIndex]: ostatni widziany tekst }
+  const playQueueRef = useRef(Promise.resolve()) // kolejka odtwarzania — żeby fragmenty grały w kolejności wypowiadania
 
   // ── presence-only subscription: żeby widzieć kto jest na kanale, nawet zanim dołączymy ──
   useEffect(() => {
@@ -212,6 +220,18 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
 
   // ── ZH -> PL: polski nie jest wspierany jako język wyjściowy modelu tłumaczącego mowę-na-mowę,
   // więc idziemy ścieżką: rozpoznanie mowy w przeglądarce -> tłumaczenie tekstu (Claude) -> synteza mowy (OpenAI TTS) ──
+  //
+  // Żeby rozmowa mogła płynąć na bieżąco (a nie dopiero po całej wypowiedzi), NIE czekamy na
+  // "isFinal" rozpoznawania mowy jako jedyny moment wysłania tekstu do tłumaczenia. Zamiast tego
+  // wysyłamy nowo rozpoznany kawałek tekstu do tłumaczenia od razu, gdy: (a) wykryjemy w nim znak
+  // końca zdania (。！？.!?), albo (b) tekst się nie zmienił od ~900ms (czyli mówiący zrobił pauzę).
+  // Każdy taki kawałek trafia do kolejki odtwarzania (playQueueRef), żeby fragmenty zawsze zagrały
+  // u słuchacza w tej samej kolejności, w jakiej zostały wypowiedziane — nawet jeśli tłumaczenie
+  // jednego kawałka akurat trwa dłużej niż kolejnego.
+  const SENTENCE_END_RE = /[。！？.!?]/
+  const CHUNK_SILENCE_MS = 900
+  const MIN_CHUNK_CHARS = 2
+
   function setupSpeechToTextPipeline() {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognitionCtor) throw new Error('ta przeglądarka nie wspiera rozpoznawania mowy (działa w Chrome/Edge)')
@@ -221,36 +241,87 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     audioCtxRef.current = audioCtx
     destNodeRef.current = dest
 
+    chunkSentUpToRef.current = {}
+    chunkTimersRef.current = {}
+    chunkLastTextRef.current = {}
+    playQueueRef.current = Promise.resolve()
+
+    async function speakChunk(text) {
+      // dołączamy do kolejki — kolejny fragment zaczyna się tłumaczyć/syntezować dopiero
+      // gdy poprzedni jest już zlecony do odtworzenia, więc kolejność wypowiedzi jest zachowana
+      playQueueRef.current = playQueueRef.current.then(async () => {
+        try {
+          const { data: trData } = await supabase.functions.invoke('translate-text-ts', { body: { text, to: 'pl' } })
+          if (!trData?.ok || !trData.translated) return
+
+          const { data: sessionData } = await supabase.auth.getSession()
+          const token = sessionData?.session?.access_token || supabaseAnonKey
+
+          const ttsRes = await fetch(`${supabaseUrl}/functions/v1/tts-speak-ts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ text: trData.translated }),
+          })
+          if (!ttsRes.ok || !audioCtxRef.current) return
+          const arrBuf = await ttsRes.arrayBuffer()
+          const audioBuf = await audioCtxRef.current.decodeAudioData(arrBuf)
+          const src = audioCtxRef.current.createBufferSource()
+          src.buffer = audioBuf
+          src.connect(destNodeRef.current)
+          src.start()
+          // czekamy aż fragment się odegra, żeby NASTĘPNY fragment nie zaczął grać w tym samym momencie
+          await new Promise(resolve => { src.onended = resolve })
+        } catch (e) { /* pojedynczy fragment się nie udał — kolejka i nasłuch jedzie dalej */ }
+      })
+    }
+
+    function flush(i, text, isFinal) {
+      const already = chunkSentUpToRef.current[i] || 0
+      const piece = text.slice(already).trim()
+      if (isFinal) {
+        chunkSentUpToRef.current[i] = text.length
+        if (chunkTimersRef.current[i]) { clearTimeout(chunkTimersRef.current[i]); delete chunkTimersRef.current[i] }
+        delete chunkLastTextRef.current[i]
+      } else {
+        chunkSentUpToRef.current[i] = text.length
+      }
+      if (piece.length >= MIN_CHUNK_CHARS) speakChunk(piece)
+    }
+
+    function scheduleInterimCheck(i, text) {
+      chunkLastTextRef.current[i] = text
+      if (chunkTimersRef.current[i]) clearTimeout(chunkTimersRef.current[i])
+      chunkTimersRef.current[i] = setTimeout(() => {
+        // jeśli tekst się nie zmienił od CHUNK_SILENCE_MS — mówiący zrobił pauzę, wysyłamy co mamy
+        if (chunkLastTextRef.current[i] === text) flush(i, text, false)
+      }, CHUNK_SILENCE_MS)
+    }
+
     const recognition = new SpeechRecognitionCtor()
     recognition.lang = 'zh-CN'
     recognition.continuous = true
-    recognition.interimResults = false
+    recognition.interimResults = true
 
-    recognition.onresult = async (event) => {
-      const result = event.results[event.results.length - 1]
-      if (!result?.isFinal) return
-      const text = result[0]?.transcript?.trim()
-      if (!text) return
-      try {
-        const { data: trData } = await supabase.functions.invoke('translate-text-ts', { body: { text, to: 'pl' } })
-        if (!trData?.ok || !trData.translated) return
-
-        const { data: sessionData } = await supabase.auth.getSession()
-        const token = sessionData?.session?.access_token || supabaseAnonKey
-
-        const ttsRes = await fetch(`${supabaseUrl}/functions/v1/tts-speak-ts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ text: trData.translated }),
-        })
-        if (!ttsRes.ok || !audioCtxRef.current) return
-        const arrBuf = await ttsRes.arrayBuffer()
-        const audioBuf = await audioCtxRef.current.decodeAudioData(arrBuf)
-        const src = audioCtxRef.current.createBufferSource()
-        src.buffer = audioBuf
-        src.connect(destNodeRef.current)
-        src.start()
-      } catch (e) { /* pojedyncza wypowiedź się nie udała — nasłuch trwa dalej */ }
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i]
+        const text = res[0]?.transcript || ''
+        if (res.isFinal) {
+          flush(i, text, true)
+          continue
+        }
+        const already = chunkSentUpToRef.current[i] || 0
+        const newPart = text.slice(already)
+        // koniec zdania widoczny w nowo rozpoznanej części — wysyłamy natychmiast, bez czekania na pauzę
+        const m = newPart.match(SENTENCE_END_RE)
+        if (m) {
+          const cut = already + m.index + 1
+          flush(i, text.slice(0, cut), false)
+          chunkSentUpToRef.current[i] = cut
+        } else {
+          scheduleInterimCheck(i, text)
+        }
+      }
     }
     recognition.onerror = () => { /* np. chwila ciszy — ignorujemy, onend zadba o restart */ }
     recognition.onend = () => {
@@ -310,6 +381,11 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (e) { /* ignore */ } ; recognitionRef.current = null }
     if (audioCtxRef.current) { try { audioCtxRef.current.close() } catch (e) { /* ignore */ } ; audioCtxRef.current = null }
     destNodeRef.current = null
+    Object.values(chunkTimersRef.current).forEach(id => clearTimeout(id))
+    chunkTimersRef.current = {}
+    chunkSentUpToRef.current = {}
+    chunkLastTextRef.current = {}
+    playQueueRef.current = Promise.resolve()
 
     outgoingStreamRef.current?.getTracks().forEach(tr => { try { tr.stop() } catch (e) { /* ignore */ } })
     outgoingStreamRef.current = null
