@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider } from './lib/i18n/LanguageContext'
 import Sidebar from './components/Sidebar'
@@ -15,8 +15,9 @@ import { C } from './lib/theme'
 
 function Protected({ children }) {
   const { session, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>Ładowanie…</div>
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) return <Navigate to="/login" replace state={{ from: location }} />
   return children
 }
 

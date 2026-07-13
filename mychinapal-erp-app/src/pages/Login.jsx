@@ -1,5 +1,6 @@
 import { useLang } from "../lib/i18n/LanguageContext";
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
 
@@ -8,11 +9,24 @@ export default function Login() {
     t
   } = useLang();
 
-  const { signIn } = useAuth()
+  const { session, loading: authLoading, signIn } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Naprawa: wcześniej po udanym logowaniu nic się nie działo, dopóki nie
+  // odświeżyło się karty ręcznie — sesja aktualizowała się w tle (AuthContext),
+  // ale nikt nie przenosił użytkownika z /login dalej. Teraz reagujemy na
+  // pojawienie się sesji i przechodzimy od razu do aplikacji.
+  useEffect(() => {
+    if (!authLoading && session) {
+      const dest = location.state?.from?.pathname || '/'
+      navigate(dest, { replace: true })
+    }
+  }, [session, authLoading, navigate, location])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
