@@ -88,7 +88,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title={t("Dashboard")} subtitle={loading ? 'Ładowanie…' : `${t("Witaj")}, ${(profile?.full_name || '').trim().split(/\s+/)[0] || ''} 👋`} />
+      <PageHeader title={t("Dashboard")} subtitle={loading ? t('Ładowanie…') : t('Twój panel sterowania MyChinaPal')} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
 
         <WorldClocks />
