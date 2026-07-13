@@ -9,6 +9,7 @@ const MODULES = [
   { path: '/kasa', label: 'Kasa & Bank', icon: '💰' },
   { path: '/klienci', label: 'Klienci & CRM', icon: '🧑‍💼' },
   { path: '/projekty', label: 'Projekty & Zamówienia', icon: '📦' },
+  { path: '/magazyn', label: 'Magazyn', icon: '🗃️' },
   { path: '/faktury', label: 'Faktury & Księgowość', icon: '🧾' },
   { path: '/logistyka', label: 'Logistyka & Import', icon: '🚢' },
   { path: '/poczta', label: 'Poczta', icon: '✉️' },
@@ -17,11 +18,13 @@ const MODULES = [
   { path: '/ustawienia', label: 'Ustawienia', icon: '⚙️' },
 ]
 
+const ZARZAD_ONLY_PATHS = ['/kasa', '/faktury']
+
 export default function Sidebar() {
   const { profile, signOut, isZarzad } = useAuth()
   const { lang, setLang, t } = useLang()
   const [collapsed, setCollapsed] = useState(false)
-  const modules = MODULES.filter(m => isZarzad || m.path !== '/kasa')
+  const modules = MODULES.filter(m => isZarzad || !ZARZAD_ONLY_PATHS.includes(m.path))
 
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: '100vh' }}>

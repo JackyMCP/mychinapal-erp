@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Klienci from './pages/Klienci'
+import Magazyn from './pages/Magazyn'
+import Faktury from './pages/Faktury'
 import Projekty from './pages/Projekty'
 import KasaBank from './pages/KasaBank'
 import Czat from './pages/Czat'
@@ -28,7 +30,8 @@ function Shell() {
           <Route path="/kasa" element={<KasaBank />} />
           <Route path="/klienci" element={<Klienci />} />
           <Route path="/projekty" element={<Projekty />} />
-          <Route path="/faktury" element={<ComingSoon title="Faktury & Księgowość" />} />
+          <Route path="/magazyn" element={<Magazyn />} />
+          <Route path="/faktury" element={<Faktury />} />
           <Route path="/logistyka" element={<ComingSoon title="Logistyka & Import" />} />
           <Route path="/poczta" element={<ComingSoon title="Poczta" />} />
           <Route path="/czat" element={<Czat />} />
