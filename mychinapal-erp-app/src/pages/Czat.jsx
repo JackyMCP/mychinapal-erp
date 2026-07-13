@@ -2,6 +2,7 @@ import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { safeFileName } from '../lib/files'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
 import NewChannelModal from '../components/czat/NewChannelModal'
@@ -93,7 +94,7 @@ export default function Czat() {
         alert('Ten kanał nie jest powiązany z klientem — załączniki można wysyłać tylko na kanałach klienta/projektu.')
         return
       }
-      const path = `${active.client_id}/${crypto.randomUUID()}-${attachFile.name}`
+      const path = `${active.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); alert('Nie udało się wysłać pliku: ' + upErr.message); return }
       const { data: doc, error: docErr } = await supabase.from('documents').insert({

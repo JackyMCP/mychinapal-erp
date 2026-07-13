@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
+import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
@@ -75,7 +76,7 @@ export default function TabCzat({ clientId, clientName, projectIds }) {
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
     if (attachFile) {
-      const path = `${clientId}/${crypto.randomUUID()}-${attachFile.name}`
+      const path = `${clientId}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); alert('Nie udało się wysłać pliku: ' + upErr.message); return }
       const { data: doc, error: docErr } = await supabase.from('documents').insert({

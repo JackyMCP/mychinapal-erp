@@ -1,6 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 
@@ -67,7 +68,7 @@ export default function ProjectChat({ project }) {
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
     if (attachFile) {
-      const path = `${project.client_id}/${crypto.randomUUID()}-${attachFile.name}`
+      const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); alert('Nie udało się wysłać pliku: ' + upErr.message); return }
       const { data: doc, error: docErr } = await supabase.from('documents').insert({

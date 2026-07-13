@@ -25,12 +25,29 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // nie cache'ujemy odpowiedzi Supabase — dane mają być zawsze świeże
+        cleanupOutdatedCaches: true,
+        // WAŻNE: to jest aktywnie rozwijana aplikacja z częstymi wdrożeniami —
+        // priorytet ma zawsze świeży kod, nie działanie offline. Dlatego
+        // precache'ujemy tylko ikony (rzadko się zmieniają), a HTML/JS/CSS
+        // zawsze próbują najpierw sieci (NetworkFirst) — bez tego przeglądarka
+        // potrafiła serwować starą, zbuforowaną wersję strony/logiki logowania
+        // aż do ręcznego odświeżenia.
+        globPatterns: ['**/*.{png,svg,ico}'],
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.hostname.endsWith('.supabase.co'),
             handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: { cacheName: 'html-cache', networkTimeoutSeconds: 5 },
+          },
+          {
+            urlPattern: ({ request }) => ['script', 'style'].includes(request.destination),
+            handler: 'NetworkFirst',
+            options: { cacheName: 'asset-cache', networkTimeoutSeconds: 5 },
           },
         ],
       },

@@ -1,6 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { STAGE_DEFS } from './stageDefs'
 
@@ -17,7 +18,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
     if (!file) return
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const path = `${project.client_id}/${crypto.randomUUID()}-${file.name}`
+    const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, file)
     if (upErr) { setUploading(false); alert('Nie udało się wgrać pliku: ' + upErr.message); return }
     const { error: docErr } = await supabase.from('documents').insert({

@@ -1,6 +1,7 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { safeFileName } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { photoGradient } from './utils'
 
@@ -25,7 +26,7 @@ export default function TabKartoteka({ products, loading, onChanged }) {
   const handlePhoto = async (product, file) => {
     if (!file) return
     setUploadingId(product.id)
-    const path = `${product.id}/${crypto.randomUUID()}-${file.name}`
+    const path = `${product.id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
     const { error: upErr } = await supabase.storage.from('produkty').upload(path, file)
     if (upErr) { setUploadingId(null); alert('Nie udało się wgrać zdjęcia: ' + upErr.message); return }
     const { error } = await supabase.from('products').update({ photo_path: path }).eq('id', product.id)
