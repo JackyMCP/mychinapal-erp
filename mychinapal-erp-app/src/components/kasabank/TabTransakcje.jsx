@@ -5,7 +5,7 @@ import { QUARTERS, Q_LABELS, INTERNAL_CATEGORIES, rowBg, isHelperRow } from './c
 import Pill from './Pill'
 import EditModal from './EditModal'
 
-export default function TabTransakcje({ txs, clients, projects, onSave, initialSearch, initialQ }) {
+export default function TabTransakcje({ txs, clients, projects, onSave, initialSearch, initialQ, internalCategories = INTERNAL_CATEGORIES, editCategories, vatRateOptions }) {
   const {
     t
   } = useLang();
@@ -26,7 +26,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
     if (isHelperRow(row)) return false
     if (!['WN+', 'MA-'].includes(row.direction)) return false
     if (row.assign) return false
-    return !INTERNAL_CATEGORIES.includes((row.category || '').toUpperCase());
+    return !internalCategories.includes((row.category || '').toUpperCase());
   }
 
   const filtered = useMemo(() => {
@@ -44,7 +44,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
       if (filter === 's_rows') return isHelperRow(row);
       if (filter === 'weryfikacja') return cat.includes('WERYFIKACJI') || missingAssign(row);
       if (filter === 'nierozl') return row.status === 'NIE ROZLICZONO';
-      if (filter === 'wydat') return INTERNAL_CATEGORIES.includes(cat) && !['PODATKI', 'ZUS'].includes(cat)
+      if (filter === 'wydat') return internalCategories.includes(cat) && !['PODATKI', 'ZUS'].includes(cat)
       if (search) {
         const s = search.toLowerCase()
         return (row.contractor || '').toLowerCase().includes(s) || (row.desc || '').toLowerCase().includes(s) || (row.assign || '').toLowerCase().includes(s);
@@ -57,7 +57,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
       return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
     })
     return list
-  }, [txs, selQ, filter, search, showSRows, sortCol, sortAsc])
+  }, [txs, selQ, filter, search, showSRows, sortCol, sortAsc, internalCategories])
 
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -193,7 +193,8 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
         </table>
         {filtered.length === 0 && <div style={{ textAlign: 'center', padding: 48, color: C.muted, fontSize: 12 }}>{t("Brak transakcji dla wybranego filtra")}</div>}
       </div>
-      {editTx && <EditModal tx={editTx} clients={clients} projects={projects} onSave={(id, changes) => { onSave(id, changes); setEditTx(null) }} onClose={() => setEditTx(null)} />}
+      {editTx && <EditModal tx={editTx} clients={clients} projects={projects} onSave={(id, changes) => { onSave(id, changes); setEditTx(null) }} onClose={() => setEditTx(null)}
+        {...(editCategories ? { categories: editCategories } : {})} {...(vatRateOptions ? { vatRateOptions } : {})} />}
     </div>
   );
 }

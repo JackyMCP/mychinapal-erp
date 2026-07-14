@@ -5,7 +5,7 @@ import { CATEGORIES, FLOW_TYPES } from './constants'
 
 const STATUSES = ['ROZLICZONO CAŁKOWICIE', 'NIE ROZLICZONO', 'NIE PODLEGA', 'W TRAKCIE']
 
-export default function EditModal({ tx, clients, projects, onSave, onClose }) {
+export default function EditModal({ tx, clients, projects, onSave, onClose, categories = CATEGORIES, vatRateOptions = [0, 5, 8, 23] }) {
   const {
     t
   } = useLang();
@@ -64,7 +64,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose }) {
             <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
               value={cat} onChange={e => setCat(e.target.value)}>
               <option value="">{t("— brak —")}</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
@@ -89,7 +89,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose }) {
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Stawka VAT (%)")}</label>
             <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
               value={vat_rate} onChange={e => setVatRate(Number(e.target.value))}>
-              {[0, 5, 8, 23].map(v => <option key={v} value={v}>{v}%</option>)}
+              {vatRateOptions.map(v => <option key={v} value={v}>{v}%</option>)}
             </select>
           </div>
         </div>

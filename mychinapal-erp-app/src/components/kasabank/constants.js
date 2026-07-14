@@ -39,3 +39,22 @@ export const rowBg = (cat, dir, isHelper) => {
 export const isHelperRow = (t) =>
   (t.description || '').startsWith('S-') ||
   (!t.contractor && !t.description && !t.category && Number(t.amount) === 0 && !t.direction)
+
+// Kategorie dla spółki chińskiej — oparte o chińskie realia podatkowo-księgowe
+// (fapiao, VAT 增值税, CIT 企业所得税, ubezpieczenia 社保/公积金). Nazwy po polsku
+// dla wygody zespołu, chiński odpowiednik w nawiasie dla jednoznaczności.
+// Ten zestaw będzie doprecyzowany razem z zakładką VAT/Księgowość CN, gdy
+// ustalimy ostateczny status podatnika (mały / ogólny).
+export const CN_CATEGORIES = [
+  'SPRZEDAŻ TOWARU', 'ZAKUP SUROWCA/TOWARU', 'TRANSPORT WEWNĘTRZNY CN',
+  'VAT NALEŻNY (销项增值税)', 'VAT NALICZONY (进项增值税)', 'CIT (企业所得税)',
+  'UBEZPIECZENIA SPOŁECZNE (社保/公积金)', 'WYNAGRODZENIA (工资)',
+  'BIURO / NAJEM (办公/租金)', 'KSIĘGOWOŚĆ (代理记账)', 'OPŁATY BANKOWE',
+  'MARKETING', 'POZOSTAŁE', 'KAPITAŁ', '⚠️ WYMAGA WERYFIKACJI',
+]
+
+export const CN_INTERNAL_CATEGORIES = [
+  'VAT NALEŻNY (销项增值税)', 'VAT NALICZONY (进项增值税)', 'CIT (企业所得税)',
+  'UBEZPIECZENIA SPOŁECZNE (社保/公积金)', 'WYNAGRODZENIA (工资)', 'BIURO / NAJEM (办公/租金)',
+  'KSIĘGOWOŚĆ (代理记账)', 'OPŁATY BANKOWE', 'MARKETING', 'POZOSTAŁE', 'KAPITAŁ',
+]

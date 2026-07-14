@@ -34,6 +34,20 @@ const MAP = {
   'POZOSTAŁE': [C.bg, C.muted],
   'KAPITAŁ': [C.bg, C.muted],
   'PALIWO': ['#FEF3E8', '#C2410C'],
+  'SPRZEDAŻ TOWARU': [C.glight, C.green],
+  'ZAKUP SUROWCA/TOWARU': [C.blight, C.blue],
+  'TRANSPORT WEWNĘTRZNY CN': ['#FEF3E8', '#C2410C'],
+  'VAT NALEŻNY (销项增值税)': [C.plight, C.purple],
+  'VAT NALICZONY (进项增值税)': [C.plight, C.purple],
+  'CIT (企业所得税)': [C.plight, C.purple],
+  'UBEZPIECZENIA SPOŁECZNE (社保/公积金)': ['#F0F9FF', '#0369A1'],
+  'WYNAGRODZENIA (工资)': ['#F0F9FF', '#0369A1'],
+  'BIURO / NAJEM (办公/租金)': [C.bg, C.muted],
+  'KSIĘGOWOŚĆ (代理记账)': [C.plight, C.purple],
+  'przetwarzanie': [C.bg, C.muted],
+  'do_uzupelnienia': ['#FFF7ED', C.orange],
+  'zweryfikowany': [C.glight, C.green],
+  'blad': [C.rlight, C.red],
 }
 
 export default function Pill({ type, small = false }) {
