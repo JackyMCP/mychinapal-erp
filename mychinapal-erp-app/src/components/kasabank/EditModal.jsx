@@ -19,6 +19,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
   const [status, setStatus] = useState(tx.status || '')
   const [notes, setNotes] = useState(tx.notes || '')
   const [vat_rate, setVatRate] = useState(tx.vat_rate || 0)
+  const [txDate, setTxDate] = useState(tx.date || '')
 
   const clientProjects = useMemo(
     () => projects.filter(p => p.client_id === clientId),
@@ -35,11 +36,18 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{t("Edytuj transakcję")}</div>
         <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{tx.id.slice(0, 8)}</span>
-          <span>{tx.date}</span>
           <span style={{ fontWeight: 700, color: tx.amount > 0 ? C.green : C.red }}>{tx.amount > 0 ? '+' : ''}{fmt(tx.amount)} {tx.currency || t("PLN")}</span>
           <span style={{ background: C.bg, padding: '1px 6px', borderRadius: 4 }}>{tx.account}</span>
         </div>
         <div style={{ background: C.bg, borderRadius: 6, padding: '7px 10px', fontSize: 10.5, color: C.text2, marginBottom: 14, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.4 }}>{tx.contractor}<br />{t(tx.desc)}</div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: !txDate ? C.red : C.text }}>
+            {t("Data transakcji")}{!txDate && ` — ${t('brak daty, uzupełnij')}`}
+          </label>
+          <input type="date" style={{ border: `1px solid ${!txDate ? C.red : C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none', boxSizing: 'border-box' }}
+            value={txDate || ''} onChange={e => setTxDate(e.target.value)} />
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
@@ -105,7 +113,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
           <span style={{ fontSize: 10, color: C.muted, marginRight: 'auto' }}>{t("Zmiany zapisują się od razu w bazie")}</span>
           <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text2 }}>{t("Anuluj")}</button>
-          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate })}
+          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate, tx_date: txDate || null })}
             style={{ padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>
             {t("💾 Zapisz zmiany")}
           </button>

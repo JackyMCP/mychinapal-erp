@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { C, fmt } from '../lib/theme'
-import { QUARTERS, Q_LABELS, isHelperRow, CN_CATEGORIES, CN_INTERNAL_CATEGORIES } from '../components/kasabank/constants'
+import { QUARTERS, Q_LABELS, isHelperRow, CN_CATEGORIES, CN_INTERNAL_CATEGORIES, quarterOf } from '../components/kasabank/constants'
 import TabTransakcje from '../components/kasabank/TabTransakcje'
 import TabKontrolaKasy from '../components/kasabank/TabKontrolaKasy'
 import TabVAT from '../components/kasabank/TabVAT'
@@ -132,6 +132,12 @@ export default function KasaBank() {
       const rate = Number(changes.vat_rate) || 0
       payload.vat_amount = rate > 0 ? Math.round(current.amount * rate / (100 + rate) * 100) / 100 : 0
     }
+    // Jeśli poprawiono datę (np. uzupełniono brakującą), przelicz też kwartał —
+    // inaczej filtr "Kwartał" w Transakcjach dalej wskazywałby na stary/pusty
+    // okres, mimo że data jest już poprawna.
+    if (changes.tx_date !== undefined) {
+      payload.quarter = quarterOf(changes.tx_date)
+    }
     const { error } = await supabase.from('transactions').update(payload).eq('id', id)
     if (error) { console.error(error); toast.error('Nie udało się zapisać zmian: ' + error.message); return }
     const client = clients.find(c => c.id === changes.client_id)
@@ -141,6 +147,8 @@ export default function KasaBank() {
       assign: client?.name || '',
       order: project?.order_label || '',
       vat_calc: payload.vat_amount !== undefined ? payload.vat_amount : row.vat_calc,
+      date: payload.tx_date !== undefined ? payload.tx_date : row.date,
+      q: payload.quarter !== undefined ? payload.quarter : row.q,
     } : row))
   }
 

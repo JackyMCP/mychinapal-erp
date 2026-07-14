@@ -34,6 +34,19 @@ export function quartersForCompany(company) {
   return buildQuartersFrom(startYear, FULL_RANGE_END_YEAR)
 }
 
+// Ta sama logika co w edge function parse-bank-statement (quarterOf) — licząc
+// kwartał z samej daty (rok/miesiąc UTC), żeby wartość w kolumnie `quarter`
+// pozostała spójna z `tx_date` także wtedy, gdy ktoś poprawi datę ręcznie
+// w EditModal (np. uzupełniając brakującą datę starszej transakcji).
+export function quarterOf(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T00:00:00Z')
+  if (Number.isNaN(d.getTime())) return null
+  const year = d.getUTCFullYear()
+  const q = Math.floor(d.getUTCMonth() / 3) + 1
+  return `Q${q}_${year}`
+}
+
 export const CATEGORIES = [
   'ZAKUP TOWARU CHINY', 'TRANSPORT', 'ODPRAWA CELNA', 'PRZYCHÓD', 'PODATKI', 'ZUS',
   'BIURO', 'MARKETING', 'NETWORKING', 'REPREZENTACJA', 'PODRÓŻE', 'PALIWO',
