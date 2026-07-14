@@ -10,12 +10,13 @@ import { useLang } from '../../lib/i18n/LanguageContext'
 // człowiek w zakładce Transakcje, dokładnie tak jak dziś robi to ręcznie.
 const MAX_FILES = 4
 
-export default function StatementUploadTile({ company, accountLabel, onUploaded }) {
+export default function StatementUploadTile({ company, accountLabel, onUploaded, uploads = [], onDeleted }) {
   const { t } = useLang()
-  const { toast } = useUI()
+  const { toast, confirm } = useUI()
   const fileRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(null) // { current, total }
+  const [deletingId, setDeletingId] = useState(null)
 
   const readAsBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -64,7 +65,26 @@ export default function StatementUploadTile({ company, accountLabel, onUploaded 
     }
   }
 
+  const handleDelete = async (upload) => {
+    const msg = upload.parsed_count > 0
+      ? `${t('Usunąć wyciąg')} „${upload.file_name}"? ${t('Transakcje, które z niego pochodzą, też zostaną usunięte (jeśli wyciąg był wgrany po wdrożeniu tej funkcji — starsze transakcje mogą nie być powiązane i trzeba je będzie usunąć ręcznie).')}`
+      : `${t('Usunąć wyciąg')} „${upload.file_name}"?`
+    if (!await confirm(msg)) return
+    setDeletingId(upload.id)
+    // Najpierw jawnie usuń powiązane transakcje (działa niezależnie od tego,
+    // czy w bazie jest już ustawione ON DELETE CASCADE na kolumnie
+    // statement_upload_id) — potem sam rekord wyciągu.
+    const { error: txErr } = await supabase.from('transactions').delete().eq('statement_upload_id', upload.id)
+    if (txErr) { setDeletingId(null); toast.error(t('Nie udało się usunąć powiązanych transakcji: ') + txErr.message); return }
+    const { error } = await supabase.from('bank_statement_uploads').delete().eq('id', upload.id)
+    setDeletingId(null)
+    if (error) { toast.error(t('Nie udało się usunąć wyciągu: ') + error.message); return }
+    toast.success(t('Wyciąg i powiązane transakcje zostały usunięte.'))
+    onDeleted?.()
+  }
+
   return (
+    <div>
     <div onClick={() => !uploading && fileRef.current?.click()} className="statement-upload-tile"
       style={{
         border: `2px dashed ${C.blue}`, borderRadius: 13, padding: '18px 20px', cursor: uploading ? 'default' : 'pointer',
@@ -85,6 +105,32 @@ export default function StatementUploadTile({ company, accountLabel, onUploaded 
       </div>
       {!uploading && <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: C.blue, borderRadius: 8, padding: '7px 14px', whiteSpace: 'nowrap' }}>{t('Wybierz pliki (max 4)')}</div>}
       <style>{`.statement-upload-tile:hover { box-shadow: 0 6px 20px rgba(37,99,235,.15); transform: translateY(-1px); } .statement-upload-tile { transition: all .15s ease; }`}</style>
+    </div>
+
+    {uploads.length > 0 && (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: 6 }}>{t('Wgrane wyciągi')}</div>
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+          {uploads.map((u, i) => (
+            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderTop: i > 0 ? `1px solid ${C.border}` : 'none', background: C.white }}>
+              <span style={{ fontSize: 14 }}>📄</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={u.file_name}>{u.file_name}</div>
+                <div style={{ fontSize: 9.5, color: C.muted }}>
+                  {u.uploaded_at ? new Date(u.uploaded_at).toLocaleString('pl-PL') : '—'} · {u.parsed_count ?? 0} {t('transakcji')}
+                </div>
+              </div>
+              <button onClick={() => handleDelete(u)} disabled={deletingId === u.id} style={{
+                padding: '5px 11px', borderRadius: 7, border: `1px solid ${C.rmid}`, background: C.rlight, color: C.red,
+                fontSize: 10.5, fontWeight: 700, cursor: deletingId === u.id ? 'default' : 'pointer', opacity: deletingId === u.id ? .6 : 1, whiteSpace: 'nowrap',
+              }}>
+                {deletingId === u.id ? t('Usuwanie…') : t('🗑 Usuń')}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     </div>
   )
 }

@@ -283,7 +283,8 @@ export default function KasaBank() {
           )}
         </div>
 
-        <StatementUploadTile company={company} onUploaded={loadData} />
+        <StatementUploadTile company={company} onUploaded={loadData} onDeleted={loadData}
+          uploads={statementUploads.filter(u => u.company === company)} />
 
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
           {isMobile ? (
