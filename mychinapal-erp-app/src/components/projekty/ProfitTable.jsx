@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 
-const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6, whiteSpace: 'nowrap' }
+const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6, lineHeight: 1.3, overflowWrap: 'break-word' }
 const fieldWrap = { display: 'flex', flexDirection: 'column' }
 const fieldStyle = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 10px', fontSize: 12.5, fontFamily: "'Syne',sans-serif", fontWeight: 700, color: C.text, boxSizing: 'border-box' }
 

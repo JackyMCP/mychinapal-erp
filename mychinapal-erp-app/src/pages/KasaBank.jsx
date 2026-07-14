@@ -182,20 +182,26 @@ export default function KasaBank() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg }}>
-      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1 }}>
+      <div style={{
+        background: C.white, borderBottom: `1px solid ${C.border}`, padding: isMobile ? '12px 16px' : '10px 20px',
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center',
+        gap: isMobile ? 10 : 10,
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700 }}>{t("Kasa & Bank")}</div>
           <div style={{ fontSize: 10, color: C.muted }}>{companyTxs.length} {t("transakcji w rejestrze ·")} {alerts} {t("do przypisania")}</div>
         </div>
-        <CompanyFlagSwitch value={company} onChange={c => { setCompany(c); setTab('transakcje') }} size="sm" />
-        {alerts > 0 && <div style={{ background: C.rlight, border: `1px solid ${C.rmid}`, borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: C.red, fontWeight: 700 }}>⚠️ {alerts} {t("wymaga przypisania")}</div>}
-        {!isCN && (
-          <div style={{ display: 'flex', gap: 3 }}>
-            {QUARTERS.map((q, i) => (
-              <div key={q} onClick={() => setSelQ(q)} style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10.5, cursor: 'pointer', fontWeight: 600, border: `1px solid ${selQ === q ? C.blue : C.border}`, background: selQ === q ? C.blue : 'transparent', color: selQ === q ? '#fff' : C.muted }}>{Q_LABELS[i]}</div>
-            ))}
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <CompanyFlagSwitch value={company} onChange={c => { setCompany(c); setTab('transakcje') }} size="sm" />
+          {alerts > 0 && <div style={{ background: C.rlight, border: `1px solid ${C.rmid}`, borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: C.red, fontWeight: 700, whiteSpace: 'nowrap' }}>⚠️ {alerts} {t("wymaga przypisania")}</div>}
+          {!isCN && (
+            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              {QUARTERS.map((q, i) => (
+                <div key={q} onClick={() => setSelQ(q)} style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10.5, cursor: 'pointer', fontWeight: 600, border: `1px solid ${selQ === q ? C.blue : C.border}`, background: selQ === q ? C.blue : 'transparent', color: selQ === q ? '#fff' : C.muted, whiteSpace: 'nowrap' }}>{Q_LABELS[i]}</div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {needsUploadReminder && (
         <div style={{ background: C.olight, borderBottom: `1px solid ${C.border}`, padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: C.orange, fontWeight: 600 }}>
