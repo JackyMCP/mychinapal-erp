@@ -263,14 +263,27 @@ export default function KasaBank() {
         <StatementUploadTile company={company} onUploaded={loadData} />
 
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 16px', overflowX: 'auto' }}>
-            {TABS.map(row => (
-              <div key={row.k} onClick={() => setTab(row.k)} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `2px solid ${tab === row.k ? C.blue : 'transparent'}`, marginBottom: -1, color: tab === row.k ? C.blue : row.danger ? C.red : C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {t(row.l)}
-                {row.badge ? <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>{row.badge}</span> : null}
-              </div>
-            ))}
-          </div>
+          {isMobile ? (
+            <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}` }}>
+              <select value={tab} onChange={e => setTab(e.target.value)} style={{
+                width: '100%', boxSizing: 'border-box', border: `1px solid ${C.border}`, borderRadius: 8,
+                padding: '9px 10px', fontSize: 13, fontWeight: 700, color: C.text, background: C.white,
+              }}>
+                {TABS.map(row => (
+                  <option key={row.k} value={row.k}>{t(row.l)}{row.badge ? ` (${row.badge})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 16px', overflowX: 'auto' }}>
+              {TABS.map(row => (
+                <div key={row.k} onClick={() => setTab(row.k)} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', borderBottom: `2px solid ${tab === row.k ? C.blue : 'transparent'}`, marginBottom: -1, color: tab === row.k ? C.blue : row.danger ? C.red : C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {t(row.l)}
+                  {row.badge ? <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>{row.badge}</span> : null}
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ padding: 16 }}>
             {tab === 'transakcje' && (
               <TabTransakcje txs={companyTxs} clients={clients} projects={projects} onSave={handleSave}

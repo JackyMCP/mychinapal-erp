@@ -1,23 +1,29 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { avatarColor, initials } from '../klienci/utils'
 import { C } from '../../lib/theme'
+import useIsMobile from '../../lib/useIsMobile'
 
 export default function WhoAmI({ profile, isZarzad }) {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   if (!profile) return null
   const firstName = (profile.full_name || '').trim().split(/\s+/)[0] || ''
   return (
-    <div className="ux-fade-in whoami-card" style={{ position: 'relative', background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: '26px 28px', display: 'flex', alignItems: 'center', gap: 20, overflow: 'hidden' }}>
+    <div className="ux-fade-in whoami-card" style={{
+      position: 'relative', background: C.white, border: `1px solid ${C.border}`, borderRadius: 16,
+      padding: isMobile ? '18px 16px' : '26px 28px', display: 'flex', alignItems: 'center',
+      gap: isMobile ? 12 : 20, overflow: 'hidden', flexWrap: isMobile ? 'wrap' : 'nowrap',
+    }}>
       <div className="whoami-glow" />
-      <div style={{ width: 60, height: 60, borderRadius: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(profile.full_name), position: 'relative', zIndex: 1, boxShadow: `0 6px 18px ${isZarzad ? 'rgba(124,58,237,0.35)' : 'rgba(37,99,235,0.35)'}` }}>{initials(profile.full_name)}</div>
-      <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
-        <div className="whoami-greeting">
+      <div style={{ width: isMobile ? 44 : 60, height: isMobile ? 44 : 60, borderRadius: isMobile ? 12 : 15, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 15 : 20, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(profile.full_name), position: 'relative', zIndex: 1, boxShadow: `0 6px 18px ${isZarzad ? 'rgba(124,58,237,0.35)' : 'rgba(37,99,235,0.35)'}` }}>{initials(profile.full_name)}</div>
+      <div style={{ flex: 1, position: 'relative', zIndex: 1, minWidth: 0 }}>
+        <div className={isMobile ? 'whoami-greeting whoami-greeting-mobile' : 'whoami-greeting'}>
           <span className="whoami-greeting-text">{t("Witaj")}, {firstName}!</span> <span className="whoami-wave">👋</span>
         </div>
-        <div style={{ fontSize: 13, color: C.muted, marginTop: 6, fontWeight: 700, letterSpacing: 0.2, position: 'relative', zIndex: 1 }}>{t("w panelu sterowania firmy MyChinaPal")}</div>
+        <div style={{ fontSize: isMobile ? 11.5 : 13, color: C.muted, marginTop: 6, fontWeight: 700, letterSpacing: 0.2, position: 'relative', zIndex: 1 }}>{t("w panelu sterowania firmy MyChinaPal")}</div>
       </div>
       <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 11px', borderRadius: 20, background: isZarzad ? C.plight : C.blight, color: isZarzad ? C.purple : C.blue, flexShrink: 0, position: 'relative', zIndex: 1 }}>
         {isZarzad ? t("Zarząd") : t("Pracownik")}
@@ -50,7 +56,11 @@ export default function WhoAmI({ profile, isZarzad }) {
           line-height: 1.1;
           transform-origin: left center;
           animation: whoamiBreathe 3.6s ease-in-out infinite;
+          max-width: 100%;
+          flex-wrap: wrap;
         }
+        .whoami-greeting-mobile { font-size: 22px; gap: 8px; }
+        .whoami-greeting-mobile .whoami-wave { font-size: 20px; }
         .whoami-greeting-text {
           background: linear-gradient(100deg, ${C.navy} 0%, ${C.blue} 45%, ${C.purple} 100%);
           background-size: 200% auto;
