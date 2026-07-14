@@ -12,3 +12,13 @@ export function triggerTranslation(inserted) {
     body: { message_id: inserted.id, content: inserted.content },
   }).catch(err => console.error('translate-chat-message invoke failed', err))
 }
+
+// Wywołuje edge function 'send-chat-push', która wysyła prawdziwe powiadomienie
+// push (na telefon/komputer) do wszystkich uprawnionych odbiorców kanału,
+// z pominięciem nadawcy. Fire-and-forget — nie blokuje UI wysyłania wiadomości.
+export function triggerPushNotification(inserted) {
+  if (!inserted?.id) return
+  supabase.functions.invoke('send-chat-push', {
+    body: { message_id: inserted.id },
+  }).catch(err => console.error('send-chat-push invoke failed', err))
+}

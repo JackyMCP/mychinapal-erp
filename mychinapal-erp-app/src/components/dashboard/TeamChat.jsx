@@ -6,7 +6,7 @@ import { avatarColor, initials } from '../klienci/utils'
 import VoiceChannel from './VoiceChannel'
 import { useUI } from '../../lib/ui'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
-import { triggerTranslation } from '../../lib/translateMessage'
+import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -142,7 +142,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     setSending(false)
     if (error) { toast.error(t('Nie udało się wysłać wiadomości: ') + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
-    if (inserted) triggerTranslation(inserted)
+    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
     setText('')
     setAttachFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''

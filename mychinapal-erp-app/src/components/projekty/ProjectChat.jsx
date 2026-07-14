@@ -5,7 +5,7 @@ import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../..
 import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
-import { triggerTranslation } from '../../lib/translateMessage'
+import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -142,7 +142,7 @@ export default function ProjectChat({ project }) {
     setSending(false)
     if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
-    if (inserted) triggerTranslation(inserted)
+    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
   }

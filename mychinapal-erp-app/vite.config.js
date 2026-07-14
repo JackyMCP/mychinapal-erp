@@ -7,6 +7,16 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // injectManifest zamiast domyślnego generateSW: potrzebujemy własnego
+      // kodu w Service Workerze do obsługi powiadomień push ("jak WhatsApp").
+      // Cały poprzedni runtimeCaching (NetworkFirst/NetworkOnly) jest teraz
+      // ręcznie odtworzony w src/sw.js — patrz komentarz w tamtym pliku.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{png,svg,ico}'],
+      },
       includeAssets: ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'MyChinaPal ERP',

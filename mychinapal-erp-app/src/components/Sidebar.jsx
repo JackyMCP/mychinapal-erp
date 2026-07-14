@@ -4,6 +4,7 @@ import { useLang } from '../lib/i18n/LanguageContext'
 import { C } from '../lib/theme'
 import { useEffect, useRef, useState } from 'react'
 import InstallAppButton from './InstallAppButton'
+import NotificationsButton from './NotificationsButton'
 import useIsMobile from '../lib/useIsMobile'
 
 export const MOBILE_TOPBAR_HEIGHT = 52
@@ -111,6 +112,7 @@ export default function Sidebar() {
             })}
           </div>
           <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.08)', fontSize: 11 }}>
+            <NotificationsButton collapsed={false} />
             <InstallAppButton collapsed={false} />
             {profile && (
               <div style={{ marginBottom: 8 }}>
@@ -189,6 +191,7 @@ export default function Sidebar() {
         ))}
       </div>
       <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.08)', fontSize: 10.5 }}>
+        <NotificationsButton collapsed={collapsed} />
         <InstallAppButton collapsed={collapsed} />
         {!collapsed && profile && (
           <div style={{ marginBottom: 8 }}>
