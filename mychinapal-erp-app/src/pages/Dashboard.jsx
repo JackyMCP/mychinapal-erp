@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
 import { C } from '../lib/theme'
-import CountUp from '../components/ui/CountUp'
 import WhoAmI from '../components/dashboard/WhoAmI'
 import MyProjects from '../components/dashboard/MyProjects'
 import MyTasks from '../components/dashboard/MyTasks'
@@ -13,6 +12,8 @@ import CompanyDirection from '../components/dashboard/CompanyDirection'
 import WorldClocks from '../components/dashboard/WorldClocks'
 import { computeStageProgress, STAGE_DEFS } from '../components/projekty/stageDefs'
 import TeamChat from '../components/dashboard/TeamChat'
+import GoldOreReveal from '../components/dashboard/GoldOreReveal'
+import CoinSackReveal from '../components/dashboard/CoinSackReveal'
 
 export default function Dashboard() {
   const {
@@ -98,14 +99,8 @@ export default function Dashboard() {
 
         {isZarzad && txSum && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 14 }}>
-            <div style={{ background: C.navy, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wpływy (WN+)")}</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}><CountUp value={Math.round(txSum.wpływy)} /> {t("PLN")}</div>
-            </div>
-            <div style={{ background: C.navy2, borderRadius: 9, padding: '12px 14px', color: '#fff' }}>
-              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase' }}>{t("Wypływy (MA-)")}</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700 }}><CountUp value={Math.round(txSum.wypływy)} /> {t("PLN")}</div>
-            </div>
+            <GoldOreReveal value={txSum.wpływy} label={t("Wpływy (WN+)")} />
+            <CoinSackReveal value={txSum.wypływy} label={t("Wypływy (MA-)")} />
           </div>
         )}
 
