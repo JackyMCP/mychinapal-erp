@@ -55,6 +55,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
       </div>
       {view === 'kontrahent' && (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead><tr style={{ background: C.bg }}>
               {[['left', 'Kontrahent'], ['right', 'Przychód netto'], ['right', 'Zakup Chiny'], ['right', 'Transport'], ['right', 'Cło/Odprawa'], ['right', 'Marża PLN'], ['right', 'Marża %'], ['right', 'VAT należny'], ['right', 'VAT import']].map(([a, h], i) => (
@@ -92,9 +93,11 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
             </tr></tfoot>
           </table>
         </div>
+        </div>
       )}
       {view === 'zlecenie' && (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead><tr style={{ background: C.bg }}>
               {[['left', 'Kontrahent'], ['left', 'Zlecenie'], ['right', 'Przychód'], ['right', 'Zakup'], ['right', 'Transport'], ['right', 'Cło'], ['right', 'VAT import'], ['right', 'Marża PLN'], ['left', 'Etap zamówienia']].map(([a, h], i) => (
@@ -117,6 +120,7 @@ export default function TabMarza({ marzaK, marzaZ, goClient }) {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

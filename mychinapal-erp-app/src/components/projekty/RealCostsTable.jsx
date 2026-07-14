@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6 }
 const fieldWrap = { display: 'flex', flexDirection: 'column' }
@@ -24,6 +25,7 @@ export default function RealCostsTable({ project, onSaved }) {
     t
   } = useLang();
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
 
   const [values, setValues] = useState(Object.fromEntries(FIELDS.map(([k]) => [k, project[k] ?? ''])))
   const [saving, setSaving] = useState(false)
@@ -55,7 +57,7 @@ export default function RealCostsTable({ project, onSaved }) {
         {t("Realne koszty i zysk")} <span style={{ fontWeight: 600, textTransform: 'none', color: C.muted, fontSize: 10.5 }}>{t("— uzupełniaj w miarę jak faktury/płatności są opłacane")}</span>
         {saving && <span style={{ fontSize: 10, color: C.green, fontWeight: 600 }}>{t("zapisywanie…")}</span>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         {FIELDS.map(([key, label]) => (
           <div key={key} style={fieldWrap}>
             <label style={labelStyle}>{label}</label>

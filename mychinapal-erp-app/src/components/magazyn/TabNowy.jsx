@@ -4,9 +4,9 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { nextDocNumber } from './utils'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, marginBottom: 16 }
-const fieldWrap = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }
 const label = { display: 'block', fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }
 const input = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 12.5, boxSizing: 'border-box' }
 
@@ -15,6 +15,8 @@ const DEFAULT_VAT_OPTIONS = ['23%', '8%', '5%', '0%', 'zw.']
 export default function TabNowy({ products, projects, onChanged, onGoTab, company = 'PL', vatRateOptions }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
+  const fieldWrap = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }
   const isCN = company === 'CN'
   const vatOptions = vatRateOptions || DEFAULT_VAT_OPTIONS
 

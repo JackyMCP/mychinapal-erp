@@ -14,11 +14,13 @@ import { computeStageProgress, STAGE_DEFS } from '../components/projekty/stageDe
 import TeamChat from '../components/dashboard/TeamChat'
 import GoldOreReveal from '../components/dashboard/GoldOreReveal'
 import CoinSackReveal from '../components/dashboard/CoinSackReveal'
+import useIsMobile from '../lib/useIsMobile'
 
 export default function Dashboard() {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   const { profile, isZarzad } = useAuth()
   const [clients, setClients] = useState([])
@@ -98,7 +100,7 @@ export default function Dashboard() {
         {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
 
         {isZarzad && txSum && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 9, marginBottom: 14 }}>
             <GoldOreReveal value={txSum.wpływy} label={t("Wpływy (WN+)")} />
             <CoinSackReveal value={txSum.wypływy} label={t("Wypływy (MA-)")} />
           </div>
@@ -106,7 +108,7 @@ export default function Dashboard() {
 
         <div style={{ marginBottom: 14 }}><WhoAmI profile={profile} isZarzad={isZarzad} /></div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <MyProjects projects={myProjects} clientNameById={clientNameById} stageByProject={stageByProject} />
           <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
         </div>
@@ -115,7 +117,7 @@ export default function Dashboard() {
           <CalendarWidget events={events} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: isZarzad ? '1fr 1fr' : '1fr', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (isZarzad ? '1fr 1fr' : '1fr'), gap: 14 }}>
           <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.blue} />
           {isZarzad && <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.purple} />}
         </div>

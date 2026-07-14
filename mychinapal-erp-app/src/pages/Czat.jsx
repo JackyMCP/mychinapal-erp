@@ -10,6 +10,8 @@ import VoiceChannel from '../components/dashboard/VoiceChannel'
 import { DOC_CATEGORIES } from '../components/projekty/stageDefs'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
+import useIsMobile from '../lib/useIsMobile'
+import { MOBILE_TOPBAR_HEIGHT } from '../components/Sidebar'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -38,6 +40,7 @@ export default function Czat() {
   const { toast, confirm } = useUI()
   const { profile, isZarzad } = useAuth()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const [channels, setChannels] = useState([])
   const [activeId, setActiveId] = useState(null)
@@ -281,8 +284,12 @@ export default function Czat() {
     .filter(Boolean)
   const fmtTime = ts => new Date(ts).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
+  // na telefonie pokazujemy albo listę kanałów, albo okno czatu — nigdy oba naraz
+  const mobileShowList = isMobile && !active
+  const mobileShowChat = isMobile && active
+
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
+    <div style={{ display: 'flex', height: isMobile ? `calc(100vh - ${MOBILE_TOPBAR_HEIGHT}px - env(safe-area-inset-top))` : '100vh' }}>
       <style>{`
         @keyframes czMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes czTileIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
@@ -292,7 +299,8 @@ export default function Czat() {
         .cz-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.07); }
       `}</style>
       {/* Lista kanałów */}
-      <div style={{ width: 252, borderRight: `1px solid ${C.border}`, background: C.white, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      {(!isMobile || mobileShowList) && (
+      <div style={{ width: isMobile ? '100%' : 252, borderRight: `1px solid ${C.border}`, background: C.white, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ height: 3, flexShrink: 0, background: `linear-gradient(90deg, ${C.navy}, ${C.blue}, ${C.purple}, ${C.navy})`, backgroundSize: '300% 100%', animation: 'czBarShift 6s ease infinite' }} />
         <div style={{ padding: '13px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13.5, fontWeight: 700 }}>{t("Kanały")}</div>
@@ -327,7 +335,9 @@ export default function Czat() {
           })}
         </div>
       </div>
+      )}
       {/* Okno czatu */}
+      {(!isMobile || mobileShowChat) && (
       <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: C.bg, minWidth: 0 }}>
           {!active && (
@@ -340,6 +350,9 @@ export default function Czat() {
               <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, background: C.white }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    {isMobile && (
+                      <span onClick={() => setActiveId(null)} style={{ cursor: 'pointer', fontSize: 18, color: C.muted, flexShrink: 0, padding: '2px 4px' }}>←</span>
+                    )}
                     <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, background: activeStyle.bg, color: activeStyle.color }}>{activeStyle.icon}</div>
                     <div style={{ minWidth: 0 }}>
                       {renaming ? (
@@ -461,8 +474,13 @@ export default function Czat() {
           )}
         </div>
         {active && showFiles && (
-          <div style={{ width: 260, borderLeft: `1px solid ${C.border}`, background: C.white, overflowY: 'auto', padding: '16px', flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 10 }}>📎 {t("Pliki na tym kanale")}</div>
+          <div style={isMobile
+            ? { position: 'fixed', inset: 0, top: `calc(${MOBILE_TOPBAR_HEIGHT}px + env(safe-area-inset-top))`, zIndex: 70, background: C.white, overflowY: 'auto', padding: 16 }
+            : { width: 260, borderLeft: `1px solid ${C.border}`, background: C.white, overflowY: 'auto', padding: '16px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>📎 {t("Pliki na tym kanale")}</div>
+              {isMobile && <span onClick={() => setShowFiles(false)} style={{ cursor: 'pointer', fontSize: 13, color: C.muted }}>✕</span>}
+            </div>
             {channelFiles.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak plików — załączniki wysłane na tym czacie pojawią się tutaj.")}</div>}
             {channelFiles.map(doc => (
               <div key={doc.id} onClick={() => handleDownload(doc)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
@@ -476,6 +494,7 @@ export default function Czat() {
           </div>
         )}
       </div>
+      )}
       {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); setActiveId(ch.id) }} />}
     </div>
   );

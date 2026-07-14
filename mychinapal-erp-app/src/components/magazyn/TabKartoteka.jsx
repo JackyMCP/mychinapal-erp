@@ -5,6 +5,7 @@ import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { photoGradient } from './utils'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
@@ -12,6 +13,7 @@ const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px s
 export default function TabKartoteka({ products, loading, onChanged, currencyLabel = 'PLN' }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [uploadingId, setUploadingId] = useState(null)
@@ -73,7 +75,7 @@ export default function TabKartoteka({ products, loading, onChanged, currencyLab
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, cursor: 'pointer', boxShadow: '0 2px 6px rgba(15,23,42,.15)',
               }}>{uploadingId === p.id ? '…' : '📷'}</span>
             </div>
-            <div style={{ width: 210, flexShrink: 0 }}>
+            <div style={{ width: isMobile ? 130 : 210, flexShrink: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{p.code} <span style={{ fontSize: 11, color: C.muted, fontWeight: 500, display: 'block', marginTop: 2 }}>{p.name}</span></div>
               {(p.name_cn || p.name_en) && (
                 <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{[p.name_cn, p.name_en].filter(Boolean).join(' · ')}</div>
@@ -84,7 +86,7 @@ export default function TabKartoteka({ products, loading, onChanged, currencyLab
                 </span>
               </div>
             </div>
-            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, textAlign: 'right' }}>
+            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10, textAlign: 'right' }}>
               <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Stan")}</div>
                 <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3 }}>
                   {p.is_service ? <span style={{ color: C.muted }}>—</span> : (

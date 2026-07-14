@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const DOW = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const EVENT_COLORS = [C.blue, C.purple, C.orange, C.green, '#DB2777', '#0891B2']
@@ -23,6 +24,7 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
     t
   } = useLang();
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
 
   const today = new Date()
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -105,10 +107,10 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
         .cal-event-chip { transition: transform .12s ease; }
         .cal-day-cell:hover .cal-event-chip { transform: translateX(1px); }
       `}</style>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 7, marginBottom: 16, animation: 'calGridIn .25s ease both' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: isMobile ? 3 : 7, marginBottom: 16, animation: 'calGridIn .25s ease both' }}>
         {DOW.map((d, i) => (
           <div key={d} style={{
-            fontSize: 9.5, textAlign: 'center', fontWeight: 800, paddingBottom: 6, letterSpacing: '.4px',
+            fontSize: isMobile ? 8 : 9.5, textAlign: 'center', fontWeight: 800, paddingBottom: isMobile ? 3 : 6, letterSpacing: '.4px',
             color: i >= 5 ? C.orange : C.muted,
           }}>{d}</div>
         ))}
@@ -122,8 +124,8 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
           return (
             <div key={i} className="cal-day-cell" onClick={() => d && setSelectedDay(prev => (prev && prev.toDateString() === d.toDateString() ? null : d))}
               style={{
-                minHeight: 98, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '8px 7px',
-                fontSize: 10.5, position: 'relative', cursor: d ? 'pointer' : 'default', boxSizing: 'border-box',
+                minHeight: isMobile ? 66 : 98, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: isMobile ? '4px 3px' : '8px 7px',
+                fontSize: isMobile ? 9 : 10.5, position: 'relative', cursor: d ? 'pointer' : 'default', boxSizing: 'border-box',
                 background: isToday
                   ? `linear-gradient(150deg, ${C.blue}, ${C.blue3})`
                   : isSelected ? C.bmid
@@ -137,7 +139,7 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <div style={{
                   fontWeight: isToday ? 800 : 600, color: isToday ? '#fff' : d ? (isWeekend ? C.orange : C.text2) : 'transparent',
-                  fontSize: 12.5, width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: isMobile ? 10 : 12.5, width: isMobile ? 18 : 22, height: isMobile ? 18 : 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isToday ? 'rgba(255,255,255,.22)' : 'transparent',
                 }}>{d ? d.getDate() : ''}</div>
                 {dayEvents.length > 0 && !isToday && (
@@ -151,7 +153,7 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflow: 'hidden' }}>
                 {visible.map((ev, j) => (
                   <div key={j} className="cal-event-chip" style={{
-                    fontSize: 9, fontWeight: 700, padding: '3px 6px', borderRadius: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    fontSize: isMobile ? 7.5 : 9, fontWeight: 700, padding: isMobile ? '2px 4px' : '3px 6px', borderRadius: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     borderLeft: `2.5px solid ${isToday ? 'rgba(255,255,255,.8)' : EVENT_COLORS[j % EVENT_COLORS.length]}`,
                     background: isToday ? 'rgba(255,255,255,.22)' : EVENT_COLORS[j % EVENT_COLORS.length] + '1A',
                     color: isToday ? '#fff' : EVENT_COLORS[j % EVENT_COLORS.length],

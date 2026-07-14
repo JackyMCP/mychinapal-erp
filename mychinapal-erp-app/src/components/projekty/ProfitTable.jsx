@@ -50,7 +50,8 @@ export default function ProfitTable({ project, onSaved }) {
         {t("Podsumowanie — szacowany zysk")}
         {saving && <span style={{ fontSize: 10, color: C.blue, fontWeight: 600 }}>{t("zapisywanie…")}</span>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr)) 160px', gap: 16, alignItems: 'stretch' }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr)) 160px', gap: 16, alignItems: 'stretch', minWidth: 640 }}>
         <div style={fieldWrap}><label style={labelStyle}>{t("Koszt zakupu towaru (Chiny)")}</label><input style={fieldStyle} type="number" value={zakup} onChange={e => setZakup(e.target.value)} onBlur={handleBlurSave} /></div>
         <div style={fieldWrap}><label style={labelStyle}>{t("Koszt dla klienta (netto)")}</label><input style={fieldStyle} type="number" value={koszt} onChange={e => setKoszt(e.target.value)} onBlur={handleBlurSave} /></div>
         <div style={fieldWrap}><label style={labelStyle}>{t("Szac. koszt transportu")}</label><input style={fieldStyle} type="number" value={transport} onChange={e => setTransport(e.target.value)} onBlur={handleBlurSave} /></div>
@@ -60,6 +61,7 @@ export default function ProfitTable({ project, onSaved }) {
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{fmt(zysk, 0)} {t("PLN")}</div>
           <div style={{ fontSize: 9.5, color: '#4ADE80', fontWeight: 700, marginTop: 3 }}>{marzaPct.toFixed(1)}{t("% marży")}</div>
         </div>
+      </div>
       </div>
       <div style={{ fontSize: 10, color: C.muted, marginTop: 12, lineHeight: 1.5 }}>{t(
         "Wartości zapisują się automatycznie po opuszczeniu pola. Prefilled z arkusza Marża_per_zlecenie tam gdzie było to możliwe — dopraw ręcznie jeśli się zmieniły."

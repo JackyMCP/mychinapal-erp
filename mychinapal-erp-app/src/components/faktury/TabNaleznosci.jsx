@@ -4,10 +4,12 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { paymentStatus, daysOverdue } from './utils'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
 
   const unpaid = useMemo(() => invoices
     .filter(inv => !inv.paid_at && inv.typ !== 'pro forma')
@@ -44,7 +46,7 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 12, marginBottom: 18 }}>
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
           <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: 'uppercase' }}>{t("Suma należności")}</div>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 800, marginTop: 4 }}>{Math.round(suma).toLocaleString('pl-PL')} PLN</div>
@@ -62,6 +64,7 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
       <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 14 }}>{t("Faktury nieopłacone")}</div>
         {unpaid.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak nieopłaconych faktur.")}</div>}
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead><tr>{['Numer', 'Kontrahent', 'Kwota', 'Termin', 'Zwłoka', ''].map(h => (
             <th key={h} style={{ textAlign: 'left', fontSize: 10, color: C.muted, textTransform: 'uppercase', fontWeight: 700, padding: '8px 10px', borderBottom: `1px solid ${C.border}` }}>{t(h)}</th>
@@ -89,6 +92,7 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

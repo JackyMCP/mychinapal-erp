@@ -1,5 +1,6 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt } from '../../lib/theme'
+import useIsMobile from '../../lib/useIsMobile'
 
 // vatSummary: [{label, value, description}]  (report_vat_summary — snapshot z Excela)
 // podatkiPayments: [{date, label, amount}]     (live z tabeli transactions, kategoria PODATKI)
@@ -7,10 +8,11 @@ export default function TabVAT({ vatSummary, podatkiPayments }) {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   const suma = podatkiPayments.reduce((s, p) => s + p.amount, 0)
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
       <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px' }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12 }}>{t("📋 Podsumowanie VAT — całość (arkusz Podsumowanie_VAT)")}</div>
         {vatSummary.map((r, i) => {

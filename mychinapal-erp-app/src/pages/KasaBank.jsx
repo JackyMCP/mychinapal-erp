@@ -16,6 +16,7 @@ import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
 import ComingSoonCN from '../components/ComingSoonCN'
 import useWeeklyStatementReminder from '../lib/useWeeklyStatementReminder'
 import { useUI } from '../lib/ui'
+import useIsMobile from '../lib/useIsMobile'
 
 function mapTx(row) {
   return {
@@ -48,6 +49,7 @@ export default function KasaBank() {
     t
   } = useLang();
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
 
   const { isZarzad } = useAuth()
   const navigate = useNavigate()
@@ -203,7 +205,7 @@ export default function KasaBank() {
       <div style={{ padding: '12px 20px 20px', maxWidth: 1400, margin: '0 auto' }}>
         {!isCN && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 9, marginBottom: 11 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 9, marginBottom: 11 }}>
               {stanKont.filter(s => s.cur !== 'EUR').map((s, i) => {
                 const val = s.vals[qi] || 0
                 return (
@@ -218,7 +220,7 @@ export default function KasaBank() {
               })}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 9, marginBottom: 11 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 9, marginBottom: 11 }}>
               {[
                 { l: 'Marża operacyjna', v: getKK('MARŻA OPERACYJNA', selQ), fmt: true, bl: getKK('MARŻA OPERACYJNA', selQ) >= 0 ? C.green : C.red },
                 { l: 'Przychód netto', v: getKK('Przychód netto (po VAT)', selQ), fmt: true, bl: C.blue },

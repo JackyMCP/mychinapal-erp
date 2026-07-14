@@ -10,6 +10,17 @@ export default function GlobalStyles() {
       .ux-hover-lift:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(37,99,235,.14); }
       .ux-row-hover { transition: background .15s ease; }
       .ux-row-hover:hover { background: #F4F7FC; }
+
+      /* Fundament pod wersję mobilną — zapobiega poziomemu przewijaniu całej
+         strony, gdy jakiś nieprzeliczony element (tabela, szeroki panel)
+         wystaje poza szerokość ekranu telefonu, oraz pozwala na płynne
+         przewijanie z bezwładnością na iOS wewnątrz przewijanych paneli. */
+      html, body, #root { max-width: 100%; overflow-x: hidden; }
+      * { -webkit-tap-highlight-color: transparent; }
+      @media (max-width: 768px) {
+        body { font-size: 14px; }
+        .scroll-x-mobile { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      }
     `}</style>
   )
 }

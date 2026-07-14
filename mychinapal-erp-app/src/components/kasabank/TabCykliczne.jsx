@@ -1,19 +1,21 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { C, fmt } from '../../lib/theme'
 import Pill from './Pill'
+import useIsMobile from '../../lib/useIsMobile'
 
 // items: wiersze z tabeli recurring_payments (name, amount, day_of_month, category, active)
 export default function TabCykliczne({ items }) {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   const active = items.filter(i => i.active)
   const total = active.reduce((s, i) => s + Number(i.amount), 0)
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
         {[{ l: 'Łącznie / miesiąc', v: `−${fmt(total)} PLN`, c: C.red }, { l: 'Prognoza roczna', v: `−${fmt(total * 12, 0)} PLN`, c: C.red }, { l: 'Liczba pozycji', v: `${active.length}`, c: C.blue }].map((k, i) => (
           <div key={i} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 14px' }}>
             <div style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{k.l}</div>
@@ -29,6 +31,7 @@ export default function TabCykliczne({ items }) {
         </div>
       ) : (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: C.bg }}>
               {['Nazwa', 'Kategoria', 'Dzień', 'Kwota/mies.', 'Kwota/rok', 'Status'].map((h, i) => (
@@ -54,6 +57,7 @@ export default function TabCykliczne({ items }) {
               <td></td>
             </tr></tfoot>
           </table>
+        </div>
         </div>
       )}
     </div>

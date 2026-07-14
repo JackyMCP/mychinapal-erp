@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt, fmtPct } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const secTitle = { fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 14 }
@@ -27,6 +28,7 @@ function ring(pct, done) {
 export default function TabPrzeglad({ client, marza, contacts, projects, progressByProject, documents, tasks, lastContactDays, onClientSaved, onOpenProject }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
 
   const [notes, setNotes] = useState(client.notes || '')
   const [savingNotes, setSavingNotes] = useState(false)
@@ -58,9 +60,9 @@ export default function TabPrzeglad({ client, marza, contacts, projects, progres
   ].filter(a => a.at).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5)
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.6fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1.6fr', gap: 16, alignItems: 'start' }}>
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
           <div style={statBox}><div style={statLabel}>{t("Obrót YTD")}</div><div style={statVal}>{fmt(przychod, 0)} {t("PLN")}</div></div>
           <div style={statBox}><div style={statLabel}>{t("Marża YTD")}</div><div style={{ ...statVal, color: C.green }}>{fmt(marzaVal, 0)} {t("PLN")}</div></div>
           <div style={statBox}><div style={statLabel}>{t("Marża %")}</div><div style={statVal}>{fmtPct(marzaPct)}</div></div>

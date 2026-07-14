@@ -4,6 +4,9 @@ import { useLang } from '../lib/i18n/LanguageContext'
 import { C } from '../lib/theme'
 import { useEffect, useRef, useState } from 'react'
 import InstallAppButton from './InstallAppButton'
+import useIsMobile from '../lib/useIsMobile'
+
+export const MOBILE_TOPBAR_HEIGHT = 52
 
 export const MODULES = [
   { path: '/', label: 'Dashboard', icon: '🏠', end: true },
@@ -30,6 +33,8 @@ export default function Sidebar() {
   const { profile, signOut, isZarzad } = useAuth()
   const { lang, setLang, t } = useLang()
   const [collapsed, setCollapsed] = useState(false)
+  const isMobile = useIsMobile()
+  const [mobileOpen, setMobileOpen] = useState(false)
   const modules = MODULES.filter(m => isZarzad || !ZARZAD_ONLY_PATHS.includes(m.path))
   const location = useLocation()
   const navRefs = useRef({})
@@ -44,6 +49,71 @@ export default function Sidebar() {
       setPill(p => ({ ...p, opacity: 0 }))
     }
   }, [location.pathname, collapsed, modules.length])
+
+  // na telefonie zamykamy szufladę nawigacji przy każdej zmianie strony
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
+
+  if (isMobile) {
+    return (
+      <>
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, height: MOBILE_TOPBAR_HEIGHT, zIndex: 60,
+          background: C.navy, color: '#fff', display: 'flex', alignItems: 'center', gap: 12,
+          padding: '0 8px 0 4px', paddingTop: 'env(safe-area-inset-top)',
+          boxShadow: '0 2px 10px rgba(10,22,40,.25)',
+        }}>
+          <button onClick={() => setMobileOpen(o => !o)} aria-label={t('Menu')}
+            style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 22, padding: '6px 10px', cursor: 'pointer', lineHeight: 1 }}>
+            {mobileOpen ? '✕' : '☰'}
+          </button>
+          <img src="/mark-white.png" alt="MyChinaPal" style={{ height: 24, width: 'auto' }} />
+          <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: '.2px' }}>MyChinaPal</div>
+        </div>
+
+        {mobileOpen && (
+          <div onClick={() => setMobileOpen(false)} style={{ position: 'fixed', inset: 0, top: MOBILE_TOPBAR_HEIGHT, background: 'rgba(5,10,25,.5)', zIndex: 55 }} />
+        )}
+
+        <div style={{
+          position: 'fixed', top: MOBILE_TOPBAR_HEIGHT, bottom: 0, left: 0, width: 'min(78vw, 280px)',
+          background: C.navy, color: '#fff', zIndex: 58, display: 'flex', flexDirection: 'column',
+          transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s cubic-bezier(.3,.9,.4,1.1)',
+          boxShadow: mobileOpen ? '4px 0 20px rgba(0,0,0,.25)' : 'none', overflowY: 'auto',
+        }}>
+          <div style={{ display: 'flex', padding: '12px 10px', gap: 2, background: 'rgba(255,255,255,.06)', margin: '10px 10px 4px', borderRadius: 8 }}>
+            <button onClick={() => setLang('pl')} style={{ flex: 1, border: 'none', cursor: 'pointer', padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, background: lang === 'pl' ? C.blue : 'transparent', color: lang === 'pl' ? '#fff' : 'rgba(255,255,255,.5)' }}>{t('PL')}</button>
+            <button onClick={() => setLang('zh')} style={{ flex: 1, border: 'none', cursor: 'pointer', padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, background: lang === 'zh' ? C.blue : 'transparent', color: lang === 'zh' ? '#fff' : 'rgba(255,255,255,.5)' }}>{t('中文')}</button>
+          </div>
+          <div style={{ flex: 1, padding: '8px 8px' }}>
+            {modules.map(m => {
+              const active = isModActive(m, location.pathname)
+              return (
+                <NavLink key={m.path} to={m.path} end={m.end}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px', borderRadius: 9, textDecoration: 'none',
+                    marginBottom: 3, color: active ? '#fff' : 'rgba(255,255,255,.65)', fontSize: 13.5, fontWeight: active ? 700 : 500,
+                    background: active ? 'linear-gradient(135deg, rgba(37,99,235,.9), rgba(59,130,246,.75))' : 'transparent',
+                  }}>
+                  <span style={{ fontSize: 17, width: 20, textAlign: 'center', flexShrink: 0 }}>{m.icon}</span>
+                  <span>{t(m.label)}</span>
+                </NavLink>
+              )
+            })}
+          </div>
+          <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.08)', fontSize: 11 }}>
+            <InstallAppButton collapsed={false} />
+            {profile && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5 }}>{profile.full_name}</div>
+                <div style={{ color: 'rgba(255,255,255,.5)' }}>{profile.role === 'zarzad' ? t('Zarząd') : t('Pracownik')}</div>
+              </div>
+            )}
+            <div onClick={signOut} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.6)', padding: '4px 0' }}>{t('Wyloguj')}</div>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   return (
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}>

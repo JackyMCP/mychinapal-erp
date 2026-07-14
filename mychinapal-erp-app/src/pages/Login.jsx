@@ -38,8 +38,8 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
-      <form onSubmit={handleSubmit} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: '32px 28px', width: 340 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, padding: 16, boxSizing: 'border-box' }}>
+      <form onSubmit={handleSubmit} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: '32px 28px', width: 340, maxWidth: '100%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 26 }}>
           <img src="/logo-navy.png" alt="MyChinaPal" style={{ height: 44, width: 'auto' }} />
         </div>

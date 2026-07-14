@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd']
 const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień']
@@ -18,6 +19,7 @@ function eventColor(task) {
 export default function TabKalendarz({ tasks, clientId, onChanged }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
   const withDue = tasks.filter(tk => tk.due_date)
   const initialMonth = withDue.length > 0 ? new Date(withDue[0].due_date) : new Date()
   const [viewDate, setViewDate] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1))
@@ -81,28 +83,28 @@ export default function TabKalendarz({ tasks, clientId, onChanged }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6 }}>
-        {WEEKDAYS.map(w => <div key={w} style={{ fontSize: 9.5, color: C.muted, textAlign: 'center', fontWeight: 700, paddingBottom: 6, textTransform: 'uppercase' }}>{t(w)}</div>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: isMobile ? 3 : 6 }}>
+        {WEEKDAYS.map(w => <div key={w} style={{ fontSize: isMobile ? 8 : 9.5, color: C.muted, textAlign: 'center', fontWeight: 700, paddingBottom: isMobile ? 3 : 6, textTransform: 'uppercase' }}>{t(w)}</div>)}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginTop: 2 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: isMobile ? 3 : 6, marginTop: 2 }}>
         {cells.map((d, i) => {
-          if (d === null) return <div key={i} style={{ minHeight: 74 }} />
+          if (d === null) return <div key={i} style={{ minHeight: isMobile ? 52 : 74 }} />
           const key = toDateKey(new Date(year, month, d))
           const dayEvents = eventsByDay[key] || []
           const isToday = key === toDateKey(new Date())
           return (
             <div key={i} style={{
-              minHeight: 74, borderRadius: 9, background: dayEvents.length > 0 ? C.blight : C.bg, padding: 6, fontSize: 10.5, color: C.text2,
+              minHeight: isMobile ? 52 : 74, borderRadius: 9, background: dayEvents.length > 0 ? C.blight : C.bg, padding: isMobile ? 3 : 6, fontSize: isMobile ? 9 : 10.5, color: C.text2,
               border: isToday ? `1.5px solid ${C.blue}` : '1px solid transparent',
             }}>
-              <div style={{ fontWeight: 700, fontSize: 11 }}>{d}</div>
+              <div style={{ fontWeight: 700, fontSize: isMobile ? 9 : 11 }}>{d}</div>
               {dayEvents.slice(0, 2).map(tk => (
                 <div key={tk.id} title={tk.title} style={{
-                  marginTop: 4, fontSize: 8.5, fontWeight: 700, padding: '2px 5px', borderRadius: 5, color: '#fff',
+                  marginTop: 4, fontSize: isMobile ? 7 : 8.5, fontWeight: 700, padding: '2px 5px', borderRadius: 5, color: '#fff',
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', background: eventColor(tk),
                 }}>{tk.title}</div>
               ))}
-              {dayEvents.length > 2 && <div style={{ fontSize: 8.5, color: C.muted, marginTop: 2 }}>+{dayEvents.length - 2} {t("więcej")}</div>}
+              {dayEvents.length > 2 && <div style={{ fontSize: isMobile ? 7 : 8.5, color: C.muted, marginTop: 2 }}>+{dayEvents.length - 2} {t("więcej")}</div>}
             </div>
           )
         })}

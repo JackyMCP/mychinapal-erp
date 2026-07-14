@@ -4,7 +4,9 @@ import { LanguageProvider } from './lib/i18n/LanguageContext'
 import { UIProvider } from './lib/ui'
 import CommandPalette from './components/CommandPalette'
 import GlobalStyles from './components/ui/GlobalStyles'
-import Sidebar from './components/Sidebar'
+import Sidebar, { MOBILE_TOPBAR_HEIGHT } from './components/Sidebar'
+import SplashScreen from './components/SplashScreen'
+import useIsMobile from './lib/useIsMobile'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Klienci from './pages/Klienci'
@@ -27,11 +29,12 @@ function Protected({ children }) {
 }
 
 function Shell() {
+  const isMobile = useIsMobile()
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: C.bg }}>
       <CommandPalette />
       <Sidebar />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, paddingTop: isMobile ? `calc(${MOBILE_TOPBAR_HEIGHT}px + env(safe-area-inset-top))` : 0 }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/moje-projekty" element={<MojeProjekty />} />
@@ -56,6 +59,7 @@ export default function App() {
   return (
     <LanguageProvider>
       <GlobalStyles />
+      <SplashScreen />
       <BrowserRouter>
         <AuthProvider>
           <UIProvider>

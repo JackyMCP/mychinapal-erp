@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { C, fmt } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import { STAGE_DEFS } from './stageDefs'
+import useIsMobile from '../../lib/useIsMobile'
 
 export default function ProjectTile({ project, clientName, progress, marza, onClick, clients, onAssignClient }) {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
   const [assigning, setAssigning] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -97,7 +99,7 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
         color: nextClass === 'waiting' ? C.orange : nextClass === 'done' ? C.green : C.text2,
         borderRadius: 9, padding: '8px 10px', fontSize: 10.5, marginBottom: 12, lineHeight: 1.4,
       }}>{t(nextAction)}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
         <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>{t("Wartość zamówienia")}</div><div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800, marginTop: 2 }}>{project.value != null ? `${fmt(project.value, 0)} PLN` : '—'}</div></div>
         <div><div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase' }}>{t(profitLabel)}</div>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: profitClass === 'tbd' ? 11 : 15, fontWeight: profitClass === 'tbd' ? 600 : 800, marginTop: 2, color: profitClass === 'profit' ? C.green : profitClass === 'profit neg' ? C.red : C.muted }}>{t(profitVal)}</div>

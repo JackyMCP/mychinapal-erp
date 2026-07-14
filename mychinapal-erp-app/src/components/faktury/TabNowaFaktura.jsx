@@ -6,9 +6,9 @@ import { nextInvoiceNumber, computeTotals } from './utils'
 import { nextDocNumber } from '../magazyn/utils'
 import { generateInvoicePdf, generateCommercialInvoicePdf } from './pdf'
 import { useUI } from '../../lib/ui'
+import useIsMobile from '../../lib/useIsMobile'
 
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, marginBottom: 16 }
-const fieldWrap = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }
 const label = { display: 'block', fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }
 const input = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 12.5, boxSizing: 'border-box' }
 
@@ -17,6 +17,8 @@ const emptyItem = () => ({ product_id: '', description: '', name_cn: '', name_en
 export default function TabNowaFaktura({ clients, projects, products, company, cnCompany, companyFlag = 'PL', onCreated }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const isMobile = useIsMobile()
+  const fieldWrap = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }
   const isCN = companyFlag !== 'PL'
   const isShared = companyFlag === 'SHARED'
 
@@ -237,6 +239,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
         <span>{t("Pozycje")}</span>
         <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 400, textTransform: 'none' }}>{t("towar wybierasz z listy tego co jest już na Magazynie")} {isCN ? '(CN)' : ''}</span>
       </div>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
         <thead>
           <tr>
@@ -286,6 +289,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
           })}
         </tbody>
       </table>
+      </div>
       <span onClick={addItem} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer', marginTop: 8, display: 'inline-block' }}>{t("+ dodaj pozycję z magazynu")}</span>
 
       <div style={{ background: C.bg, borderRadius: 12, padding: '14px 16px', marginTop: 14, display: 'flex', justifyContent: 'flex-end', gap: 26 }}>

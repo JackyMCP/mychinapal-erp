@@ -51,6 +51,7 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }
 
       {filtered.length === 0 && <div style={{ fontSize: 11, color: C.muted, padding: 16, textAlign: 'center' }}>{t("Brak faktur do wyświetlenia.")}</div>}
 
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr>
@@ -97,6 +98,7 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

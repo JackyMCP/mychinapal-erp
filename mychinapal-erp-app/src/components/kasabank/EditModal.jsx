@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState, useMemo, useEffect } from 'react'
 import { C, fmt } from '../../lib/theme'
 import { CATEGORIES, FLOW_TYPES } from './constants'
+import useIsMobile from '../../lib/useIsMobile'
 
 const STATUSES = ['ROZLICZONO CAŁKOWICIE', 'NIE ROZLICZONO', 'NIE PODLEGA', 'W TRAKCIE']
 
@@ -9,6 +10,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   const [clientId, setClientId] = useState(tx.client_id || '')
   const [projectId, setProjectId] = useState(tx.project_id || '')
@@ -29,7 +31,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div style={{ background: C.white, borderRadius: 12, padding: 24, width: 520, boxShadow: '0 20px 60px rgba(0,0,0,.3)', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: C.white, borderRadius: 12, padding: 24, width: 520, maxWidth: '92vw', boxSizing: 'border-box', boxShadow: '0 20px 60px rgba(0,0,0,.3)', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{t("Edytuj transakcję")}</div>
         <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontFamily: 'monospace' }}>{tx.id.slice(0, 8)}</span>
@@ -39,7 +41,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
         </div>
         <div style={{ background: C.bg, borderRadius: 6, padding: '7px 10px', fontSize: 10.5, color: C.text2, marginBottom: 14, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.4 }}>{tx.contractor}<br />{t(tx.desc)}</div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: C.text }}>{t("Przypisanie (klient)")}</label>
             <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
@@ -58,7 +60,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Kategoria źródłowa")}</label>
             <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
@@ -77,7 +79,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Status rozliczenia")}</label>
             <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}

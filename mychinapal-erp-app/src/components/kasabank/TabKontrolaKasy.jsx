@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState } from 'react'
 import { C, fmt } from '../../lib/theme'
 import { QUARTERS, Q_LABELS } from './constants'
+import useIsMobile from '../../lib/useIsMobile'
 
 const KK_ROWS = [
   { label: 'wpływy (WN+)', color: C.green, bold: false },
@@ -20,6 +21,7 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
   const {
     t
   } = useLang();
+  const isMobile = useIsMobile()
 
   const [selQ, setSelQ] = useState('Q2_2026')
   const qi = QUARTERS.indexOf(selQ)
@@ -38,7 +40,7 @@ export default function TabKontrolaKasy({ kk, stanKont }) {
           }}>{t(l)}</div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, color: C.text }}>
             {t("📊 Przepływy finansowe —")} {selQ === 'razem' ? t("WSZYSTKIE KWARTAŁY") : Q_LABELS[qi]}

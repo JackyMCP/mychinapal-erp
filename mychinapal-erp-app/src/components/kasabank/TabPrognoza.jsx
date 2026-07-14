@@ -44,6 +44,7 @@ export default function TabPrognoza({ items }) {
         </div>
       ) : (
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: C.bg }}>
               {['Data', 'Nazwa', 'Kategoria', 'Kwota'].map((h, i) => (
@@ -65,6 +66,7 @@ export default function TabPrognoza({ items }) {
               <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, color: '#FCA5A5', fontSize: 14 }}>−{fmt(total, 0)} {t("PLN")}</td>
             </tr></tfoot>
           </table>
+        </div>
         </div>
       )}
     </div>

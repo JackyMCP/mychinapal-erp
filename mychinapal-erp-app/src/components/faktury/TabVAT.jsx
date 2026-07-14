@@ -2,6 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useMemo, useState } from 'react'
 import { C } from '../../lib/theme'
 import { monthRange } from './utils'
+import useIsMobile from '../../lib/useIsMobile'
 
 function toCsv(rows) {
   const header = ['Numer', 'Data', 'Kontrahent', 'Netto', 'VAT', 'Brutto', 'Waluta']
@@ -12,6 +13,7 @@ function toCsv(rows) {
 
 export default function TabVAT({ invoices }) {
   const { t } = useLang()
+  const isMobile = useIsMobile()
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
 
   const monthInvoices = useMemo(() => {
@@ -38,7 +40,7 @@ export default function TabVAT({ invoices }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Zestawienie VAT z faktur wystawionych w tym module")}</div>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', fontSize: 11 }} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 12 }}>
           <div style={{ background: C.bg, borderRadius: 10, padding: '12px 14px' }}>
             <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, textTransform: 'uppercase' }}>{t("Netto razem")}</div>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4 }}>{nettoRazem.toFixed(2)} PLN</div>
