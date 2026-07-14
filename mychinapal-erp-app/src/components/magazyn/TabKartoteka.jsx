@@ -9,7 +9,7 @@ import { useUI } from '../../lib/ui'
 const card = { background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20 }
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
 
-export default function TabKartoteka({ products, loading, onChanged }) {
+export default function TabKartoteka({ products, loading, onChanged, currencyLabel = 'PLN' }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const [filter, setFilter] = useState('all')
@@ -75,6 +75,9 @@ export default function TabKartoteka({ products, loading, onChanged }) {
             </div>
             <div style={{ width: 210, flexShrink: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{p.code} <span style={{ fontSize: 11, color: C.muted, fontWeight: 500, display: 'block', marginTop: 2 }}>{p.name}</span></div>
+              {(p.name_cn || p.name_en) && (
+                <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{[p.name_cn, p.name_en].filter(Boolean).join(' · ')}</div>
+              )}
               <div style={{ marginTop: 6 }}>
                 <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: p.is_service ? C.bg : C.blight, color: p.is_service ? C.muted : C.blue, textTransform: 'uppercase', letterSpacing: '.3px' }}>
                   {p.is_service ? t('usługa') : (p.source === 'import' ? t('z importu') : t('towar'))}
@@ -89,9 +92,9 @@ export default function TabKartoteka({ products, loading, onChanged }) {
                   )}
                 </div>
               </div>
-              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Śr. cena zakupu")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3, color: p.is_service ? C.muted : C.text }}>{p.is_service ? '—' : `${Number(p.avg_purchase_price).toFixed(2)} PLN`}</div></div>
-              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Cena sprzedaży")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3 }}>{Number(p.sale_price_net).toFixed(2)} PLN</div></div>
-              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Wartość")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3, color: p.is_service ? C.muted : C.text }}>{p.is_service ? '—' : `${Math.round(p.stock * p.avg_purchase_price).toLocaleString('pl-PL')} PLN`}</div></div>
+              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Śr. cena zakupu")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3, color: p.is_service ? C.muted : C.text }}>{p.is_service ? '—' : `${Number(p.avg_purchase_price).toFixed(2)} ${currencyLabel}`}</div></div>
+              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Cena sprzedaży")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3 }}>{Number(p.sale_price_net).toFixed(2)} {currencyLabel}</div></div>
+              <div><div style={{ fontSize: 9, color: C.muted, textTransform: 'uppercase', fontWeight: 700 }}>{t("Wartość")}</div><div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3, color: p.is_service ? C.muted : C.text }}>{p.is_service ? '—' : `${Math.round(p.stock * p.avg_purchase_price).toLocaleString('pl-PL')} ${currencyLabel}`}</div></div>
             </div>
           </div>
         )

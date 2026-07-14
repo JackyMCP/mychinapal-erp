@@ -13,6 +13,7 @@ import TabCykliczne from '../components/kasabank/TabCykliczne'
 import TabPrognoza from '../components/kasabank/TabPrognoza'
 import StatementUploadTile from '../components/kasabank/StatementUploadTile'
 import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
+import ComingSoonCN from '../components/ComingSoonCN'
 import useWeeklyStatementReminder from '../lib/useWeeklyStatementReminder'
 import { useUI } from '../lib/ui'
 
@@ -277,16 +278,4 @@ export default function KasaBank() {
       </div>
     </div>
   );
-}
-
-function ComingSoonCN({ label }) {
-  return (
-    <div style={{ padding: '40px 20px', textAlign: 'center', color: C.muted }}>
-      <div style={{ fontSize: 28, marginBottom: 8 }}>🚧</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{label} — chińska spółka</div>
-      <div style={{ fontSize: 11.5, maxWidth: 380, margin: '0 auto' }}>
-        Ta zakładka pojawi się w kolejnym kroku, razem z ustaleniem statusu podatnika VAT (mały / ogólny podatnik) chińskiej spółki — to od niego zależy sposób liczenia tych zestawień.
-      </div>
-    </div>
-  )
 }

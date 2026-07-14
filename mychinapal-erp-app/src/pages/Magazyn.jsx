@@ -7,6 +7,7 @@ import TabKartoteka from '../components/magazyn/TabKartoteka'
 import TabDokumenty from '../components/magazyn/TabDokumenty'
 import TabNowy from '../components/magazyn/TabNowy'
 import { monthRange } from '../components/magazyn/utils'
+import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
 
 const TABS = [
   { key: 'kartoteka', label: 'Kartoteka towarów', icon: '📋' },
@@ -21,6 +22,8 @@ export default function Magazyn() {
   const [projects, setProjects] = useState([])
   const [tab, setTab] = useState('kartoteka')
   const [loading, setLoading] = useState(true)
+  const [company, setCompany] = useState('PL')
+  const isCN = company === 'CN'
 
   const loadAll = async () => {
     setLoading(true)
@@ -39,14 +42,18 @@ export default function Magazyn() {
 
   useEffect(() => { loadAll() }, [])
 
+  const companyProducts = useMemo(() => products.filter(p => (p.company || 'PL') === company), [products, company])
+  const companyDocs = useMemo(() => docs.filter(d => (d.company || 'PL') === company), [docs, company])
+  const currencyLabel = isCN ? 'CNY' : 'PLN'
+
   const stats = useMemo(() => {
-    const goods = products.filter(p => !p.is_service)
+    const goods = companyProducts.filter(p => !p.is_service)
     const wartosc = goods.reduce((s, p) => s + (Number(p.stock) || 0) * (Number(p.avg_purchase_price) || 0), 0)
     const nizkiStan = goods.filter(p => p.min_stock != null && Number(p.stock) < Number(p.min_stock)).length
     const { start, end } = monthRange(new Date().toISOString())
-    const pzWTymMiesiacu = docs.filter(d => d.doc_type === 'PZ' && d.doc_date >= start && d.doc_date < end).length
-    return { wartosc, liczbaIndeksow: products.length, nizkiStan, pzWTymMiesiacu }
-  }, [products, docs])
+    const pzWTymMiesiacu = companyDocs.filter(d => d.doc_type === 'PZ' && d.doc_date >= start && d.doc_date < end).length
+    return { wartosc, liczbaIndeksow: companyProducts.length, nizkiStan, pzWTymMiesiacu }
+  }, [companyProducts, companyDocs])
 
   return (
     <div>
@@ -71,10 +78,11 @@ export default function Magazyn() {
               <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 800 }}>{t("Magazyn")}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 4 }}>{t("Kartoteka towarów i dokumenty magazynowe (PZ/WZ) — źródło pozycji do faktur")}</div>
             </div>
+            <CompanyFlagSwitch value={company} onChange={setCompany} />
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Wartość magazynu")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.wartosc)} /> {t("PLN")}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.wartosc)} /> {t(currencyLabel)}</div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Liczba indeksów")}</div>
@@ -105,9 +113,10 @@ export default function Magazyn() {
           ))}
         </div>
 
-        {tab === 'kartoteka' && <TabKartoteka products={products} loading={loading} onChanged={loadAll} />}
-        {tab === 'dokumenty' && <TabDokumenty docs={docs} loading={loading} />}
-        {tab === 'nowy' && <TabNowy products={products} projects={projects} onChanged={loadAll} onGoTab={setTab} />}
+        {tab === 'kartoteka' && <TabKartoteka products={companyProducts} loading={loading} onChanged={loadAll} currencyLabel={currencyLabel} />}
+        {tab === 'dokumenty' && <TabDokumenty docs={companyDocs} loading={loading} />}
+        {tab === 'nowy' && <TabNowy products={companyProducts} projects={projects} onChanged={loadAll} onGoTab={setTab} company={company}
+          {...(isCN ? { vatRateOptions: ['13%', '9%', '6%', '3%', '0%'] } : {})} />}
       </div>
     </div>
   )
