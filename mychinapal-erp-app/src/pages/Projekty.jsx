@@ -16,6 +16,7 @@ import ProjectChat from '../components/projekty/ProjectChat'
 import { computeStageProgress } from '../components/projekty/stageDefs'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
+import NewProjectModal from '../components/projekty/NewProjectModal'
 
 export default function Projekty() {
   const {
@@ -33,6 +34,7 @@ export default function Projekty() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [showNewProject, setShowNewProject] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -96,6 +98,12 @@ export default function Projekty() {
     await loadAll()
   }
 
+  const handleProjectCreated = async (created) => {
+    setShowNewProject(false)
+    await loadAll()
+    handleSelect(created)
+  }
+
   if (selected) {
     const progress = progressByProject[selected.id] || computeStageProgress([])
     const clientName = clientNameById[selected.client_id] || 'Nieznany klient'
@@ -137,8 +145,22 @@ export default function Projekty() {
 
   return (
     <div>
-      <PageHeader title={t("Projekty & Zamówienia")} subtitle={loading ? 'Ładowanie…' : `${projects.length} zamówień widocznych dla Ciebie`} />
+      <PageHeader title={t("Projekty & Zamówienia")} subtitle={loading ? 'Ładowanie…' : `${projects.length} zamówień widocznych dla Ciebie`}
+        right={<button onClick={() => setShowNewProject(true)} style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>{t("+ Nowy projekt")}</button>} />
       <div style={{ padding: '16px 22px', maxWidth: 1500 }}>
+        <div onClick={() => setShowNewProject(true)} className="ux-hover-lift"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer', marginBottom: 16, padding: '16px 18px',
+            borderRadius: 14, border: `2px dashed ${C.blue}`, background: `linear-gradient(120deg, ${C.blight}, #fff)`,
+          }}>
+          <div style={{ width: 46, height: 46, borderRadius: 12, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 2px 8px rgba(37,99,235,.15)', color: C.blue, fontWeight: 800 }}>+</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700, color: C.blue }}>{t("Dodaj nowe zamówienie / projekt")}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{t("Nazwa i klient — szacowany zysk i etapy uzupełnisz zaraz po utworzeniu.")}</div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: C.blue, borderRadius: 8, padding: '7px 14px', whiteSpace: 'nowrap' }}>{t("+ Nowy projekt")}</div>
+        </div>
+
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("Szukaj zamówienia, klienta…")}
             style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 14px', fontSize: 12, maxWidth: 260, flex: 1 }} />
@@ -160,6 +182,7 @@ export default function Projekty() {
           ))}
         </div>
       </div>
+      {showNewProject && <NewProjectModal clients={clients} onClose={() => setShowNewProject(false)} onCreated={handleProjectCreated} />}
     </div>
   );
 }

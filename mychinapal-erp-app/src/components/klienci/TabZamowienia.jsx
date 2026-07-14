@@ -3,14 +3,22 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import ProjectTile from '../projekty/ProjectTile'
+import NewProjectModal from '../projekty/NewProjectModal'
 import { useUI } from '../../lib/ui'
 
 export default function TabZamowienia({ projects, marzaByProject, progressByProject, allProjects, clientNameById, clientId, onProjectsChanged, onOpenProject }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const [managerOpen, setManagerOpen] = useState(false)
+  const [showNewProject, setShowNewProject] = useState(false)
   const [busyId, setBusyId] = useState(null)
   const clientName = clientNameById[clientId] || ''
+
+  const handleProjectCreated = async (created) => {
+    setShowNewProject(false)
+    await onProjectsChanged()
+    onOpenProject && onOpenProject(created.id)
+  }
 
   const handleAssign = async (project) => {
     const ownerName = clientNameById[project.client_id] || t('inny klient')
@@ -26,10 +34,16 @@ export default function TabZamowienia({ projects, marzaByProject, progressByProj
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ fontSize: 12.5, color: C.muted }}>{projects.length} {t("zamówień powiązanych z tym klientem")}</div>
-        <div onClick={() => setManagerOpen(o => !o)} style={{
-          background: 'rgba(147,197,253,.12)', border: `1px solid ${C.bmid}`, color: C.blue, fontSize: 11.5, fontWeight: 700,
-          padding: '9px 15px', borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-        }}>🔗 {managerOpen ? t("Zamknij zarządzanie powiązaniami") : t("Zarządzaj powiązaniami")}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div onClick={() => setShowNewProject(true)} style={{
+            background: C.blue, border: `1px solid ${C.blue}`, color: '#fff', fontSize: 11.5, fontWeight: 700,
+            padding: '9px 15px', borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          }}>+ {t("Nowy projekt")}</div>
+          <div onClick={() => setManagerOpen(o => !o)} style={{
+            background: 'rgba(147,197,253,.12)', border: `1px solid ${C.bmid}`, color: C.blue, fontSize: 11.5, fontWeight: 700,
+            padding: '9px 15px', borderRadius: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          }}>🔗 {managerOpen ? t("Zamknij zarządzanie powiązaniami") : t("Zarządzaj powiązaniami")}</div>
+        </div>
       </div>
 
       {managerOpen && (
@@ -66,6 +80,9 @@ export default function TabZamowienia({ projects, marzaByProject, progressByProj
             marza={marzaByProject[p.id]} onClick={() => onOpenProject(p.id)} />
         ))}
       </div>
+      {showNewProject && (
+        <NewProjectModal clientId={clientId} clientName={clientName} onClose={() => setShowNewProject(false)} onCreated={handleProjectCreated} />
+      )}
     </div>
   )
 }

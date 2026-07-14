@@ -15,6 +15,7 @@ import TabDokumenty from '../components/klienci/TabDokumenty'
 import TabZadania from '../components/klienci/TabZadania'
 import TabCzat from '../components/klienci/TabCzat'
 import ClientTeam from '../components/klienci/ClientTeam'
+import NewClientModal from '../components/klienci/NewClientModal'
 
 const TABS = [
   { key: 'Przegląd', icon: '🧭' },
@@ -47,6 +48,7 @@ export default function Klienci() {
   const [tab, setTab] = useState('Przegląd')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showNewClient, setShowNewClient] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -142,14 +144,31 @@ export default function Klienci() {
   const handleBack = () => { setSelectedId(null); setSearchParams({}) }
 
   const handleClientSaved = (updated) => setClients(prev => prev.map(c => c.id === updated.id ? updated : c))
+  const handleClientCreated = (created) => {
+    setShowNewClient(false)
+    setClients(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+    handleSelect(created)
+  }
 
   // ── widok listy ──────────────────────────────────────────────
   if (!selected) {
     return (
       <div>
         <PageHeader title={t("Klienci & CRM")} subtitle={loading ? 'Ładowanie…' : `${clients.length} kontrahentów widocznych dla Ciebie`}
-          right={isZarzad && <button style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>{t("+ Nowy klient")}</button>} />
+          right={<button onClick={() => setShowNewClient(true)} style={{ padding: '7px 13px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>{t("+ Nowy klient")}</button>} />
         <div style={{ padding: '16px 22px', maxWidth: 1100 }}>
+          <div onClick={() => setShowNewClient(true)} className="ux-hover-lift"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer', marginBottom: 16, padding: '16px 18px',
+              borderRadius: 14, border: `2px dashed ${C.blue}`, background: `linear-gradient(120deg, ${C.blight}, #fff)`,
+            }}>
+            <div style={{ width: 46, height: 46, borderRadius: 12, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0, boxShadow: '0 2px 8px rgba(37,99,235,.15)', color: C.blue, fontWeight: 800 }}>+</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700, color: C.blue }}>{t("Dodaj nowego klienta")}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{t("Nazwa, typ kontrahenta, NIP i adres — reszta do uzupełnienia w panelu klienta.")}</div>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: C.blue, borderRadius: 8, padding: '7px 14px', whiteSpace: 'nowrap' }}>{t("+ Nowy klient")}</div>
+          </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("Szukaj klienta…")}
             style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 14px', fontSize: 12, width: '100%', maxWidth: 340, marginBottom: 16, boxSizing: 'border-box' }} />
           {filtered.length === 0 && !loading && <div style={{ fontSize: 11, color: C.muted, padding: 20, textAlign: 'center' }}>{t("Brak klientów do wyświetlenia.")}</div>}
@@ -173,6 +192,7 @@ export default function Klienci() {
             })}
           </div>
         </div>
+        {showNewClient && <NewClientModal onClose={() => setShowNewClient(false)} onCreated={handleClientCreated} />}
       </div>
     )
   }
