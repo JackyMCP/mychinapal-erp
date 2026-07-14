@@ -1,16 +1,18 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useState, useMemo, useEffect } from 'react'
 import { C, fmt } from '../../lib/theme'
-import { QUARTERS, Q_LABELS, INTERNAL_CATEGORIES, rowBg, isHelperRow } from './constants'
+import { INTERNAL_CATEGORIES, rowBg, isHelperRow, quartersForCompany } from './constants'
 import Pill from './Pill'
 import EditModal from './EditModal'
 
-export default function TabTransakcje({ txs, clients, projects, onSave, initialSearch, initialQ, internalCategories = INTERNAL_CATEGORIES, editCategories, vatRateOptions }) {
+export default function TabTransakcje({ txs, clients, projects, onSave, initialSearch, initialQ, internalCategories = INTERNAL_CATEGORIES, editCategories, vatRateOptions, company = 'PL' }) {
   const {
     t
   } = useLang();
 
   const [selQ, setSelQ] = useState(initialQ || 'wszystkie')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [filter, setFilter] = useState('wszystkie')
   const [search, setSearch] = useState(initialSearch || '')
   const [editTx, setEditTx] = useState(null)
@@ -19,6 +21,24 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
   const [showSRows, setShowSRows] = useState(false)
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 50
+
+  // Pełny, elastyczny zakres kwartałów dla danej spółki (PL od 2025, CN od 2024) —
+  // filtrowanie tutaj działa PO WARTOŚCI (row.q), więc bezpiecznie można go
+  // rozszerzać niezależnie od reszty modułu (kontrola kasy/stan kont).
+  const quarterOptions = useMemo(() => quartersForCompany(company), [company])
+  const years = useMemo(() => [...new Set(quarterOptions.map(r => r.year))], [quarterOptions])
+  const hasCustomRange = !!(dateFrom || dateTo)
+
+  const handlePickQuarter = (key) => {
+    setSelQ(key)
+    setDateFrom(''); setDateTo('')
+    setFilter('wszystkie')
+  }
+  const handleDateChange = (which, val) => {
+    if (which === 'from') setDateFrom(val); else setDateTo(val)
+    setSelQ('wszystkie')
+  }
+  const clearPeriodFilter = () => { setSelQ('wszystkie'); setDateFrom(''); setDateTo('') }
 
   const handleSort = col => { if (sortCol === col) setSortAsc(a => !a); else { setSortCol(col); setSortAsc(true) } }
 
@@ -32,6 +52,8 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
   const filtered = useMemo(() => {
     let list = txs.filter(row => {
       if (selQ !== 'wszystkie' && row.q !== selQ) return false
+      if (dateFrom && row.date && row.date < dateFrom) return false
+      if (dateTo && row.date && row.date > dateTo) return false
       if (!showSRows && isHelperRow(row)) return false
       const cat = (row.category || '').toUpperCase()
       if (filter === 'wplywy') return row.direction === 'WN+';
@@ -57,12 +79,12 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
       return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
     })
     return list
-  }, [txs, selQ, filter, search, showSRows, sortCol, sortAsc, internalCategories])
+  }, [txs, selQ, dateFrom, dateTo, filter, search, showSRows, sortCol, sortAsc, internalCategories])
 
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
 
-  useEffect(() => { setPage(0) }, [selQ, filter, search])
+  useEffect(() => { setPage(0) }, [selQ, dateFrom, dateTo, filter, search])
 
   const unassignedCount = txs.filter(missingAssign).length
   const weryfikacjaCount = txs.filter(row => (row.category || '').includes('WERYFIKACJI')).length
@@ -90,16 +112,33 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, flexShrink: 0 }}>{t("Kwartał:")}</span>
-        {[{ k: 'wszystkie', l: `Wszystkie (${txs.length})` }, ...QUARTERS.map((q, i) => ({ k: q, l: Q_LABELS[i] }))].map(({ k, l }) => (
-          <div key={k} onClick={() => { setSelQ(k); setFilter('wszystkie') }} style={{
-            padding: '3px 9px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: 600,
-            border: `1px solid ${selQ === k ? C.blue : C.border}`,
-            background: selQ === k ? C.blue : 'transparent', color: selQ === k ? '#fff' : C.muted,
-          }}>{t(l)}</div>
-        ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 600, flexShrink: 0 }}>{t("Okres:")}</span>
+        <select value={hasCustomRange ? '' : selQ} onChange={e => handlePickQuarter(e.target.value)} style={{
+          border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontWeight: 600, color: C.text, background: C.white,
+        }}>
+          <option value="wszystkie">{t("Wszystkie")} ({txs.length})</option>
+          {years.map(y => (
+            <optgroup key={y} label={String(y)}>
+              {quarterOptions.filter(r => r.year === y).map(r => (
+                <option key={r.key} value={r.key}>{r.label}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+
+        <span style={{ fontSize: 10, color: C.muted, fontWeight: 600 }}>{t("lub zakres dat:")}</span>
+        <input type="date" value={dateFrom} onChange={e => handleDateChange('from', e.target.value)}
+          style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, color: C.text }} />
+        <span style={{ fontSize: 10, color: C.muted }}>{t("—")}</span>
+        <input type="date" value={dateTo} onChange={e => handleDateChange('to', e.target.value)}
+          style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, color: C.text }} />
+
+        {(selQ !== 'wszystkie' || hasCustomRange) && (
+          <span onClick={clearPeriodFilter} style={{ fontSize: 10.5, color: C.blue, fontWeight: 600, cursor: 'pointer' }}>{t("✕ Wyczyść okres")}</span>
+        )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: C.muted, cursor: 'pointer' }}>
             <input type="checkbox" checked={showSRows} onChange={e => setShowSRows(e.target.checked)} />
             {t("Pokaż wiersze pomocnicze")}

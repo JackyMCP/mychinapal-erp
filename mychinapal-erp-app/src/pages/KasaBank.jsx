@@ -194,13 +194,36 @@ export default function KasaBank() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <CompanyFlagSwitch value={company} onChange={c => { setCompany(c); setTab('transakcje') }} size="sm" />
           {alerts > 0 && <div style={{ background: C.rlight, border: `1px solid ${C.rmid}`, borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: C.red, fontWeight: 700, whiteSpace: 'nowrap' }}>⚠️ {alerts} {t("wymaga przypisania")}</div>}
-          {!isCN && (
-            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-              {QUARTERS.map((q, i) => (
-                <div key={q} onClick={() => setSelQ(q)} style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10.5, cursor: 'pointer', fontWeight: 600, border: `1px solid ${selQ === q ? C.blue : C.border}`, background: selQ === q ? C.blue : 'transparent', color: selQ === q ? '#fff' : C.muted, whiteSpace: 'nowrap' }}>{Q_LABELS[i]}</div>
-              ))}
-            </div>
-          )}
+          {!isCN && (() => {
+            // Ten wybór kwartału zasila WYŁĄCZNIE kafelki stanu kont poniżej (PL) —
+            // celowo ograniczony do stałej listy QUARTERS (2025-2026), bo te dane
+            // są indeksowane pozycyjnie (stanKont[i].vals[qi]). Nie rozszerzać bez
+            // rozszerzenia też danych w stanKont/kk.
+            const years = [...new Set(QUARTERS.map(q => Number(q.split('_')[1])))]
+            const qi2 = QUARTERS.indexOf(selQ)
+            const selYear = qi2 >= 0 ? Number(QUARTERS[qi2].split('_')[1]) : years[years.length - 1]
+            const selQNum = qi2 >= 0 ? Number(QUARTERS[qi2][1]) : 1
+            const quartersInYear = QUARTERS.map((q, i) => ({ key: q, label: Q_LABELS[i], year: Number(q.split('_')[1]), q: Number(q[1]) })).filter(r => r.year === selYear)
+            return (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <select value={selYear} onChange={e => {
+                  const y = Number(e.target.value)
+                  const opts = QUARTERS.map((q, i) => ({ key: q, year: Number(q.split('_')[1]), q: Number(q[1]) })).filter(r => r.year === y)
+                  const match = opts.find(r => r.q === selQNum) || opts[opts.length - 1]
+                  if (match) setSelQ(match.key)
+                }} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontWeight: 600, color: C.text, background: C.white }}>
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select value={selQNum} onChange={e => {
+                  const q = Number(e.target.value)
+                  const match = quartersInYear.find(r => r.q === q)
+                  if (match) setSelQ(match.key)
+                }} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontWeight: 600, color: C.text, background: C.white }}>
+                  {quartersInYear.map(r => <option key={r.key} value={r.q}>Q{r.q}</option>)}
+                </select>
+              </div>
+            )
+          })()}
         </div>
       </div>
       {needsUploadReminder && (
@@ -286,7 +309,7 @@ export default function KasaBank() {
           )}
           <div style={{ padding: 16 }}>
             {tab === 'transakcje' && (
-              <TabTransakcje txs={companyTxs} clients={clients} projects={projects} onSave={handleSave}
+              <TabTransakcje txs={companyTxs} clients={clients} projects={projects} onSave={handleSave} company={company}
                 {...(isCN ? { internalCategories: CN_INTERNAL_CATEGORIES, editCategories: CN_CATEGORIES, vatRateOptions: [0, 3, 6, 9, 13] } : {})} />
             )}
             {tab === 'kontrola' && (isCN ? <ComingSoonCN label={t("Kontrola kasy")} /> : <TabKontrolaKasy kk={kk} stanKont={stanKont} />)}

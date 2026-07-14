@@ -1,7 +1,38 @@
 // Stałe współdzielone przez zakładki modułu Kasa & Bank — identyczne jak w zatwierdzonym
 // mockupie HTML (żeby wygląd i słownik pojęć się nie rozjeżdżały między wersjami).
+//
+// UWAGA: QUARTERS/Q_LABELS poniżej to lista PL-only, celowo NIE ruszona — kontrola
+// kasy i stan kont (TabKontrolaKasy, stanKont w KasaBank.jsx) indeksują dane
+// pozycyjnie (QUARTERS.indexOf(selQ), stanKont[i].vals[qi]) i zakładają dokładnie
+// tę samą, ustaloną wcześniej listę 2025-2026 — zmiana jej długości/kolejności
+// przesunęłaby wszystkie te dane. Osobny, szerszy zakres (od 2024, dla obu spółek)
+// jest niżej w quartersForCompany() — używany tam, gdzie filtrujemy transakcje
+// PO WARTOŚCI (row.q), a nie po pozycji w tablicy, więc jest bezpieczny.
 export const QUARTERS = ['Q1_2025', 'Q2_2025', 'Q3_2025', 'Q4_2025', 'Q1_2026', 'Q2_2026', 'Q3_2026']
 export const Q_LABELS = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025', 'Q1 2026', 'Q2 2026', 'Q3 2026']
+
+// Pierwszy rok działalności każdej spółki.
+export const COMPANY_START_YEAR = { PL: 2025, CN: 2024 }
+
+// Pełna, szeroka lista kwartałów (2024 -> bieżący rok + 1), niezależna od QUARTERS
+// powyżej — do użytku wyłącznie w miejscach filtrujących transakcje PO WARTOŚCI
+// pola row.q (a nie po indeksie w tablicy), np. lista rozwijalna w TabTransakcje.
+function buildQuartersFrom(startYear, endYear) {
+  const rows = []
+  for (let y = startYear; y <= endYear; y++) {
+    for (let q = 1; q <= 4; q++) rows.push({ key: `Q${q}_${y}`, label: `Q${q} ${y}`, year: y, q })
+  }
+  return rows
+}
+
+const FULL_RANGE_END_YEAR = new Date().getFullYear() + 1
+
+// Zwraca [{ key: 'Q1_2024', label: 'Q1 2024', year: 2024, q: 1 }, ...] od startu
+// działalności danej spółki do bieżącego roku + 1.
+export function quartersForCompany(company) {
+  const startYear = COMPANY_START_YEAR[company] || COMPANY_START_YEAR.PL
+  return buildQuartersFrom(startYear, FULL_RANGE_END_YEAR)
+}
 
 export const CATEGORIES = [
   'ZAKUP TOWARU CHINY', 'TRANSPORT', 'ODPRAWA CELNA', 'PRZYCHÓD', 'PODATKI', 'ZUS',
