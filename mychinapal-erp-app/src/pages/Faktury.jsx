@@ -11,6 +11,8 @@ import TabVAT from '../components/faktury/TabVAT'
 import TabKSeF from '../components/faktury/TabKSeF'
 import { paymentStatus } from '../components/faktury/utils'
 import { useUI } from '../lib/ui'
+import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
+import ComingSoonCN from '../components/ComingSoonCN'
 
 const TABS = [
   { key: 'rejestr', label: 'Rejestr faktur', icon: '📋' },
@@ -29,6 +31,8 @@ export default function Faktury() {
   const [projects, setProjects] = useState([])
   const [products, setProducts] = useState([])
   const [company, setCompany] = useState({})
+  const [cnCompany, setCnCompany] = useState(null)
+  const [companyFlag, setCompanyFlag] = useState('PL')
   const [tab, setTab] = useState('rejestr')
   const [loading, setLoading] = useState(true)
 
@@ -46,6 +50,11 @@ export default function Faktury() {
     setCompany(Object.fromEntries((data || []).map(r => [r.key, r.value])))
   }
 
+  const loadCnCompany = async () => {
+    const { data } = await supabase.from('cn_company_settings').select('*').eq('company', 'CN').maybeSingle()
+    setCnCompany(data || null)
+  }
+
   const loadAll = async () => {
     setLoading(true)
     const [clRes, prRes, prodRes] = await Promise.all([
@@ -56,7 +65,7 @@ export default function Faktury() {
     setClients(clRes.data || [])
     setProjects(prRes.data || [])
     setProducts(prodRes.data || [])
-    await Promise.all([loadInvoices(), loadCompany()])
+    await Promise.all([loadInvoices(), loadCompany(), loadCnCompany()])
     setLoading(false)
   }
 
@@ -71,18 +80,32 @@ export default function Faktury() {
 
   const handleCreated = async () => { await loadInvoices(); setTab('rejestr') }
 
+  // Trójstronny podział: PL = czysto polskie + wspólne (SHARED); CN = czysto
+  // chińskie + wspólne (SHARED) — faktura intercompany dotyczy obu stron,
+  // więc widoczna jest z obu flag. SHARED samodzielnie pokazuje tylko wspólne.
+  const flagInvoices = useMemo(() => invoices.filter(inv => {
+    const flag = inv.company_flag || 'PL'
+    if (companyFlag === 'SHARED') return flag === 'SHARED'
+    if (companyFlag === 'CN') return flag === 'CN' || flag === 'SHARED'
+    return flag === 'PL' || flag === 'SHARED'
+  }), [invoices, companyFlag])
+
+  const isCN = companyFlag !== 'PL'
+  const cnProducts = useMemo(() => products.filter(p => (p.company || 'PL') === 'CN'), [products])
+  const plProducts = useMemo(() => products.filter(p => (p.company || 'PL') === 'PL'), [products])
+
   const stats = useMemo(() => {
     const now = new Date()
-    const thisMonth = invoices.filter(i => {
+    const thisMonth = flagInvoices.filter(i => {
       const d = new Date(i.invoice_date)
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && i.typ !== 'pro forma'
     })
-    const unpaid = invoices.filter(i => !i.paid_at && i.typ !== 'pro forma')
+    const unpaid = flagInvoices.filter(i => !i.paid_at && i.typ !== 'pro forma')
     const overdue = unpaid.filter(i => paymentStatus(i) === 'po terminie')
     const suma = unpaid.reduce((s, i) => s + Number(i.total_gross || i.amount || 0), 0)
     const sent = thisMonth.filter(i => i.ksef_status === 'sent').length
     return { wystawioneWMiesiacu: thisMonth.length, sumaNaleznosci: suma, przeterminowane: overdue.length, wyslaneKsef: sent, wszystkieWMiesiacu: thisMonth.length }
-  }, [invoices])
+  }, [flagInvoices])
 
   return (
     <div>
@@ -106,6 +129,7 @@ export default function Faktury() {
               <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 800 }}>{t("Faktury & Księgowość")}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 4 }}>{t("Rejestr, wystawianie i integracja z Krajowym Systemem e-Faktur (KSeF)")}</div>
             </div>
+            <CompanyFlagSwitch value={companyFlag} onChange={setCompanyFlag} variant="3way" />
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Wystawione w tym miesiącu")}</div>
@@ -113,7 +137,7 @@ export default function Faktury() {
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Suma należności")}</div>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.sumaNaleznosci)} /> {t("PLN")}</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, marginTop: 3 }}><CountUp value={Math.round(stats.sumaNaleznosci)} /> {isCN ? 'CNY' : t("PLN")}</div>
               </div>
               <div style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, padding: '10px 16px', minWidth: 118 }}>
                 <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.45)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{t("Przeterminowane")}</div>
@@ -136,11 +160,20 @@ export default function Faktury() {
           ))}
         </div>
 
-        {tab === 'rejestr' && <TabRejestr invoices={invoices} loading={loading} onChanged={loadInvoices} onRetryKsef={handleRetryKsef} />}
-        {tab === 'nowa' && <TabNowaFaktura clients={clients} projects={projects} products={products} company={company} onCreated={handleCreated} />}
-        {tab === 'naleznosci' && <TabNaleznosci invoices={invoices} currentUserId={profile?.id} onChanged={loadInvoices} />}
-        {tab === 'vat' && <TabVAT invoices={invoices} />}
-        {tab === 'ksef' && <TabKSeF invoices={invoices} onCompanySettingsChanged={loadCompany} />}
+        {tab === 'rejestr' && <TabRejestr invoices={flagInvoices} loading={loading} onChanged={loadInvoices} onRetryKsef={handleRetryKsef} />}
+        {tab === 'nowa' && (
+          <TabNowaFaktura clients={clients} projects={projects}
+            products={isCN ? cnProducts : plProducts}
+            company={company} cnCompany={cnCompany} companyFlag={companyFlag}
+            onCreated={handleCreated} />
+        )}
+        {tab === 'naleznosci' && <TabNaleznosci invoices={flagInvoices} currentUserId={profile?.id} onChanged={loadInvoices} />}
+        {tab === 'vat' && (isCN
+          ? <ComingSoonCN label={t("VAT i JPK")} note={t("Rozliczenia VAT dla chińskiej spółki (i faktur wspólnych) pojawią się po ustaleniu statusu podatnika VAT (mały / ogólny podatnik) — inny system niż polski JPK.")} />
+          : <TabVAT invoices={flagInvoices} />)}
+        {tab === 'ksef' && (isCN
+          ? <ComingSoonCN label={t("Ustawienia KSeF")} note={t("KSeF to polski Krajowy System e-Faktur — nie dotyczy faktur chińskich ani wspólnych. Profil sprzedawcy chińskiej spółki (nazwa, USCI, adres, kontakt) ustawisz wkrótce w osobnej sekcji Ustawień.")} />
+          : <TabKSeF invoices={flagInvoices} onCompanySettingsChanged={loadCompany} />)}
       </div>
     </div>
   )

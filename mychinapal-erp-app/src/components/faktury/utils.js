@@ -6,11 +6,14 @@ export function monthRange(dateStr) {
   return { start, end, mm: String(m + 1).padStart(2, '0'), yyyy: String(y) }
 }
 
-export async function nextInvoiceNumber(supabase, typ, dateStr) {
+export async function nextInvoiceNumber(supabase, typ, dateStr, companyFlag = 'PL') {
   const { start, end, mm, yyyy } = monthRange(dateStr)
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-    .gte('invoice_date', start).lt('invoice_date', end)
+    .gte('invoice_date', start).lt('invoice_date', end).eq('company_flag', companyFlag)
   const n = String((count || 0) + 1).padStart(3, '0')
+  // Faktury CN/SHARED — "Commercial Invoice" (CI...), tak jak w realnych fakturach
+  // eksportowych chińskiej spółki. Polskie faktury VAT zachowują dotychczasowe prefiksy.
+  if (companyFlag !== 'PL') return `CI${mm}${String(yyyy).slice(2)}${n}`
   const prefix = typ === 'zaliczkowa' ? 'FZ' : typ === 'pro forma' ? 'PF' : typ === 'korygująca' ? 'FK' : 'FV'
   return `${prefix}/${n}/${mm}/${yyyy}`
 }

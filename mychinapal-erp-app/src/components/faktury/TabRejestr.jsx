@@ -65,8 +65,12 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }
             const overdue = daysOverdue(inv)
             return (
               <tr key={inv.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: 10, fontWeight: 700 }}>{inv.number}</td>
-                <td style={{ padding: 10 }}>{inv.clients?.name || '—'}</td>
+                <td style={{ padding: 10, fontWeight: 700 }}>
+                  {inv.number}
+                  {inv.company_flag === 'CN' && <span title={t('Faktura chińska')} style={{ marginLeft: 5 }}>🇨🇳</span>}
+                  {inv.company_flag === 'SHARED' && <span title={t('Faktura wspólna PL-CN')} style={{ marginLeft: 5 }}>🇵🇱⇄🇨🇳</span>}
+                </td>
+                <td style={{ padding: 10 }}>{inv.clients?.name || (inv.company_flag === 'SHARED' ? t('MyChinaPal Sp. z o.o. (wewnętrzna)') : '—')}</td>
                 <td style={{ padding: 10 }}>{inv.projects?.order_label || '—'}</td>
                 <td style={{ padding: 10 }}>{inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('pl-PL') : '—'}</td>
                 <td style={{ padding: 10, fontWeight: 700 }}>{Number(inv.total_gross || inv.amount || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2 })} {inv.currency}</td>
