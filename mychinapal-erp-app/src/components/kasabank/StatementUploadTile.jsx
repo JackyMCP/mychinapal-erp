@@ -45,11 +45,13 @@ export default function StatementUploadTile({ company, accountLabel, onUploaded,
     const { data: { user } } = await supabase.auth.getUser()
     let totalParsed = 0
     let failed = 0
+    const zeroFiles = []
     for (let i = 0; i < files.length; i++) {
       setProgress({ current: i + 1, total: files.length })
       try {
         const data = await uploadOne(files[i], user?.id)
         totalParsed += data.parsed_count || 0
+        if (!data.parsed_count) zeroFiles.push(files[i].name)
       } catch (e) {
         failed += 1
         toast.error(`${files[i].name}: ${t('nie udało się przetworzyć —')} ${e.message}`)
@@ -60,7 +62,17 @@ export default function StatementUploadTile({ company, accountLabel, onUploaded,
     if (fileRef.current) fileRef.current.value = ''
     const okCount = files.length - failed
     if (okCount > 0) {
-      toast.success(`${t('Rozpoznano')} ${totalParsed} ${t('transakcji z')} ${okCount} ${okCount === 1 ? t('pliku') : t('plików')} — ${t('uzupełnij kategorie i klientów w liście poniżej.')}`)
+      if (totalParsed === 0) {
+        // Nie pokazuj tego jako zwykły sukces — to naprawdę oznacza, że NIC nie
+        // zostało dodane, mimo że wgrywanie "się udało". Użytkownik ma to
+        // zauważyć, nie przeoczyć w zalewie zielonych powiadomień.
+        toast.error(`⚠️ ${t('Nie rozpoznano ŻADNEJ transakcji w')} ${zeroFiles.join(', ')}. ${t('Sprawdź czy plik nie jest słabej jakości skanem, albo spróbuj wgrać ponownie.')}`)
+      } else {
+        toast.success(`${t('Rozpoznano')} ${totalParsed} ${t('transakcji z')} ${okCount} ${okCount === 1 ? t('pliku') : t('plików')} — ${t('uzupełnij kategorie i klientów w liście poniżej.')}`)
+        if (zeroFiles.length > 0) {
+          toast.error(`⚠️ ${t('Uwaga: w pliku')} ${zeroFiles.join(', ')} ${t('nie rozpoznano żadnej transakcji.')}`)
+        }
+      }
       onUploaded?.()
     }
   }
