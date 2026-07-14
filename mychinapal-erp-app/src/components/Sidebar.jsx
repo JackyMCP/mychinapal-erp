@@ -67,7 +67,17 @@ export default function Sidebar() {
             {mobileOpen ? '✕' : '☰'}
           </button>
           <img src="/mark-white.png" alt="MyChinaPal" style={{ height: 24, width: 'auto' }} />
-          <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: '.2px' }}>MyChinaPal</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: '.2px', flex: 1 }}>MyChinaPal</div>
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,.1)', borderRadius: 7, padding: 2, gap: 1, flexShrink: 0 }}>
+            <button onClick={() => setLang('pl')} aria-label={t('Polski')} style={{
+              border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 5, fontSize: 10.5, fontWeight: 700,
+              background: lang === 'pl' ? C.blue : 'transparent', color: lang === 'pl' ? '#fff' : 'rgba(255,255,255,.55)',
+            }}>PL</button>
+            <button onClick={() => setLang('zh')} aria-label={t('中文')} style={{
+              border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 5, fontSize: 10.5, fontWeight: 700,
+              background: lang === 'zh' ? C.blue : 'transparent', color: lang === 'zh' ? '#fff' : 'rgba(255,255,255,.55)',
+            }}>中文</button>
+          </div>
         </div>
 
         {mobileOpen && (

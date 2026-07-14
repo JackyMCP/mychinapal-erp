@@ -12,6 +12,7 @@ import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
 import useIsMobile from '../lib/useIsMobile'
 import { MOBILE_TOPBAR_HEIGHT } from '../components/Sidebar'
+import { triggerTranslation } from '../lib/translateMessage'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -248,6 +249,7 @@ export default function Czat() {
     if (error) { console.error(error); toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     // pokaż wiadomość natychmiast, niezależnie od tego czy zdarzenie realtime dotrze
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
+    if (inserted) triggerTranslation(inserted)
     setText('')
     setAttachFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''

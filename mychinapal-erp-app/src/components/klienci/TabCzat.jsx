@@ -7,6 +7,7 @@ import { C } from '../../lib/theme'
 import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
 import { useUI } from '../../lib/ui'
+import { triggerTranslation } from '../../lib/translateMessage'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -167,6 +168,7 @@ export default function TabCzat({ clientId, clientName, projects }) {
     setSending(false)
     if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
+    if (inserted) triggerTranslation(inserted)
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
   }
