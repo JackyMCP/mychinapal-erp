@@ -5,6 +5,7 @@ import { C } from '../../lib/theme'
 import { avatarColor, initials } from '../klienci/utils'
 import VoiceChannel from './VoiceChannel'
 import { useUI } from '../../lib/ui'
+import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -24,7 +25,11 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
+  const [attachFile, setAttachFile] = useState(null)
+  const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [imgUrls, setImgUrls] = useState({})
   const bottomRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     (async () => {
@@ -65,6 +70,34 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [scrollTick])
 
+  // Podgląd zdjęcia od razu po jego wybraniu, jeszcze przed wysłaniem
+  useEffect(() => {
+    if (attachFile && isImageFile(attachFile.name)) {
+      const url = URL.createObjectURL(attachFile)
+      setAttachPreviewUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setAttachPreviewUrl(null)
+  }, [attachFile])
+
+  // Podpisane URL-e obrazków-załączników, żeby zdjęcia w czacie wyświetlały się
+  // od razu jako miniatura, zamiast samego linku do pobrania.
+  useEffect(() => {
+    const imgMsgs = messages.filter(m => m.attachment_file_path && isImageFile(m.attachment_file_name) && !imgUrls[m.id])
+    if (imgMsgs.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(imgMsgs.map(async m => {
+        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 60 * 60 * 24)
+        return error ? null : [m.id, data.signedUrl]
+      }))
+      if (cancelled) return
+      const fresh = Object.fromEntries(entries.filter(Boolean))
+      if (Object.keys(fresh).length > 0) setImgUrls(prev => ({ ...prev, ...fresh }))
+    })()
+    return () => { cancelled = true }
+  }, [messages])
+
   const loadOlder = async () => {
     if (!channelId || loadingMore || !messages.length) return
     setLoadingMore(true)
@@ -79,16 +112,38 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     setMessages(prev => [...older, ...prev])
   }
 
+  const handleDownload = async (m) => {
+    if (!m.attachment_file_path) return
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 60)
+    if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
   const handleSend = async () => {
-    if (!text.trim() || !channelId) return
+    if ((!text.trim() && !attachFile) || !channelId) return
+    if (attachFile && isFileTooBig(attachFile)) { toast.error(`${t('Plik jest za duży (max')} ${MAX_FILE_SIZE_MB}MB).`); return }
     setSending(true)
+
+    let attachmentPath = null
+    let attachmentName = null
+    if (attachFile) {
+      const path = `team-chat/${channelId}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
+      const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
+      if (upErr) { setSending(false); toast.error(t('Nie udało się wysłać pliku: ') + upErr.message); return }
+      attachmentPath = path
+      attachmentName = attachFile.name
+    }
+
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: channelId, sender_id: currentUserId, content: text.trim(),
+      channel_id: channelId, sender_id: currentUserId, content: text.trim() || `📎 ${attachmentName || ''}`,
+      attachment_file_path: attachmentPath, attachment_file_name: attachmentName,
     }).select(MSG_SELECT).single()
     setSending(false)
-    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (error) { toast.error(t('Nie udało się wysłać wiadomości: ') + error.message); return }
     if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
     setText('')
+    setAttachFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   return (
@@ -119,17 +174,44 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
                   {m.translated_content && m.translated_content !== m.content && (
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>
                   )}
+                  {m.attachment_file_path && isImageFile(m.attachment_file_name) && imgUrls[m.id] && (
+                    <img src={imgUrls[m.id]} alt={m.attachment_file_name} onClick={() => handleDownload(m)}
+                      style={{ display: 'block', marginTop: 6, maxWidth: 220, maxHeight: 220, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+                  )}
+                  {m.attachment_file_path && isImageFile(m.attachment_file_name) && !imgUrls[m.id] && (
+                    <div style={{ marginTop: 6, width: 160, height: 100, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>
+                      {t("Ładowanie zdjęcia…")}
+                    </div>
+                  )}
+                  {m.attachment_file_path && !isImageFile(m.attachment_file_name) && (
+                    <div onClick={() => handleDownload(m)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: C.bg, fontSize: 11 }}>
+                      📎 <span style={{ textDecoration: 'underline' }}>{m.attachment_file_name}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             <div ref={bottomRef} />
           </div>
+          {attachFile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: C.bg, borderRadius: 8, padding: '6px 10px' }}>
+              {attachPreviewUrl
+                ? <img src={attachPreviewUrl} alt={attachFile.name} style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                : <span style={{ fontSize: 11.5 }}>📎 {attachFile.name}</span>}
+              <span onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 11, color: C.muted }}>{t("✕ usuń")}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
+            <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => setAttachFile(e.target.files?.[0] || null)} />
+            <button onClick={() => fileInputRef.current?.click()} title={t('Załącz plik lub zdjęcie')}
+              style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, cursor: 'pointer', background: 'transparent', color: C.text2 }}>
+              📎
+            </button>
             <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość…")}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12 }} />
-            <button onClick={handleSend} disabled={sending || !text.trim()}
-              style={{ padding: '8px 14px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: accentColor || C.blue, color: '#fff', opacity: (sending || !text.trim()) ? .5 : 1 }}>
+            <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)}
+              style={{ padding: '8px 14px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: accentColor || C.blue, color: '#fff', opacity: (sending || (!text.trim() && !attachFile)) ? .5 : 1 }}>
               {t("Wyślij")}
             </button>
           </div>

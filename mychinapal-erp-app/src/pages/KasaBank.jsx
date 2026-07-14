@@ -234,24 +234,24 @@ export default function KasaBank() {
           </>
         )}
 
-        {isCN && (
-          <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 11, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ fontSize: 22 }}>🇨🇳</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 9.5, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>{t("Ostatni wgrany wyciąg (CN)")}</div>
-              <div style={{ fontSize: 12.5, fontWeight: 700 }}>
-                {lastUploadForCompany
-                  ? `${lastUploadForCompany.file_name} · ${new Date(lastUploadForCompany.uploaded_at).toLocaleDateString('pl-PL')} · ${lastUploadForCompany.parsed_count} ${t("transakcji")}`
-                  : t("Jeszcze żaden wyciąg nie został wgrany dla tej spółki.")}
-              </div>
+        <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px', marginBottom: 11, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ fontSize: 22 }}>{isCN ? '🇨🇳' : '🇵🇱'}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 9.5, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>{t("Ostatni wgrany wyciąg")} ({company})</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700 }}>
+              {lastUploadForCompany
+                ? `${lastUploadForCompany.file_name} · ${new Date(lastUploadForCompany.uploaded_at).toLocaleDateString('pl-PL')} · ${lastUploadForCompany.parsed_count} ${t("transakcji")}`
+                : t("Jeszcze żaden wyciąg nie został wgrany dla tej spółki.")}
             </div>
+          </div>
+          {isCN && (
             <div style={{ fontSize: 10.5, color: C.muted, maxWidth: 260, textAlign: 'right' }}>
               {t("Pełne zestawienia (Kontrola kasy, VAT, Marża) pojawią się tutaj po ustaleniu statusu podatnika VAT chińskiej spółki — na razie dostępna jest zakładka Transakcje.")}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {isCN && <StatementUploadTile company="CN" onUploaded={loadData} />}
+        <StatementUploadTile company={company} onUploaded={loadData} />
 
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
           <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 16px', overflowX: 'auto' }}>
