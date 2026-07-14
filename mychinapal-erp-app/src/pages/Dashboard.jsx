@@ -88,10 +88,11 @@ export default function Dashboard() {
 
   return (
     <div>
+      <div style={{ padding: '16px 22px 0', maxWidth: 1400 }}>
+        <WorldClocks />
+      </div>
       <PageHeader title={t("Dashboard")} subtitle={loading ? t('Ładowanie…') : t('Twój panel sterowania MyChinaPal')} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
-
-        <WorldClocks />
 
         {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
 

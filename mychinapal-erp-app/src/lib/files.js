@@ -25,3 +25,11 @@ export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 export function isFileTooBig(file) {
   return !!file && file.size > MAX_FILE_SIZE_BYTES
 }
+
+// Wykrywanie, czy załącznik jest obrazkiem — używane w czatach, żeby zdjęcia
+// wyświetlały się od razu jako podgląd (tak jak w typowych komunikatorach),
+// zamiast jako sam link "📎 nazwa_pliku".
+const IMAGE_EXT_RE = /\.(jpe?g|png|gif|webp|bmp|svg|heic|heif)$/i
+export function isImageFile(name) {
+  return !!name && IMAGE_EXT_RE.test(name)
+}
