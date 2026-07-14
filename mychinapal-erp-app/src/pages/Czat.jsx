@@ -13,6 +13,7 @@ import EmptyState from '../components/ui/EmptyState'
 import useIsMobile from '../lib/useIsMobile'
 import { MOBILE_TOPBAR_HEIGHT } from '../components/Sidebar'
 import { triggerTranslation } from '../lib/translateMessage'
+import UnreadBadge from '../components/czat/UnreadBadge'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -59,6 +60,9 @@ export default function Czat() {
   const [renameSaving, setRenameSaving] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
   const [clientOrderChannels, setClientOrderChannels] = useState([])
+  const [unreadCounts, setUnreadCounts] = useState({})
+  const activeIdRef = useRef(null)
+  const myIdRef = useRef(null)
 
   // UWAGA: musi być zdefiniowane PRZED efektami, które z niego korzystają
   // (referencja do `active` w tablicy zależności useEffect nie może wystąpić
@@ -81,13 +85,57 @@ export default function Czat() {
     setLoadingChannels(false)
     const wanted = searchParams.get('channel')
     if (wanted && data && data.some(c => c.id === wanted)) {
-      setActiveId(wanted)
+      openChannel(wanted)
     } else if (!activeId && data && data.length > 0) {
-      setActiveId(data[0].id)
+      openChannel(data[0].id)
     }
   }
 
-  useEffect(() => { loadChannels() }, [])
+  // znaczy kanał jako przeczytany przez aktualnego użytkownika — zeruje jego
+  // czerwone kółko lokalnie i zapisuje znacznik czasu w bazie
+  const markChannelRead = async (channelId) => {
+    if (!channelId) return
+    setUnreadCounts(prev => (prev[channelId] ? { ...prev, [channelId]: 0 } : prev))
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('chat_channel_reads').upsert({
+      channel_id: channelId, user_id: user.id, last_read_at: new Date().toISOString(),
+    })
+  }
+
+  const openChannel = (channelId) => { setActiveId(channelId); markChannelRead(channelId) }
+
+  const loadUnreadCounts = async () => {
+    const { data, error } = await supabase.from('v_chat_unread_counts').select('*')
+    if (error) { console.error(error); return }
+    const map = Object.fromEntries((data || []).map(r => [r.channel_id, r.unread_count]))
+    if (activeIdRef.current) map[activeIdRef.current] = 0
+    setUnreadCounts(map)
+  }
+
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+
+  useEffect(() => {
+    loadChannels()
+    loadUnreadCounts()
+    supabase.auth.getUser().then(({ data }) => { myIdRef.current = data?.user?.id || null })
+  }, [])
+
+  // globalny nasłuch nowych wiadomości ze WSZYSTKICH kanałów (nie tylko
+  // aktywnego) — żeby czerwone kółka aktualizowały się na żywo, także dla
+  // kanałów, których w danej chwili nie mamy otwartych
+  useEffect(() => {
+    const sub = supabase
+      .channel('chat_unread_global')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const row = payload.new
+        if (!row || row.sender_id === myIdRef.current) return
+        if (row.channel_id === activeIdRef.current) { markChannelRead(row.channel_id); return }
+        setUnreadCounts(prev => ({ ...prev, [row.channel_id]: (prev[row.channel_id] || 0) + 1 }))
+      })
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [])
 
   useEffect(() => {
     if (!activeId) { setMessages([]); setHasMore(false); return }
@@ -316,7 +364,7 @@ export default function Czat() {
             const st = TYPE_STYLE[type]
             const isActive = activeId === ch.id
             return (
-              <div key={ch.id} className="cz-tile" onClick={() => setActiveId(ch.id)}
+              <div key={ch.id} className="cz-tile" onClick={() => openChannel(ch.id)}
                 style={{
                   margin: '0 0 6px', padding: '9px 11px', borderRadius: 11, cursor: 'pointer',
                   background: isActive ? st.bg : C.white, border: `1px solid ${isActive ? st.color : C.border}`,
@@ -331,6 +379,7 @@ export default function Czat() {
                       {ch.clients?.name || ch.projects?.order_label ? `${ch.clients?.name || ''}${ch.projects?.order_label ? ` · ${ch.projects.order_label}` : ''}` : t(st.label)}
                     </div>
                   </div>
+                  <UnreadBadge count={unreadCounts[ch.id]} />
                 </div>
               </div>
             );
@@ -393,10 +442,11 @@ export default function Czat() {
               {activeType === 'klient' && clientOrderChannels.length > 0 && (
                 <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, background: C.white, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {clientOrderChannels.map(c => (
-                    <div key={c.id} onClick={() => setActiveId(c.id)} className="ux-hover-lift"
+                    <div key={c.id} onClick={() => openChannel(c.id)} className="ux-hover-lift"
                       style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, background: C.olight, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
                       <span style={{ fontSize: 13 }}>📦</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: C.orange }}>{c.name}</span>
+                      <UnreadBadge count={unreadCounts[c.id]} />
                     </div>
                   ))}
                 </div>
@@ -497,7 +547,7 @@ export default function Czat() {
         )}
       </div>
       )}
-      {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); setActiveId(ch.id) }} />}
+      {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); openChannel(ch.id) }} />}
     </div>
   );
 }
