@@ -39,6 +39,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [busyAi, setBusyAi] = useState(null)
   const [sending, setSending] = useState(false)
   const [photoUrls, setPhotoUrls] = useState({})
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -237,6 +238,16 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setFetchingTransportRate(false)
   }
 
+  // Automatyczne pobranie kursów NBP przy otwarciu wyceny, jeśli jeszcze nie
+  // są ustawione — dzięki temu cena dla klienta liczy się i wyświetla "od
+  // razu" (na żywo), bez konieczności ręcznego klikania "Odśwież kurs" przy
+  // każdym otwarciu wyceny.
+  useEffect(() => {
+    if (!quote?.id) return
+    if (!quote.nbp_rate) handleFetchNbpRate()
+    if ((quote.transport_currency || 'CNY') !== 'PLN' && !quote.transport_rate) handleFetchTransportRate()
+  }, [quote?.id])
+
   const handleAiSuggest = async (key, photoPathOverride = null) => {
     const it = items.find(i => i._key === key)
     const photoPath = photoPathOverride || it?.photo_path
@@ -367,12 +378,25 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   }
 
   const handlePreviewPdf = async () => {
+    // Okno musi się otworzyć SYNCHRONICZNIE w reakcji na kliknięcie — jeśli
+    // otworzymy je dopiero po zakończeniu generowania PDF (czyli po kilku
+    // "await"), Safari/Chrome traktuje to jako popup i blokuje je w ciszy
+    // (dlatego wcześniej po kliknięciu "nic się nie działo"). Otwieramy więc
+    // pustą kartę od razu, a docelowy adres wstawiamy do niej, gdy PDF będzie
+    // gotowy. Dodatkowo trzymamy link w stanie jako trwały fallback do
+    // pobrania, na wypadek gdyby przeglądarka i to zablokowała.
+    const win = window.open('', '_blank')
     setSending('preview')
     try {
       const photoDataUrls = await buildPhotoDataUrls()
       const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls, auxPrice: buildAuxPrice() })
-      window.open(URL.createObjectURL(blob), '_blank')
+      const url = URL.createObjectURL(blob)
+      setPreviewPdfUrl(url)
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
+      toast.success(t('Podgląd wygenerowany ✓ Jeśli karta się nie otworzyła, użyj linku „Pobierz podgląd PDF” poniżej.'))
     } catch (e) {
+      if (win) win.close()
       toast.error(t('Nie udało się wygenerować podglądu: ') + (e.message || e))
     }
     setSending(false)
@@ -414,9 +438,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const handleDownloadPdf = async () => {
     if (!quote.pdf_path) { toast.error(t('Brak wygenerowanego PDF.')); return }
+    const win = window.open('', '_blank')
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(quote.pdf_path, 300)
-    if (error) { toast.error(t('Nie udało się pobrać PDF: ') + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    if (error) { if (win) win.close(); toast.error(t('Nie udało się pobrać PDF: ') + error.message); return }
+    if (win) win.location.href = data.signedUrl
+    else window.open(data.signedUrl, '_blank')
   }
 
   if (loading || !quote) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>{t("Ładowanie…")}</div>
@@ -640,9 +666,16 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         <button onClick={() => handleSave(false)} disabled={saving} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2, opacity: saving ? .6 : 1 }}>
           {saving ? t("Zapisywanie…") : t("💾 Zapisz")}
         </button>
-        <button onClick={handlePreviewPdf} disabled={!!sending} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2, opacity: sending ? .6 : 1 }}>
-          {sending === 'preview' ? t("Generowanie…") : t("👁 Podgląd wyceny")}
+        <button onClick={handlePreviewPdf} disabled={!!sending}
+          style={{ padding: '10px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: sending ? .7 : 1, boxShadow: '0 3px 12px rgba(180,140,40,0.45)' }}>
+          {sending === 'preview' ? t("Generowanie…") : t("🧾 Wygeneruj wycenę (podgląd)")}
         </button>
+        {previewPdfUrl && (
+          <a href={previewPdfUrl} target="_blank" rel="noreferrer" download={`podglad-${quote.quote_number || 'wycena'}.pdf`}
+            style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.bmid}`, background: C.blight, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.blue, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+            ⬇ {t("Pobierz wygenerowany PDF")}
+          </a>
+        )}
         {quote.status === 'szkic_cn' && (
           <button onClick={handleSendToPL} style={{ padding: '10px 18px', borderRadius: 9, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             {t("Prześlij do zespołu PL →")}
