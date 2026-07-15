@@ -136,6 +136,7 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     doc.setFontSize(8.5)
     const metaBits = [`Qty / Ilość: ${r.qty} ${r.unit || ''}`]
     if (r.production_days) metaBits.push(`Production / Produkcja: ${r.production_days} d`)
+    if (r.weight_kg) metaBits.push(`Weight / Waga: ${r.weight_kg} kg`)
     if (r.cbm) metaBits.push(`CBM: ${r.cbm} m³`)
     else if (r.container_note) metaBits.push(r.container_note)
     doc.text(metaBits.join('   ·   '), textX, y + blockHeight - 14)
@@ -143,23 +144,33 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
     doc.setTextColor(...gold)
-    doc.text(`${Number(r.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${quote.currency || 'CNY'}`, right - 3, y + blockHeight - 6, { align: 'right' })
+    doc.text(`${Number(r.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} PLN`, right - 3, y + blockHeight - 6, { align: 'right' })
     doc.setTextColor(20, 20, 20)
 
     y += blockHeight + 4
   }
 
-  if (y > 265) { doc.addPage(); y = 20 }
+  if (y > 250) { doc.addPage(); y = 20 }
   y += 4
   doc.setDrawColor(...navy)
   doc.setLineWidth(0.4)
   doc.line(left, y, right, y)
   y += 7
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text('Netto:', left, y)
+  doc.text(`${Number(totals.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} PLN`, right, y, { align: 'right' })
+  y += 6
+  doc.text('VAT (23%):', left, y)
+  doc.text(`${Number(totals.vatAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} PLN`, right, y, { align: 'right' })
+  y += 8
+
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
-  doc.text('TOTAL / RAZEM:', left, y)
+  doc.text('TOTAL / RAZEM BRUTTO:', left, y)
   doc.setTextColor(...gold)
-  doc.text(`${Number(totals.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${quote.currency || 'CNY'}`, right, y, { align: 'right' })
+  doc.text(`${Number(totals.finalPriceGross || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} PLN`, right, y, { align: 'right' })
   doc.setTextColor(20, 20, 20)
   y += 6
 
