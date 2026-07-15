@@ -11,9 +11,10 @@ export async function nextInvoiceNumber(supabase, typ, dateStr, companyFlag = 'P
   const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
     .gte('invoice_date', start).lt('invoice_date', end).eq('company_flag', companyFlag)
   const n = String((count || 0) + 1).padStart(3, '0')
-  // Faktury CN/SHARED — "Commercial Invoice" (CI...), tak jak w realnych fakturach
-  // eksportowych chińskiej spółki. Polskie faktury VAT zachowują dotychczasowe prefiksy.
-  if (companyFlag !== 'PL') return `CI${mm}${String(yyyy).slice(2)}${n}`
+  // Faktury CN/SHARED — "Commercial Invoice" (CI...) albo "Proforma Invoice" (PI...),
+  // tak jak w realnych dokumentach eksportowych chińskiej spółki. Polskie faktury VAT
+  // zachowują dotychczasowe prefiksy.
+  if (companyFlag !== 'PL') return `${typ === 'pro forma' ? 'PI' : 'CI'}${mm}${String(yyyy).slice(2)}${n}`
   const prefix = typ === 'zaliczkowa' ? 'FZ' : typ === 'pro forma' ? 'PF' : typ === 'korygująca' ? 'FK' : 'FV'
   return `${prefix}/${n}/${mm}/${yyyy}`
 }

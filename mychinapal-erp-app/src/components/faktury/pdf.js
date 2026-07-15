@@ -85,7 +85,8 @@ export function generateInvoicePdf({ invoice, items, client, contact, company })
 // "COMMERCIAL INVOICE" — układ i pola wzorowane 1:1 na realnej fakturze
 // eksportowej (sprzedawca w Chinach, nabywca w Polsce, dwujęzyczne pozycje
 // towarowe, warunki dostawy/transportu, wartości w CNY).
-export function generateCommercialInvoicePdf({ invoice, items, client, cnCompany }) {
+export function generateCommercialInvoicePdf({ invoice, items, client, cnCompany, docType = 'CI' }) {
+  const isProforma = docType === 'PI'
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 14
   const right = 196
@@ -101,7 +102,7 @@ export function generateCommercialInvoicePdf({ invoice, items, client, cnCompany
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  doc.text('COMMERCIAL INVOICE', left, 16)
+  doc.text(isProforma ? 'PROFORMA INVOICE' : 'COMMERCIAL INVOICE', left, 16)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.text('MyChinaPal Group', right, 12, { align: 'right' })
@@ -218,7 +219,12 @@ export function generateCommercialInvoicePdf({ invoice, items, client, cnCompany
   y += 16
   doc.setFontSize(8)
   doc.setTextColor(120, 120, 120)
-  doc.text('This commercial invoice is issued electronically by MyChinaPal ERP and is valid without signature.', left, 285)
+  doc.text(
+    isProforma
+      ? 'This proforma invoice is issued electronically by MyChinaPal ERP for quotation purposes only and is not a demand for payment.'
+      : 'This commercial invoice is issued electronically by MyChinaPal ERP and is valid without signature.',
+    left, 285
+  )
 
   return doc.output('blob')
 }

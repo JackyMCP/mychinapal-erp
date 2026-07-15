@@ -65,6 +65,11 @@ export default function KasaBank() {
   const [recurring, setRecurring] = useState([])
   const [tab, setTab] = useState('transakcje')
   const [selQ, setSelQ] = useState('Q2_2026')
+  // Kafelki stanu kont pokazują domyślnie saldo na koniec wybranego kwartału.
+  // "Cały rok" pokazuje zamiast tego saldo na koniec Q4 danego roku — to jest
+  // POPRAWNA wartość dla "całego roku", bo stan konta bankowego jest z natury
+  // skumulowany (saldo na koniec Q4 JEST saldem na koniec roku), nie sumą kwartałów.
+  const [showAnnual, setShowAnnual] = useState(false)
   const [company, setCompany] = useState('PL')
   const [statementUploads, setStatementUploads] = useState([])
 
@@ -169,7 +174,12 @@ export default function KasaBank() {
 
   if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>{t("Ładowanie danych finansowych…")}</div>;
 
-  const qi = QUARTERS.indexOf(selQ)
+  const selYearForTiles = Number((selQ.split('_')[1]) || QUARTERS[QUARTERS.length - 1].split('_')[1])
+  const q4KeyForYear = `Q4_${selYearForTiles}`
+  const hasQ4ForYear = QUARTERS.includes(q4KeyForYear)
+  // Gdy "Cały rok" jest włączone i mamy dane dla Q4 tego roku, pokaż saldo na
+  // koniec Q4 (czyli koniec roku); w przeciwnym razie zachowaj się jak dotychczas.
+  const qi = showAnnual && hasQ4ForYear ? QUARTERS.indexOf(q4KeyForYear) : QUARTERS.indexOf(selQ)
   const getKK = (label, q) => (kk[label] && kk[label][q]) || 0
   const companyTxs = txs.filter(row => row.company === company)
   const unassignedCount = companyTxs.filter(row => !isHelperRow(row) && ['WN+', 'MA-'].includes(row.direction) && !row.assign).length
@@ -226,9 +236,16 @@ export default function KasaBank() {
                   const q = Number(e.target.value)
                   const match = quartersInYear.find(r => r.q === q)
                   if (match) setSelQ(match.key)
-                }} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontWeight: 600, color: C.text, background: C.white }}>
+                }} disabled={showAnnual} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 8px', fontSize: 11, fontWeight: 600, color: C.text, background: showAnnual ? C.bg : C.white, opacity: showAnnual ? .55 : 1 }}>
                   {quartersInYear.map(r => <option key={r.key} value={r.q}>Q{r.q}</option>)}
                 </select>
+                <button onClick={() => setShowAnnual(v => !v)} title={t("Pokaż saldo na koniec całego roku (Q4) zamiast wybranego kwartału")}
+                  style={{
+                    border: `1px solid ${showAnnual ? C.blue : C.border}`, borderRadius: 6, padding: '5px 10px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
+                    color: showAnnual ? '#fff' : C.text, background: showAnnual ? C.blue : C.white, whiteSpace: 'nowrap',
+                  }}>
+                  {t("Cały rok")}
+                </button>
               </div>
             )
           })()}
@@ -251,7 +268,9 @@ export default function KasaBank() {
                     <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 21, fontWeight: 700, color: val < 0 ? '#FCA5A5' : '#fff' }}>
                       {fmt(val)} <span style={{ fontSize: 10, color: 'rgba(255,255,255,.4)' }}>{s.cur}</span>
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.32)', marginTop: 2 }}>{t("na koniec")} {Q_LABELS[qi]}</div>
+                    <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.32)', marginTop: 2 }}>
+                      {showAnnual && hasQ4ForYear ? `${t("na koniec roku")} ${selYearForTiles}` : `${t("na koniec")} ${Q_LABELS[qi]}`}
+                    </div>
                   </div>
                 );
               })}

@@ -14,6 +14,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
   const [open, setOpen] = useState(status === 'current')
   const [uploading, setUploading] = useState(false)
   const [category, setCategory] = useState(stage.categories[0])
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef(null)
 
   const handleUpload = async (file) => {
@@ -32,6 +33,18 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
     if (docErr) { toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
     onUploaded && onUploaded()
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  // Przeciągnij-i-upuść — pozwala wgrać plik przeciągnięty wprost z innej aplikacji
+  // (np. z okna czatu WeChat na komputerze) bez zapisywania go najpierw na dysku.
+  const handleDragOver = (e) => { e.preventDefault(); if (!uploading) setDragOver(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (uploading) return
+    const file = e.dataTransfer?.files?.[0]
+    if (file) handleUpload(file)
   }
 
   const handleDelete = async (doc) => {
@@ -106,8 +119,14 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
                 );
               })}
               {status !== 'locked' && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                  style={{
+                    marginTop: 12, borderRadius: 9, padding: 8,
+                    border: `1.5px dashed ${dragOver ? C.blue : 'transparent'}`,
+                    background: dragOver ? C.blight : 'transparent',
+                    transition: 'all .12s ease',
+                  }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <select value={category} onChange={e => setCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', fontSize: 11 }}>
                       {stage.categories.map(c => <option key={c} value={c}>{t(c)}</option>)}
                     </select>
@@ -116,6 +135,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
                       style={{ padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff', opacity: uploading ? .6 : 1 }}>
                       {uploading ? t("Wgrywanie…") : t("📎 Wgraj dokument")}
                     </button>
+                    <span style={{ fontSize: 10, color: C.muted }}>{dragOver ? t("↓ Upuść plik tutaj") : t("albo przeciągnij i upuść plik (np. z czatu WeChat)")}</span>
                   </div>
                 </div>
               )}

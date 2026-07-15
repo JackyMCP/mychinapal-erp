@@ -23,6 +23,10 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
   const isShared = companyFlag === 'SHARED'
 
   const [typ, setTyp] = useState('sprzedaży')
+  // Dla faktur CN/SHARED: PI (Proforma Invoice, przed potwierdzeniem zamówienia —
+  // towar nie musi jeszcze istnieć w magazynie) vs CI (Commercial Invoice, faktyczna
+  // wysyłka — pozycje muszą pochodzić z realnego stanu magazynowego i zdejmują stan).
+  const [cnDocType, setCnDocType] = useState('CI')
   const [clientId, setClientId] = useState(clients[0]?.id || '')
   const [projectId, setProjectId] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
@@ -46,6 +50,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
     setItems([emptyItem()])
     setProjectId('')
     setClientId(clients[0]?.id || '')
+    setCnDocType('CI')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyFlag])
 
@@ -82,18 +87,30 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
     setItems([emptyItem()]); setProjectId(''); setContractNo('')
   }
 
+  // Dla CN: PI (proforma) — zamówienie nie jest jeszcze potwierdzone, towaru nie ma
+  // jeszcze w magazynie, więc pozycje mogą być czysto opisowe (bez wymogu wyboru
+  // konkretnego indeksu magazynowego). CI (commercial) — realna wysyłka, pozycje
+  // muszą pochodzić z magazynu i zdejmują z niego stan (jak dotychczas).
+  const isCnProforma = isCN && cnDocType === 'PI'
+  const cnTyp = isCN ? (isCnProforma ? 'pro forma' : 'sprzedaży') : typ
+
   const handleSubmit = async () => {
     if (!isShared && !clientId) { toast.error('Wybierz klienta.'); return }
-    const validItems = items.filter(it => it.product_id && Number(it.quantity) > 0)
-    if (validItems.length === 0) { toast.error('Dodaj przynajmniej jedną pozycję z magazynu.'); return }
+    const validItems = isCnProforma
+      ? items.filter(it => (it.description || it.name_en || it.name_cn) && Number(it.quantity) > 0)
+      : items.filter(it => it.product_id && Number(it.quantity) > 0)
+    if (validItems.length === 0) {
+      toast.error(isCnProforma ? 'Dodaj przynajmniej jedną pozycję (nazwa + ilość).' : 'Dodaj przynajmniej jedną pozycję z magazynu.')
+      return
+    }
 
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const number = await nextInvoiceNumber(supabase, typ, invoiceDate, companyFlag)
+    const number = await nextInvoiceNumber(supabase, cnTyp, invoiceDate, companyFlag)
     const t2 = computeTotals(validItems)
 
     const { data: invoice, error: invErr } = await supabase.from('invoices').insert({
-      typ, number, client_id: isShared ? null : clientId, project_id: projectId || null,
+      typ: cnTyp, number, client_id: isShared ? null : clientId, project_id: projectId || null,
       invoice_date: invoiceDate, due_date: dueDate, currency, payment_method: paymentMethod,
       subtotal_net: t2.net, vat_total: t2.vat, total_gross: isCN ? totalValue : t2.gross,
       amount: isCN ? totalValue : t2.gross, status: 'nieopłacona', created_by: user?.id,
@@ -119,8 +136,10 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
     const { error: itemsErr } = await supabase.from('invoice_items').insert(itemRows)
     if (itemsErr) { setSaving(false); toast.error('Faktura zapisana, ale nie udało się zapisać pozycji: ' + itemsErr.message); return }
 
-    // automatyczne WZ dla towarów (nie usług) — z magazynu tej samej spółki (PL/CN)
-    for (const it of validItems) {
+    // automatyczne WZ dla towarów (nie usług) — z magazynu tej samej spółki (PL/CN).
+    // Pomijamy całkowicie dla PI (proforma) — towar nie istnieje jeszcze fizycznie
+    // w magazynie, więc nic nie ma z niego zejść.
+    for (const it of (isCnProforma ? [] : validItems)) {
       const p = products.find(x => x.id === it.product_id)
       if (!p || p.is_service) continue
       const wzNumber = await nextDocNumber(supabase, 'WZ', invoiceDate)
@@ -142,7 +161,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
           : client
         blob = generateCommercialInvoicePdf({
           invoice: { ...invoice, contract_no: contractNo, term_of_trade: termOfTrade, transport_mode: transportMode, country_of_origin: countryOfOrigin, destination_country: destinationCountry },
-          items: itemRows, client: buyer, cnCompany,
+          items: itemRows, client: buyer, cnCompany, docType: isCnProforma ? 'PI' : 'CI',
         })
       } else {
         const client = clients.find(c => c.id === clientId)
@@ -168,9 +187,11 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
       </div>
       {isCN && (
         <div style={{ background: C.blight, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 11, color: C.text2, marginBottom: 14 }}>
-          {isShared
-            ? t('Faktura wspólna (intercompany) — sprzedawcą jest chińska spółka, nabywcą MyChinaPal Sp. z o.o. Wygenerujemy międzynarodową Commercial Invoice, tak jak w realnym wzorze.')
-            : t('Faktura czysto chińska — sprzedawcą jest chińska spółka, nabywcę wybierasz z listy klientów. Wygenerujemy międzynarodową Commercial Invoice.')}
+          {isCnProforma
+            ? t('Proforma Invoice (PI) — wstępna oferta, zamówienie nie jest jeszcze potwierdzone. Pozycje mogą być opisowe, bez wymogu istnienia towaru w magazynie, i nic nie zdejmuje się ze stanu.')
+            : (isShared
+              ? t('Faktura wspólna (intercompany) — sprzedawcą jest chińska spółka, nabywcą MyChinaPal Sp. z o.o. Wygenerujemy międzynarodową Commercial Invoice, tak jak w realnym wzorze.')
+              : t('Faktura czysto chińska — sprzedawcą jest chińska spółka, nabywcę wybierasz z listy klientów. Wygenerujemy międzynarodową Commercial Invoice.'))}
         </div>
       )}
       <div style={fieldWrap}>
@@ -181,6 +202,14 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
               <option value="zaliczkowa">{t("Faktura zaliczkowa")}</option>
               <option value="pro forma">{t("Faktura pro forma")}</option>
               <option value="korygująca">{t("Faktura korygująca")}</option>
+            </select>
+          </div>
+        )}
+        {isCN && (
+          <div><label style={label}>{t("Typ dokumentu")}</label>
+            <select style={input} value={cnDocType} onChange={e => setCnDocType(e.target.value)}>
+              <option value="PI">{t("Proforma Invoice (PI) — bez wymogu towaru w magazynie")}</option>
+              <option value="CI">{t("Commercial Invoice (CI) — realna wysyłka, zdejmuje z magazynu")}</option>
             </select>
           </div>
         )}
@@ -307,7 +336,7 @@ export default function TabNowaFaktura({ clients, projects, products, company, c
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
         <button onClick={handleSubmit} disabled={saving}
           style={{ border: 'none', borderRadius: 9, padding: '10px 18px', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: C.blue, color: '#fff', opacity: saving ? .6 : 1 }}>
-          {saving ? t("Zapisywanie…") : t("Wystaw i zdejmij z magazynu")}
+          {saving ? t("Zapisywanie…") : isCnProforma ? t("Wystaw Proforma Invoice (PI)") : t("Wystaw i zdejmij z magazynu")}
         </button>
       </div>
       {!isCN && <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Wysyłka do KSeF: skonfiguruj token w zakładce Ustawienia KSeF — wtedy każda wystawiona faktura sprzedaży zostanie automatycznie wysłana.")}</div>}

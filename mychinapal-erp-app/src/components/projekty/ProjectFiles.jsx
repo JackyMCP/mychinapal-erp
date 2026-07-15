@@ -12,6 +12,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const { toast, confirm } = useUI()
   const [category, setCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1] || DOC_CATEGORIES[0])
   const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef(null)
 
   const handleUpload = async (file) => {
@@ -30,6 +31,18 @@ export default function ProjectFiles({ project, documents, onChanged }) {
     if (docErr) { toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
     onChanged && onChanged()
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  // Przeciągnij-i-upuść — pozwala wgrać plik przeciągnięty wprost z innej aplikacji
+  // (np. z okna czatu WeChat na komputerze) bez zapisywania go najpierw na dysk.
+  const handleDragOver = (e) => { e.preventDefault(); if (!uploading) setDragOver(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (uploading) return
+    const file = e.dataTransfer?.files?.[0]
+    if (file) handleUpload(file)
   }
 
   const handleDownload = async (doc) => {
@@ -52,7 +65,11 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const sorted = [...(documents || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   return (
-    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+      style={{
+        background: dragOver ? C.blight : C.white, border: `1.5px ${dragOver ? 'dashed' : 'solid'} ${dragOver ? C.blue : C.border}`,
+        borderRadius: 14, padding: '16px 18px', marginBottom: 16, transition: 'all .12s ease',
+      }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>📁 {t('Pliki projektu')}</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -69,7 +86,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
       </div>
 
       {sorted.length === 0 && (
-        <EmptyState icon="📁" title={t('Brak plików')} subtitle={t('Pliki wysłane na czacie tego zamówienia pojawią się tutaj automatycznie, albo wgraj je ręcznie powyżej.')} />
+        <EmptyState icon="📁" title={t('Brak plików')} subtitle={t(dragOver ? '↓ Upuść plik tutaj' : 'Pliki wysłane na czacie tego zamówienia pojawią się tutaj automatycznie, albo przeciągnij plik (np. z WeChat) lub wgraj ręcznie powyżej.')} />
       )}
       {sorted.map(doc => (
         <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
