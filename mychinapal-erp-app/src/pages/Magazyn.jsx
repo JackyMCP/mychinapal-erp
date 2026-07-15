@@ -1,22 +1,26 @@
 import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { C } from '../lib/theme'
 import CountUp from '../components/ui/CountUp'
 import TabKartoteka from '../components/magazyn/TabKartoteka'
 import TabDokumenty from '../components/magazyn/TabDokumenty'
 import TabNowy from '../components/magazyn/TabNowy'
+import TabFabryka from '../components/magazyn/TabFabryka'
 import { monthRange } from '../components/magazyn/utils'
 import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
 
 const TABS = [
   { key: 'kartoteka', label: 'Kartoteka towarów', icon: '📋' },
   { key: 'dokumenty', label: 'Dokumenty magazynowe (PZ/WZ)', icon: '🔁' },
+  { key: 'fabryka', label: 'Fabryka', icon: '🏭' },
   { key: 'nowy', label: 'Nowy towar / przyjęcie', icon: '➕' },
 ]
 
 export default function Magazyn() {
   const { t } = useLang()
+  const navigate = useNavigate()
   const [products, setProducts] = useState([])
   const [docs, setDocs] = useState([])
   const [projects, setProjects] = useState([])
@@ -30,7 +34,7 @@ export default function Magazyn() {
     const [prodRes, docRes, projRes] = await Promise.all([
       supabase.from('products').select('*').order('name'),
       supabase.from('warehouse_documents').select('*, products(code,name,unit), projects(order_label)').order('created_at', { ascending: false }),
-      supabase.from('projects').select('id,order_label').order('created_at', { ascending: false }),
+      supabase.from('projects').select('id,order_label,client_id,goods_status,goods_status_at,clients(name)').order('created_at', { ascending: false }),
     ])
     if (prodRes.error) console.error(prodRes.error)
     if (docRes.error) console.error(docRes.error)
@@ -52,8 +56,9 @@ export default function Magazyn() {
     const nizkiStan = goods.filter(p => p.min_stock != null && Number(p.stock) < Number(p.min_stock)).length
     const { start, end } = monthRange(new Date().toISOString())
     const pzWTymMiesiacu = companyDocs.filter(d => d.doc_type === 'PZ' && d.doc_date >= start && d.doc_date < end).length
-    return { wartosc, liczbaIndeksow: companyProducts.length, nizkiStan, pzWTymMiesiacu }
-  }, [companyProducts, companyDocs])
+    const wProdukcji = (projects || []).filter(p => p.goods_status === 'w_produkcji').length
+    return { wartosc, liczbaIndeksow: companyProducts.length, nizkiStan, pzWTymMiesiacu, wProdukcji }
+  }, [companyProducts, companyDocs, projects])
 
   return (
     <div>
@@ -109,12 +114,14 @@ export default function Magazyn() {
               style={{ padding: '10px 16px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, color: tab === key ? '#fff' : C.muted, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7, background: tab === key ? C.navy : 'transparent' }}>
               <span style={{ fontSize: 14 }}>{icon}</span>{t(label)}
               {key === 'kartoteka' && stats.nizkiStan > 0 && <span style={{ background: tab === key ? 'rgba(255,255,255,.2)' : C.rlight, color: tab === key ? '#fff' : C.red, borderRadius: 10, padding: '1px 7px', fontSize: 10 }}>{stats.nizkiStan}</span>}
+              {key === 'fabryka' && stats.wProdukcji > 0 && <span style={{ background: tab === key ? 'rgba(255,255,255,.2)' : C.olight, color: tab === key ? '#fff' : C.orange, borderRadius: 10, padding: '1px 7px', fontSize: 10 }}>{stats.wProdukcji}</span>}
             </div>
           ))}
         </div>
 
         {tab === 'kartoteka' && <TabKartoteka products={companyProducts} loading={loading} onChanged={loadAll} currencyLabel={currencyLabel} />}
         {tab === 'dokumenty' && <TabDokumenty docs={companyDocs} loading={loading} />}
+        {tab === 'fabryka' && <TabFabryka projects={projects} goClient={(clientId) => clientId && navigate(`/klienci?client=${clientId}`)} />}
         {tab === 'nowy' && <TabNowy products={companyProducts} projects={projects} onChanged={loadAll} onGoTab={setTab} company={company}
           {...(isCN ? { vatRateOptions: ['13%', '9%', '6%', '3%', '0%'] } : {})} />}
       </div>

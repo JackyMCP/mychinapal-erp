@@ -155,6 +155,26 @@ export default function KasaBank() {
       date: payload.tx_date !== undefined ? payload.tx_date : row.date,
       q: payload.quarter !== undefined ? payload.quarter : row.q,
     } : row))
+
+    // Sugestia wspólnika: magazyn nie może być uzupełniany ręcznie — ma być powiązany
+    // z realną płatnością. Oznaczenie transakcji jako zaliczka/dopłata końcowa (wymaga
+    // przypisanego klienta + zamówienia) automatycznie przesuwa zamówienie między
+    // "Fabryka" (w produkcji) i "Magazyn" (towar gotowy) w module Magazyn — bez
+    // żadnego osobnego, ręcznego wpisu.
+    if (payload.payment_stage && changes.project_id) {
+      const newStatus = payload.payment_stage === 'doplata_koncowa' ? 'w_magazynie' : payload.payment_stage === 'zaliczka' ? 'w_produkcji' : null
+      if (newStatus) {
+        const { error: projErr } = await supabase.from('projects')
+          .update({ goods_status: newStatus, goods_status_at: new Date().toISOString() })
+          .eq('id', changes.project_id)
+        if (projErr) {
+          console.error(projErr)
+          toast.error(t('Transakcja zapisana, ale nie udało się zaktualizować statusu towaru w Magazynie: ') + projErr.message)
+        } else {
+          toast.success(newStatus === 'w_magazynie' ? t('Towar przeniesiony do Magazynu ✓') : t('Zamówienie oznaczone jako „w produkcji" (Fabryka) ✓'))
+        }
+      }
+    }
   }
 
   const podatkiPayments = useMemo(() => (

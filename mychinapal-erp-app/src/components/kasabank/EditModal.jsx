@@ -20,6 +20,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
   const [notes, setNotes] = useState(tx.notes || '')
   const [vat_rate, setVatRate] = useState(tx.vat_rate || 0)
   const [txDate, setTxDate] = useState(tx.date || '')
+  const [paymentStage, setPaymentStage] = useState(tx.payment_stage || '')
 
   const clientProjects = useMemo(
     () => projects.filter(p => p.client_id === clientId),
@@ -104,6 +105,19 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
           </div>
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Etap płatności za towar (Fabryka / Magazyn)")}</label>
+          <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
+            value={paymentStage} onChange={e => setPaymentStage(e.target.value)} disabled={!clientId || !projectId}>
+            <option value="">{t("— nie dotyczy —")}</option>
+            <option value="zaliczka">{t("Zaliczka za produkcję towaru → przenosi zamówienie do „Fabryka”")}</option>
+            <option value="doplata_koncowa">{t("Dopłata końcowa, towar gotowy → przenosi z „Fabryki” do magazynu")}</option>
+          </select>
+          {(!clientId || !projectId) && (
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{t("Wymaga przypisania klienta i zamówienia powyżej.")}</div>
+          )}
+        </div>
+
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Uwagi")}</label>
           <textarea style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none', resize: 'vertical', minHeight: 56 }}
@@ -113,7 +127,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
           <span style={{ fontSize: 10, color: C.muted, marginRight: 'auto' }}>{t("Zmiany zapisują się od razu w bazie")}</span>
           <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text2 }}>{t("Anuluj")}</button>
-          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate, tx_date: txDate || null })}
+          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate, tx_date: txDate || null, payment_stage: (clientId && projectId) ? (paymentStage || null) : null })}
             style={{ padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>
             {t("💾 Zapisz zmiany")}
           </button>
