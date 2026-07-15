@@ -14,6 +14,7 @@ import useIsMobile from '../lib/useIsMobile'
 import { MOBILE_TOPBAR_HEIGHT } from '../components/Sidebar'
 import { triggerTranslation, triggerPushNotification } from '../lib/translateMessage'
 import UnreadBadge from '../components/czat/UnreadBadge'
+import AttachCategoryModal from '../components/ui/AttachCategoryModal'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -54,6 +55,8 @@ export default function Czat() {
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
   const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
   const [imgUrls, setImgUrls] = useState({})
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
@@ -310,6 +313,19 @@ export default function Czat() {
     window.open(data.signedUrl, '_blank')
   }
 
+  // Przeciągnij-i-upuść plik wprost na okno czatu — od razu pyta o kategorię
+  // w popupie, z szybką opcją "Brak kategoryzacji". Załączniki działają tylko
+  // na kanałach klienckich (tak samo jak przycisk 📎).
+  const handleDragOver = (e) => { e.preventDefault(); if (active?.client_id) setDragOver(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (!active?.client_id) { toast.error(t('Załączniki dostępne tylko na kanałach klienta/projektu.')); return }
+    const file = e.dataTransfer?.files?.[0]
+    if (file) setPendingFile(file)
+  }
+
   const handleRenameStart = () => { setRenameValue(active.name); setRenaming(true) }
   const handleRenameSave = async () => {
     if (!renameValue.trim() || renameValue.trim() === active.name) { setRenaming(false); return }
@@ -390,7 +406,13 @@ export default function Czat() {
       {/* Okno czatu */}
       {(!isMobile || mobileShowChat) && (
       <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: C.bg, minWidth: 0 }}>
+        <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', background: dragOver ? C.blight : C.bg, minWidth: 0, position: 'relative', transition: 'background .12s ease' }}>
+          {dragOver && (
+            <div style={{ position: 'absolute', inset: 8, borderRadius: 12, border: `2px dashed ${C.blue}`, background: 'rgba(37,99,235,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: C.blue, pointerEvents: 'none', zIndex: 5 }}>
+              {t("↓ Upuść plik tutaj")}
+            </div>
+          )}
           {!active && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 12 }}>
               {t("Wybierz kanał z listy po lewej albo utwórz nowy.")}
@@ -509,7 +531,7 @@ export default function Czat() {
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => setAttachFile(e.target.files?.[0] || null)} />
+                  <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f) }} />
                   <button onClick={() => fileInputRef.current?.click()} title={active?.client_id ? 'Załącz plik' : 'Załączniki dostępne tylko na kanałach klienta/projektu'} disabled={!active?.client_id}
                     style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, cursor: active?.client_id ? 'pointer' : 'not-allowed', background: 'transparent', color: active?.client_id ? C.text2 : C.muted, opacity: active?.client_id ? 1 : 0.5 }}>
                     📎
@@ -523,6 +545,11 @@ export default function Czat() {
                 </div>
               </div>
             </>
+          )}
+          {pendingFile && (
+            <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
+              onCancel={() => { setPendingFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
+              onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
           )}
         </div>
         {active && showFiles && (
