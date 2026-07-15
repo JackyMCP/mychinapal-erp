@@ -16,7 +16,7 @@ async function fetchAsDataUrl(url) {
 // rozbicia na koszt towaru/transport/cło/marżę, które widzi tylko zespół
 // wewnętrzny w aplikacji). Wzorowane na istniejącym generatorze faktur
 // (jsPDF + autotable, granatowo-złoty branding MyChinaPal).
-export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {} }) {
+export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {}, plnInfo = null }) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 14
   const right = 196
@@ -122,7 +122,15 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   doc.setTextColor(...gold)
   doc.text(`${Number(totals.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${quote.currency || 'CNY'}`, right, y, { align: 'right' })
   doc.setTextColor(20, 20, 20)
-  y += 12
+  y += 6
+
+  if (plnInfo && plnInfo.plnAmount) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.text(`(≈ ${plnInfo.plnAmount.toLocaleString('pl-PL', { minimumFractionDigits: 2 })} PLN, kurs orientacyjny NBP+prowizja banku)`, right, y, { align: 'right' })
+    y += 6
+  }
+  y += 6
 
   if (quote.notes) {
     doc.setFont('helvetica', 'bold')

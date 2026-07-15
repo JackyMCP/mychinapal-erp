@@ -5,7 +5,7 @@ import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import useIsMobile from '../../lib/useIsMobile'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
-import { computeQuoteTotals, STATUS_LABELS } from './calc'
+import { computeQuoteTotals, computePlnConversion, STATUS_LABELS } from './calc'
 import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 
@@ -48,13 +48,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       supabase.from('projects').select('*').eq('id', q.project_id).single(),
       supabase.from('quote_items').select('*').eq('quote_id', q.id).order('position'),
       supabase.from('client_contacts').select('*').eq('client_id', q.client_id).limit(1),
-      supabase.from('company_settings').select('*').in('key', ['company_name', 'company_nip', 'company_krs', 'company_regon', 'company_address', 'company_bank_account']),
+      supabase.from('company_settings').select('*').in('key', ['company_name', 'company_nip', 'company_krs', 'company_regon', 'company_address', 'company_bank_account', 'bank_commission_percent']),
     ])
     setClient(cRes.data || null)
     setProject(pRes.data || null)
     setItems((iRes.data && iRes.data.length ? iRes.data : [blankItem()]).map(it => ({ ...it, _key: it.id || crypto.randomUUID() })))
     setContact((ccRes.data && ccRes.data[0]) || null)
-    setCompany(Object.fromEntries((csRes.data || []).map(r => [r.key, r.value])))
+    const companySettings = Object.fromEntries((csRes.data || []).map(r => [r.key, r.value]))
+    setCompany(companySettings)
+    // Nowa wycena bez ustawionej jeszcze prowizji -> podpowiedz domyślną z Ustawień KSeF.
+    if ((q.bank_commission_percent === null || q.bank_commission_percent === undefined) && companySettings.bank_commission_percent) {
+      setQuote(prev => ({ ...prev, bank_commission_percent: Number(companySettings.bank_commission_percent) }))
+    }
     setDeletedIds([])
     setLoading(false)
   }
@@ -117,6 +122,23 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const photoUrl = (path) => path ? photoUrls[path] : null
 
+  const [fetchingRate, setFetchingRate] = useState(false)
+  const handleFetchNbpRate = async () => {
+    setFetchingRate(true)
+    try {
+      const resp = await fetch('https://api.nbp.pl/api/exchangerates/rates/a/cny/?format=json')
+      if (!resp.ok) throw new Error('NBP API: ' + resp.status)
+      const data = await resp.json()
+      const rate = data?.rates?.[0]
+      if (!rate) throw new Error('Brak danych w odpowiedzi NBP')
+      setQ({ nbp_rate: rate.mid, nbp_rate_date: rate.effectiveDate })
+      toast.success(t(`Pobrano kurs NBP: 1 CNY = ${rate.mid} PLN (${rate.effectiveDate})`))
+    } catch (e) {
+      toast.error(t('Nie udało się pobrać kursu z NBP: ') + (e.message || e))
+    }
+    setFetchingRate(false)
+  }
+
   const handleAiSuggest = async (key) => {
     const it = items.find(i => i._key === key)
     if (!it?.name) { toast.error(t('Wpisz najpierw nazwę towaru.')); return }
@@ -144,6 +166,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       transport_cost: quote.transport_cost || 0, include_duty: quote.include_duty ?? true,
       margin_percent: quote.margin_percent, valid_until: quote.valid_until || null,
       notes: quote.notes || null, currency: quote.currency || 'CNY', updated_at: new Date().toISOString(),
+      nbp_rate: quote.nbp_rate || null, nbp_rate_date: quote.nbp_rate_date || null,
+      bank_commission_percent: quote.bank_commission_percent === '' ? null : quote.bank_commission_percent,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
 
@@ -214,7 +238,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           } catch { /* brak zdjęcia w PDF, nie blokujemy wysyłki */ }
         }
       }
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls })
+      const plnInfo = quote.currency === 'CNY' ? computePlnConversion(totals.finalPrice, { nbpRate: quote.nbp_rate, commissionPercent: quote.bank_commission_percent }) : null
+      const blob = await generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls, plnInfo })
       const pdfPath = `${quote.client_id}/wyceny/${quoteId}/${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -368,6 +393,42 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         </div>
         <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Ten rozkład (marża, cło, koszt towaru osobno) widzi tylko zespół wewnętrzny — na PDF do klienta trafia wyłącznie kolumna „Cena dla klienta”.")}</div>
       </div>
+
+      {quote.currency === 'CNY' && (() => {
+        const { effectiveRate, plnAmount } = computePlnConversion(totalsCalc.totals.finalPrice, { nbpRate: quote.nbp_rate, commissionPercent: quote.bank_commission_percent })
+        return (
+          <div style={card}>
+            <div style={sectionTitle}>💱 {t("Przelicznik CNY → PLN (kurs NBP + prowizja banku)")}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 12, alignItems: 'end' }}>
+              <div>
+                <label style={label}>{t("Kurs średni NBP (CNY→PLN)")}</label>
+                <div style={{ ...field, background: C.bg, fontWeight: 700 }}>
+                  {quote.nbp_rate ? `${quote.nbp_rate} ${t("z dnia")} ${quote.nbp_rate_date}` : t("— nie pobrano —")}
+                </div>
+              </div>
+              <div>
+                <button onClick={handleFetchNbpRate} disabled={fetchingRate}
+                  style={{ padding: '9px 14px', borderRadius: 7, border: `1px solid ${C.blue}`, background: C.blight, color: C.blue, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: fetchingRate ? .6 : 1 }}>
+                  {fetchingRate ? t('Pobieranie…') : t('🔄 Odśwież kurs NBP')}
+                </button>
+              </div>
+              <div>
+                <label style={label}>{t("Prowizja banku (%)")}</label>
+                <input type="number" style={field} value={quote.bank_commission_percent ?? ''} onChange={e => setQ({ bank_commission_percent: e.target.value })} placeholder="np. 3" />
+              </div>
+              <div>
+                <label style={label}>{t("Kurs efektywny")}</label>
+                <div style={{ ...field, background: C.bg, fontWeight: 700 }}>{effectiveRate ? fmt(effectiveRate, 4) : '—'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 9, background: C.blight, border: `1px solid ${C.bmid}` }}>
+              <span style={{ fontSize: 11.5, color: C.text2 }}>{t("Cena dla klienta w złotówkach (orientacyjnie)")}</span>
+              <span style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800, color: C.blue }}>{plnAmount ? `${fmt(plnAmount, 2)} PLN` : '—'}</span>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Kurs zapisuje się na wycenie w momencie zapisu/wysyłki — nie zmienia się już potem samoczynnie. BNP Paribas nie udostępnia publicznego API, dlatego bazujemy na oficjalnym kursie średnim NBP i doliczamy prowizję banku ręcznie.")}</div>
+          </div>
+        )
+      })()}
 
       <div style={card}>
         <div style={sectionTitle}>📄 {t("Objaśnienia na wycenie (widoczne dla klienta)")}</div>

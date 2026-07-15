@@ -32,6 +32,15 @@ export function computeQuoteTotals(items, { transportCost = 0, includeDuty = tru
   return { rows, totals }
 }
 
+// Przelicznik CNY -> PLN: bazuje na kursie średnim NBP (oficjalne, stabilne
+// API — BNP Paribas nie ma publicznego API, tylko stronę WWW), plus prowizja
+// banku (%) doliczana na to, że bank sprzedaje walutę drożej niż kurs średni.
+export function computePlnConversion(cnyAmount, { nbpRate, commissionPercent = 0 } = {}) {
+  const rate = Number(nbpRate) || 0
+  const effectiveRate = rate * (1 + (Number(commissionPercent) || 0) / 100)
+  return { effectiveRate, plnAmount: (Number(cnyAmount) || 0) * effectiveRate }
+}
+
 export function nextQuoteNumber(existingNumbers = []) {
   const year = new Date().getFullYear()
   const prefix = `WYC-${year}-`
