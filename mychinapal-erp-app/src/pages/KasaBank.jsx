@@ -41,6 +41,7 @@ function mapTx(row) {
     vat_rate: Number(row.vat_rate) || 0,
     vat_calc: Number(row.vat_amount) || 0,
     company: row.company || 'PL',
+    invoice_id: row.invoice_id || null,
   }
 }
 
@@ -63,6 +64,8 @@ export default function KasaBank() {
   const [marzaK, setMarzaK] = useState([])
   const [marzaZ, setMarzaZ] = useState([])
   const [recurring, setRecurring] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [splitsByTx, setSplitsByTx] = useState({})
   const [tab, setTab] = useState('transakcje')
   const [selQ, setSelQ] = useState('Q2_2026')
   // Kafelki stanu kont pokazują domyślnie saldo na koniec wybranego kwartału.
@@ -75,7 +78,7 @@ export default function KasaBank() {
 
   const loadData = async () => {
     setLoading(true)
-    const [txRes, clientsRes, projectsRes, kkRes, abRes, vatRes, mkRes, mzRes, rpRes, suRes] = await Promise.all([
+    const [txRes, clientsRes, projectsRes, kkRes, abRes, vatRes, mkRes, mzRes, rpRes, suRes, invRes, splitsRes] = await Promise.all([
       supabase.from('transactions').select('*, clients(id,name), projects(id,order_label)').order('tx_date'),
       supabase.from('clients').select('id,name').order('name'),
       supabase.from('projects').select('id,client_id,order_label'),
@@ -86,8 +89,10 @@ export default function KasaBank() {
       supabase.from('v_marza_zlecenie').select('*'),
       supabase.from('recurring_payments').select('*').order('day_of_month'),
       supabase.from('bank_statement_uploads').select('*').order('uploaded_at', { ascending: false }),
+      supabase.from('invoices').select('id,number,client_id,project_id,company_flag').order('invoice_date', { ascending: false }),
+      supabase.from('transaction_splits').select('*'),
     ])
-    for (const [name, res] of Object.entries({ txRes, clientsRes, projectsRes, kkRes, abRes, vatRes, mkRes, mzRes, rpRes, suRes })) {
+    for (const [name, res] of Object.entries({ txRes, clientsRes, projectsRes, kkRes, abRes, vatRes, mkRes, mzRes, rpRes, suRes, invRes, splitsRes })) {
       if (res.error) console.error(name, res.error.message)
     }
 
@@ -95,6 +100,13 @@ export default function KasaBank() {
     setClients(clientsRes.data || [])
     setProjects(projectsRes.data || [])
     setStatementUploads(suRes.data || [])
+    setInvoices(invRes.data || [])
+    const splitsGrouped = {}
+    ;(splitsRes.data || []).forEach(s => {
+      splitsGrouped[s.transaction_id] = splitsGrouped[s.transaction_id] || []
+      splitsGrouped[s.transaction_id].push(s)
+    })
+    setSplitsByTx(splitsGrouped)
 
     const kkShaped = {}
     ;(kkRes.data || []).forEach(r => {
@@ -176,6 +188,41 @@ export default function KasaBank() {
       }
     }
   }
+
+  // "Podział kwoty" — zastępuje stary ręczny mechanizm pustych wierszy pomocniczych
+  // (S-). Zapisuje pełną listę pozycji podziału dla danej transakcji (usuwa stare,
+  // wstawia nowe) i — dla każdej pozycji z ustawionym etapem płatności + zamówieniem —
+  // uruchamia to samo automatyczne przesunięcie Fabryka/Magazyn co przy zwykłej
+  // edycji całej transakcji.
+  const handleSaveSplit = async (txId, lines) => {
+    const { error: delErr } = await supabase.from('transaction_splits').delete().eq('transaction_id', txId)
+    if (delErr) { console.error(delErr); toast.error(t('Nie udało się zapisać podziału: ') + delErr.message); return }
+
+    let inserted = []
+    if (lines.length) {
+      const { data, error: insErr } = await supabase.from('transaction_splits')
+        .insert(lines.map(l => ({ ...l, transaction_id: txId })))
+        .select()
+      if (insErr) { console.error(insErr); toast.error(t('Nie udało się zapisać podziału: ') + insErr.message); return }
+      inserted = data || []
+    }
+    setSplitsByTx(prev => ({ ...prev, [txId]: inserted }))
+
+    for (const line of lines) {
+      if (line.payment_stage && line.project_id) {
+        const newStatus = line.payment_stage === 'doplata_koncowa' ? 'w_magazynie' : line.payment_stage === 'zaliczka' ? 'w_produkcji' : null
+        if (newStatus) {
+          const { error: projErr } = await supabase.from('projects')
+            .update({ goods_status: newStatus, goods_status_at: new Date().toISOString() })
+            .eq('id', line.project_id)
+          if (projErr) console.error(projErr)
+        }
+      }
+    }
+    toast.success(t('Podział kwoty zapisany ✓'))
+  }
+
+  const goInvoice = (invoiceId) => navigate(`/faktury?invoice=${invoiceId}`)
 
   const podatkiPayments = useMemo(() => (
     txs.filter(row => (row.category || '').toUpperCase() === 'PODATKI' && row.direction === 'MA-' && row.flow_type !== 'nie_podlega')
@@ -357,7 +404,8 @@ export default function KasaBank() {
           )}
           <div style={{ padding: 16 }}>
             {tab === 'transakcje' && (
-              <TabTransakcje txs={companyTxs} clients={clients} projects={projects} onSave={handleSave} company={company}
+              <TabTransakcje txs={companyTxs} clients={clients} projects={projects} invoices={invoices} splitsByTx={splitsByTx}
+                onSave={handleSave} onSaveSplit={handleSaveSplit} goInvoice={goInvoice} company={company}
                 {...(isCN ? { internalCategories: CN_INTERNAL_CATEGORIES, editCategories: CN_CATEGORIES, vatRateOptions: [0, 3, 6, 9, 13] } : {})} />
             )}
             {tab === 'kontrola' && (isCN ? <ComingSoonCN label={t("Kontrola kasy")} /> : <TabKontrolaKasy kk={kk} stanKont={stanKont} />)}

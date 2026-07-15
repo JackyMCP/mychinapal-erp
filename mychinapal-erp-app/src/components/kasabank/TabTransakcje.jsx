@@ -4,8 +4,9 @@ import { C, fmt } from '../../lib/theme'
 import { INTERNAL_CATEGORIES, rowBg, isHelperRow, quartersForCompany } from './constants'
 import Pill from './Pill'
 import EditModal from './EditModal'
+import SplitModal from './SplitModal'
 
-export default function TabTransakcje({ txs, clients, projects, onSave, initialSearch, initialQ, internalCategories = INTERNAL_CATEGORIES, editCategories, vatRateOptions, company = 'PL' }) {
+export default function TabTransakcje({ txs, clients, projects, invoices = [], splitsByTx = {}, onSave, onSaveSplit, goInvoice, initialSearch, initialQ, internalCategories = INTERNAL_CATEGORIES, editCategories, vatRateOptions, company = 'PL' }) {
   const {
     t
   } = useLang();
@@ -16,6 +17,8 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
   const [filter, setFilter] = useState('wszystkie')
   const [search, setSearch] = useState(initialSearch || '')
   const [editTx, setEditTx] = useState(null)
+  const [splitTx, setSplitTx] = useState(null)
+  const invoicesById = useMemo(() => Object.fromEntries(invoices.map(i => [i.id, i])), [invoices])
   const [sortCol, setSortCol] = useState('date')
   const [sortAsc, setSortAsc] = useState(true)
   const [showSRows, setShowSRows] = useState(false)
@@ -187,6 +190,7 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
               <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}` }}>{t("Kier.")}</th>
               <SortTh col="assign" label="Przypisanie" />
               <SortTh col="order" label="Zamówienie" />
+              <th style={{ padding: '6px 8px', fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{t("Podział / Faktura")}</th>
               <SortTh col="flow_type" label="Typ" />
               <SortTh col="category" label="Kategoria" />
               <SortTh col="status" label="Status" />
@@ -213,6 +217,24 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
                     {needsAssign ? <span style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 3, padding: '1px 5px', fontSize: 9, color: C.orange }}>{t("⚠️ brak")}</span> : (row.assign || <span style={{ color: C.muted, fontSize: 10 }}>—</span>)}
                   </td>
                   <td style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, whiteSpace: 'nowrap' }}>{row.order || '—'}</td>
+                  <td style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+                    {row.invoice_id && invoicesById[row.invoice_id] ? (
+                      <span onClick={() => goInvoice && goInvoice(row.invoice_id)} title={t("Otwórz fakturę")}
+                        style={{ fontSize: 10, fontWeight: 700, color: C.blue, cursor: 'pointer', textDecoration: 'underline' }}>
+                        🧾 {invoicesById[row.invoice_id].number}
+                      </span>
+                    ) : (splitsByTx[row.id] || []).length > 0 ? (
+                      <span onClick={() => setSplitTx(row)} title={t("Zobacz/edytuj podział kwoty")}
+                        style={{ fontSize: 10, fontWeight: 700, color: C.purple || '#7C3AED', cursor: 'pointer', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 5, padding: '2px 7px' }}>
+                        🔀 {(splitsByTx[row.id] || []).length}
+                      </span>
+                    ) : (
+                      <span onClick={() => setSplitTx(row)} title={t("Podziel kwotę na kilku klientów/zamówień")}
+                        style={{ fontSize: 9.5, fontWeight: 600, color: C.muted, cursor: 'pointer', border: `1px dashed ${C.border}`, borderRadius: 5, padding: '2px 7px' }}>
+                        + {t("Podział")}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}` }}>{row.flow_type ? <Pill type={row.flow_type} small /> : <span style={{ color: C.muted, fontSize: 10 }}>—</span>}</td>
                   <td style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}` }}>{row.category ? <Pill type={row.category} small /> : <span style={{ color: C.muted, fontSize: 10 }}>—</span>}</td>
                   <td style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}`, fontSize: 10, whiteSpace: 'nowrap' }}>
@@ -232,8 +254,12 @@ export default function TabTransakcje({ txs, clients, projects, onSave, initialS
         </table>
         {filtered.length === 0 && <div style={{ textAlign: 'center', padding: 48, color: C.muted, fontSize: 12 }}>{t("Brak transakcji dla wybranego filtra")}</div>}
       </div>
-      {editTx && <EditModal tx={editTx} clients={clients} projects={projects} onSave={(id, changes) => { onSave(id, changes); setEditTx(null) }} onClose={() => setEditTx(null)}
+      {editTx && <EditModal tx={editTx} clients={clients} projects={projects} invoices={invoices} onSave={(id, changes) => { onSave(id, changes); setEditTx(null) }} onClose={() => setEditTx(null)}
         {...(editCategories ? { categories: editCategories } : {})} {...(vatRateOptions ? { vatRateOptions } : {})} />}
+      {splitTx && <SplitModal tx={splitTx} clients={clients} projects={projects} invoices={invoices}
+        existingSplits={splitsByTx[splitTx.id] || []}
+        onSave={async (id, lines) => { await onSaveSplit(id, lines); setSplitTx(null) }}
+        onClose={() => setSplitTx(null)} />}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { paymentStatus, daysOverdue } from './utils'
@@ -7,12 +7,23 @@ import { useUI } from '../../lib/ui'
 
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
 
-export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }) {
+export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef, highlightId }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const rowRefs = useRef({})
+
+  // Przyjście z linku "🧾 numer PI" na kafelku transakcji (Kasa & Bank) — nie
+  // filtrujemy po typie/wyszukiwaniu, żeby podświetlana faktura na pewno się
+  // pokazała, i przewijamy do niej po załadowaniu listy.
+  useEffect(() => {
+    if (!highlightId) return
+    setFilter('all'); setSearch('')
+    const t2 = setTimeout(() => rowRefs.current[highlightId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250)
+    return () => clearTimeout(t2)
+  }, [highlightId, invoices])
 
   const filtered = useMemo(() => invoices.filter(inv => {
     if (filter !== 'all' && inv.typ !== filter) return false
@@ -64,8 +75,10 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef }
           {filtered.map(inv => {
             const status = paymentStatus(inv)
             const overdue = daysOverdue(inv)
+            const isHighlighted = highlightId === inv.id
             return (
-              <tr key={inv.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <tr key={inv.id} ref={el => { rowRefs.current[inv.id] = el }}
+                style={{ borderBottom: `1px solid ${C.border}`, background: isHighlighted ? '#EFF6FF' : 'transparent', outline: isHighlighted ? `2px solid ${C.blue}` : 'none', outlineOffset: -1 }}>
                 <td style={{ padding: 10, fontWeight: 700 }}>
                   {inv.number}
                   {inv.company_flag === 'CN' && <span title={t('Faktura chińska')} style={{ marginLeft: 5 }}>🇨🇳</span>}

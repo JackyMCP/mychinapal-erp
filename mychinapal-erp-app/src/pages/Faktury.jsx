@@ -1,5 +1,6 @@
 import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { C } from '../lib/theme'
@@ -35,6 +36,8 @@ export default function Faktury() {
   const [companyFlag, setCompanyFlag] = useState('PL')
   const [tab, setTab] = useState('rejestr')
   const [loading, setLoading] = useState(true)
+  const [searchParams] = useSearchParams()
+  const highlightInvoiceId = searchParams.get('invoice')
 
   const loadInvoices = async () => {
     const { data, error } = await supabase.from('invoices')
@@ -70,6 +73,14 @@ export default function Faktury() {
   }
 
   useEffect(() => { loadAll() }, [])
+
+  // Link z kafelka transakcji w Kasa & Bank ("🧾 numer PI") — otwiera od razu
+  // Rejestr faktur, przełącza flagę spółki na tę faktury i podświetla wiersz.
+  useEffect(() => {
+    if (!highlightInvoiceId || !invoices.length) return
+    const inv = invoices.find(i => i.id === highlightInvoiceId)
+    if (inv) { setTab('rejestr'); setCompanyFlag(inv.company_flag || 'PL') }
+  }, [highlightInvoiceId, invoices])
 
   const handleRetryKsef = async (invoice) => {
     const { data, error } = await supabase.functions.invoke('ksef-send-invoice', { body: { invoice_id: invoice.id } })
@@ -160,7 +171,7 @@ export default function Faktury() {
           ))}
         </div>
 
-        {tab === 'rejestr' && <TabRejestr invoices={flagInvoices} loading={loading} onChanged={loadInvoices} onRetryKsef={handleRetryKsef} />}
+        {tab === 'rejestr' && <TabRejestr invoices={flagInvoices} loading={loading} onChanged={loadInvoices} onRetryKsef={handleRetryKsef} highlightId={highlightInvoiceId} />}
         {tab === 'nowa' && (
           <TabNowaFaktura clients={clients} projects={projects}
             products={isCN ? cnProducts : plProducts}

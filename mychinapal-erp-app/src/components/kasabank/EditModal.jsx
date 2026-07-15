@@ -6,7 +6,7 @@ import useIsMobile from '../../lib/useIsMobile'
 
 const STATUSES = ['ROZLICZONO CAŁKOWICIE', 'NIE ROZLICZONO', 'NIE PODLEGA', 'W TRAKCIE']
 
-export default function EditModal({ tx, clients, projects, onSave, onClose, categories = CATEGORIES, vatRateOptions = [0, 5, 8, 23] }) {
+export default function EditModal({ tx, clients, projects, invoices = [], onSave, onClose, categories = CATEGORIES, vatRateOptions = [0, 5, 8, 23] }) {
   const {
     t
   } = useLang();
@@ -21,10 +21,15 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
   const [vat_rate, setVatRate] = useState(tx.vat_rate || 0)
   const [txDate, setTxDate] = useState(tx.date || '')
   const [paymentStage, setPaymentStage] = useState(tx.payment_stage || '')
+  const [invoiceId, setInvoiceId] = useState(tx.invoice_id || '')
 
   const clientProjects = useMemo(
     () => projects.filter(p => p.client_id === clientId),
     [projects, clientId]
+  )
+  const relevantInvoices = useMemo(
+    () => invoices.filter(inv => projectId ? inv.project_id === projectId : clientId ? inv.client_id === clientId : true),
+    [invoices, clientId, projectId]
   )
 
   useEffect(() => {
@@ -118,6 +123,16 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
           )}
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Powiązana faktura / PI")}</label>
+          <select style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none' }}
+            value={invoiceId} onChange={e => setInvoiceId(e.target.value)}>
+            <option value="">{t("— brak —")}</option>
+            {relevantInvoices.map(inv => <option key={inv.id} value={inv.id}>{inv.number}</option>)}
+          </select>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{t("Jeśli cała ta transakcja to płatność za jedną fakturę/PI — połącz je tutaj, żeby numer faktury pojawił się jako link w tabeli Transakcji. Jeśli jedna płatność pokrywa kilku klientów/zamówień, użyj zamiast tego „Podział kwoty”.")}</div>
+        </div>
+
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Uwagi")}</label>
           <textarea style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 8px', fontSize: 11, width: '100%', outline: 'none', resize: 'vertical', minHeight: 56 }}
@@ -127,7 +142,7 @@ export default function EditModal({ tx, clients, projects, onSave, onClose, cate
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
           <span style={{ fontSize: 10, color: C.muted, marginRight: 'auto' }}>{t("Zmiany zapisują się od razu w bazie")}</span>
           <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.text2 }}>{t("Anuluj")}</button>
-          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate, tx_date: txDate || null, payment_stage: (clientId && projectId) ? (paymentStage || null) : null })}
+          <button onClick={() => onSave(tx.id, { client_id: clientId || null, project_id: projectId || null, category: cat || null, flow_type: flow || null, status: status || null, notes: notes || null, vat_rate, tx_date: txDate || null, payment_stage: (clientId && projectId) ? (paymentStage || null) : null, invoice_id: invoiceId || null })}
             style={{ padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.blue, color: '#fff' }}>
             {t("💾 Zapisz zmiany")}
           </button>
