@@ -136,9 +136,41 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     try {
       const parsed = await parseQuoteExcel(file)
       if (!parsed.length) { toast.error(t('Nie udało się rozpoznać żadnych pozycji w tym pliku — sprawdź nagłówki kolumn lub wpisz pozycje ręcznie.')); setImporting(false); return }
+      const withPhotos = parsed.filter(p => p._photoDataUrls?.length).length
+      // Zdjęcia wyciągnięte z komórek Excela (patrz excelImport.js) trzeba
+      // wgrać do Storage tak samo jak każde inne zdjęcie pozycji — łącznie
+      // z wpisem w `documents`, wymaganym przez politykę SELECT bucketu
+      // (bez tego podgląd zdjęcia zawsze zwracałby "Object not found").
+      const { data: { user } } = await supabase.auth.getUser()
+      let uploadFailCount = 0
+      const readyItems = []
+      for (const p of parsed) {
+        const dataUrls = p._photoDataUrls || []
+        delete p._photoDataUrls
+        const photoPaths = []
+        for (const dataUrl of dataUrls) {
+          try {
+            const blob = await (await fetch(dataUrl)).blob()
+            if (isFileTooBig(blob)) { uploadFailCount++; continue }
+            const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+            const path = `${quote.client_id}/wycena-${quoteId}-${crypto.randomUUID()}-excel-import.${ext}`
+            const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, blob, { contentType: blob.type || 'image/jpeg' })
+            if (upErr) throw upErr
+            await supabase.from('documents').insert({
+              client_id: quote.client_id, project_id: quote.project_id,
+              category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: `excel-${p.name || 'produkt'}.${ext}`,
+              uploaded_by: user?.id, source: 'excel_import',
+            })
+            photoPaths.push(path)
+          } catch { uploadFailCount++ }
+        }
+        readyItems.push({ ...blankItem(), ...p, photo_paths: photoPaths })
+      }
       const onlyBlank = items.length === 1 && !items[0].name && !items[0].id
-      setItems(prev => [...(onlyBlank ? [] : prev), ...parsed.map(p => ({ ...blankItem(), ...p }))])
-      toast.success(t(`Zaimportowano ${parsed.length} pozycji — sprawdź i uzupełnij dane (kod celny, zdjęcia itd.) przed zapisaniem.`))
+      setItems(prev => [...(onlyBlank ? [] : prev), ...readyItems])
+      const photoMsg = withPhotos ? t(` (zdjęcia rozpoznane dla ${withPhotos} z nich)`) : ''
+      toast.success(t(`Zaimportowano ${parsed.length} pozycji`) + photoMsg + t(' — sprawdź i uzupełnij dane (kod celny, cena itd.) przed zapisaniem.'))
+      if (uploadFailCount) toast.error(t(`Nie udało się wgrać ${uploadFailCount} zdjęć z Excela — dodaj je ręcznie.`))
     } catch (e) {
       toast.error(t('Nie udało się odczytać pliku Excel: ') + (e.message || e))
     }
@@ -433,12 +465,6 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     load(); onChanged && onChanged()
   }
 
-  const handleUnlock = async () => {
-    const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
-    if (error) { toast.error(t('Nie udało się odblokować: ') + error.message); return }
-    load(); onChanged && onChanged()
-  }
-
   // Buduje mapę _key -> [data:URL, data:URL, ...] zdjęć pozycji (jedno lub
   // więcej), do wstawienia w PDF (jspdf potrzebuje danych obrazka jako
   // base64, nie samego URL-a). Pierwsze zdjęcie = okładka pozycji, kolejne =
@@ -473,13 +499,6 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return photoDataUrls
   }
 
-  // auxPrice: mała pomocnicza linijka pod sumą, pokazująca surową cenę
-  // bazową towaru w CNY (informacyjnie — cena dla klienta jest zawsze w PLN).
-  const buildAuxPrice = () => {
-    if (!cnyRateEff) return null
-    return { amount: totalsCalc.totals.goodsValue / cnyRateEff, currency: 'CNY', note: t('cena bazowa towaru od zespołu chińskiego') }
-  }
-
   const handlePreviewPdf = async () => {
     // Okno musi się otworzyć SYNCHRONICZNIE w reakcji na kliknięcie — jeśli
     // otworzymy je dopiero po zakończeniu generowania PDF (czyli po kilku
@@ -492,7 +511,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setSending('preview')
     try {
       const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls, auxPrice: buildAuxPrice() })
+      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
@@ -536,13 +555,16 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if ((quote.transport_currency || 'CNY') !== 'PLN' && Number(quote.transport_cost) > 0 && !quote.transport_rate) {
       toast.error(t('Pobierz kurs NBP dla waluty transportu przed wysłaniem do klienta.')); return
     }
-    if (!await confirm(t('Wysłać tę wycenę do klienta? Wygeneruje się PDF z ceną końcową netto/VAT/brutto w PLN i automatycznie odblokuje 2. etap zamówienia.'))) return
+    const confirmMsg = quote.status === 'wyslana'
+      ? t('Wysłać poprawioną wersję tej wyceny do klienta? Nadpisze poprzedni PDF (ten sam numer wyceny) nowymi danymi.')
+      : t('Wysłać tę wycenę do klienta? Wygeneruje się PDF z ceną końcową netto/VAT/brutto w PLN i automatycznie odblokuje 2. etap zamówienia.')
+    if (!await confirm(confirmMsg)) return
     const ok = await handleSave(true)
     if (!ok) return
     setSending(true)
     try {
       const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls, auxPrice: buildAuxPrice() })
+      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -890,16 +912,13 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             {t("Prześlij do zespołu PL →")}
           </button>
         )}
-        {quote.status === 'do_marzy_pl' && (
+        {(quote.status === 'do_marzy_pl' || quote.status === 'wyslana') && (
           <button onClick={handleSendToClient} disabled={sending} style={{ padding: '10px 18px', borderRadius: 9, border: 'none', background: C.green, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: sending ? .6 : 1 }}>
-            {sending ? t("Wysyłanie…") : t("📤 Wyślij do klienta")}
+            {sending ? t("Wysyłanie…") : quote.status === 'wyslana' ? t("📤 Wyślij poprawioną wycenę do klienta") : t("📤 Wyślij do klienta")}
           </button>
         )}
         {quote.status === 'wyslana' && (
-          <>
-            <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz PDF")}</button>
-            <button onClick={handleUnlock} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.orange }}>{t("🔓 Odblokuj do korekty")}</button>
-          </>
+          <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz ostatnio wysłany PDF")}</button>
         )}
       </div>
     </div>

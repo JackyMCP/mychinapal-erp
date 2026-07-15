@@ -82,14 +82,51 @@ function fmtPln(n) {
 // rozbicia na koszt towaru/transport/cło/marżę, które widzi tylko zespół
 // wewnętrzny w aplikacji, z wyjątkiem transportu, który pokazujemy jako
 // osobną, orientacyjną pozycję na życzenie).
-export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {}, auxPrice = null }) {
+export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {} }) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 14
   const right = 196
+  const pageBottom = 278
   const FONT = await loadCustomFont(doc)
 
   const logo = await fetchAsDataUrl('/logo-white.png')
   const logoDims = await loadImageSize(logo)
+
+  // Cienki pasek nagłówkowy powtarzany na KAŻDEJ kolejnej stronie (poza
+  // pierwszą, która ma pełny, duży branded nagłówek) — przy wielu pozycjach
+  // wycena rozkłada się na kilka stron i bez tego dalsze strony byłyby "gołe",
+  // bez żadnej marki/numeru wyceny, co wyglądałoby niespójnie.
+  const drawContinuationHeader = () => {
+    doc.setFillColor(...navy)
+    doc.rect(0, 0, 210, 12, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont(FONT, 'bold')
+    doc.setFontSize(9)
+    doc.text('MyChinaPal', left, 8)
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...goldLight)
+    doc.text(`${String(quote.quote_number || '')} — cd. / continued`, right, 8, { align: 'right' })
+    doc.setTextColor(20, 20, 20)
+    return 20
+  }
+
+  // Dodaje nową stronę + cienki nagłówek ciągłości, zwraca nowe `y`, od
+  // którego bezpiecznie można dalej rysować.
+  const addContinuationPage = () => {
+    doc.addPage()
+    return drawContinuationHeader()
+  }
+
+  // Upewnia się, że poniżej bieżącego `y` jest miejsce na `neededH` mm — jeśli
+  // nie, dodaje nową stronę (z nagłówkiem ciągłości) i zwraca zaktualizowane
+  // `y`. Używane konsekwentnie w całym dokumencie (pozycje towaru, sekcja
+  // podsumowania, objaśnienia), żeby żaden fragment nie "przecinał się" na
+  // granicy strony w połowie linii.
+  const ensureSpace = (currentY, neededH) => {
+    if (currentY + neededH > pageBottom) return addContinuationPage()
+    return currentY
+  }
 
   // --- Nagłówek: granatowe tło + delikatna złota "poświata" w rogu (kilka
   // nakładających się, półprzezroczystych pasów — bezpieczne w jsPDF, bez
@@ -188,11 +225,10 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
 
   const photoSize = 42
   const thumbSize = 11
-  const pageBottom = 278
   const textX = left + photoSize + 10
   const textWidth = right - textX - 3
 
-  for (const r of rows) {
+  for (const [idx, r] of rows.entries()) {
     const photos = photoDataUrls[r._key] || []
     const cover = photos[0]
     const extraPhotos = photos.slice(1, 4) // do 3 dodatkowych miniatur pod okładką
@@ -208,7 +244,21 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     const photoBlockH = photoSize + 6 + (hasExtra ? thumbSize + 4 : 0)
     const blockHeight = Math.max(photoBlockH, textContentH + metaAndPriceH)
 
-    if (y + blockHeight > pageBottom) { doc.addPage(); y = 20 }
+    // Przy WIELU pozycjach (np. 20) wycena musi się rozłożyć na tyle stron,
+    // ile potrzeba — tyle produktów na stronę, ile faktycznie się zmieści
+    // (krótszy opis = więcej pozycji, dłuższy = mniej), każda karta zawsze w
+    // całości widoczna, nigdy nie przecięta granicą strony.
+    const beforeY = y
+    y = ensureSpace(y, blockHeight)
+    if (y !== beforeY && idx > 0) {
+      // Nowa strona w trakcie listy pozycji — powtórz etykietę sekcji, żeby
+      // dalsze strony nie wyglądały jak "oderwane" od reszty wyceny.
+      doc.setFont(FONT, 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...navy)
+      doc.text('ITEMS / POZYCJE TOWARU (cd. / continued)', left, y - 5)
+      doc.setTextColor(20, 20, 20)
+    }
 
     doc.setDrawColor(225, 227, 231)
     doc.setLineWidth(0.3)
@@ -266,7 +316,11 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     y += blockHeight + 4
   }
 
-  if (y > 240) { doc.addPage(); y = 20 }
+  // Blok podsumowania (linia + ew. transport + netto/VAT/brutto) trzymamy
+  // razem, na jednej stronie — rezerwujemy z zapasem miejsce na wszystkie
+  // jego elementy naraz, żeby suma nigdy nie została "rozcięta" u dołu strony.
+  const summaryBlockH = 4 + 7 + (totals.transportShare > 0 && totals.landedCost > 0 ? 7 : 0) + 6 + 8 + 6
+  y = ensureSpace(y, summaryBlockH)
   y += 4
   doc.setDrawColor(...navy)
   doc.setLineWidth(0.4)
@@ -307,37 +361,48 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   doc.setTextColor(20, 20, 20)
   y += 6
 
-  if (auxPrice && auxPrice.amount) {
-    doc.setFont(FONT, 'normal')
-    doc.setFontSize(9)
-    const locale = auxPrice.currency === 'PLN' ? 'pl-PL' : 'en-US'
-    const amt = Number(auxPrice.amount).toLocaleString(locale, { minimumFractionDigits: 2 })
-    doc.text(`(≈ ${amt} ${auxPrice.currency}${auxPrice.note ? ', ' + auxPrice.note : ''})`, right, y, { align: 'right' })
-    y += 6
-  }
+  // UWAGA: tu NIGDY nie wolno drukować ceny bazowej/kosztu zespołu chińskiego
+  // (auxPrice) — to jest dokument dla klienta. Cena bazowa CNY jest widoczna
+  // wyłącznie wewnętrznie, w edytorze wyceny (zespół PL/CN), nie na PDF.
   y += 6
 
   if (quote.notes) {
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(8)
+    const lines = doc.splitTextToSize(quote.notes, right - left)
+    // Objaśnienia bywają długie (kilka-kilkanaście linijek warunków) — jeśli
+    // nie mieszczą się do końca strony, lepiej przenieść całość na kolejną
+    // niż uciąć w połowie zdania.
+    const notesH = 5 + lines.length * 3.6 + 6
+    y = ensureSpace(y, notesH)
     doc.setFont(FONT, 'bold')
     doc.setFontSize(9)
     doc.text('Explanation / Objaśnienia:', left, y)
     y += 5
     doc.setFont(FONT, 'normal')
     doc.setFontSize(8)
-    const lines = doc.splitTextToSize(quote.notes, right - left)
     doc.text(lines, left, y)
     y += lines.length * 3.6 + 6
   }
 
   if (company?.company_bank_account) {
+    y = ensureSpace(y, 8)
     doc.setFont(FONT, 'normal')
     doc.setFontSize(8.5)
-    doc.text(`Bank account / Nr konta: ${company.company_bank_account}`, left, Math.min(y, 280))
+    doc.text(`Bank account / Nr konta: ${company.company_bank_account}`, left, y)
   }
 
-  doc.setFontSize(7.5)
-  doc.setTextColor(140, 140, 140)
-  doc.text('This quotation is issued electronically by MyChinaPal ERP and is valid without signature.', left, 290)
+  // Numeracja stron i stopka z zastrzeżeniem — na KAŻDEJ stronie, nie tylko
+  // ostatniej, żeby wielostronicowa wycena była spójna i łatwo się w niej
+  // odnaleźć (np. przy druku).
+  const totalPages = doc.internal.getNumberOfPages()
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p)
+    doc.setFontSize(7.5)
+    doc.setTextColor(140, 140, 140)
+    doc.text('This quotation is issued electronically by MyChinaPal ERP and is valid without signature.', left, 290)
+    doc.text(`${quote.quote_number || ''} — Strona / Page ${p} / ${totalPages}`, right, 290, { align: 'right' })
+  }
 
   return doc.output('blob')
 }
