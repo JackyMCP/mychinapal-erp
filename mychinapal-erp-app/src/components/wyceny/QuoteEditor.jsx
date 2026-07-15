@@ -795,6 +795,41 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Kursy zapisują się na wycenie w momencie zapisu/wysyłki — nie zmieniają się już potem samoczynnie. BNP Paribas nie udostępnia publicznego API, dlatego bazujemy na oficjalnym kursie średnim NBP i doliczamy prowizję banku ręcznie.")}</div>
       </div>
 
+      {(() => {
+        const tCur = quote.transport_currency || 'CNY'
+        const marginAmount = totalsCalc.totals.finalPrice - totalsCalc.totals.landedCost
+        const steps = [
+          { label: t('Kurs towaru (NBP + prowizja banku)'), calc: `1 CNY = ${fmt(quote.nbp_rate || 0, 4)} × (1 + ${fmt(quote.bank_commission_percent || 0, 2)}%)`, value: `${fmt(cnyRateEff, 4)} PLN` },
+          { label: t('Wartość towaru'), calc: t('suma: ilość × cena EXW × kurs, dla wszystkich pozycji'), value: `${fmt(totalsCalc.totals.goodsValue, 2)} PLN` },
+          ...(tCur !== 'PLN' ? [{ label: t(`Kurs transportu (${tCur})`), calc: `1 ${tCur} = ${fmt(quote.transport_rate || 0, 4)} × (1 + ${fmt(quote.bank_commission_percent || 0, 2)}%)`, value: `${fmt(transportRateEff, 4)} PLN` }] : []),
+          { label: t('Transport'), calc: `${fmt(toNum(quote.transport_cost), 2)} ${tCur} × ${fmt(transportRateEff, 4)}`, value: `${fmt(totalsCalc.totals.transportShare, 2)} PLN` },
+          { label: t('Wartość celna (towar + transport)'), calc: t('wartość towaru + transport'), value: `${fmt(totalsCalc.totals.customsValue, 2)} PLN` },
+          { label: t('Cło'), calc: t('wartość celna × stawka cła każdej pozycji'), value: `${fmt(totalsCalc.totals.dutyAmount, 2)} PLN` },
+          { label: t('Koszt razem (bez marży)'), calc: t('wartość celna + cło'), value: `${fmt(totalsCalc.totals.landedCost, 2)} PLN` },
+          { label: t(`Marża (${quote.margin_percent || 0}%)`), calc: t('koszt razem × marża%'), value: `${fmt(marginAmount, 2)} PLN`, highlight: true },
+          { label: t('Netto (cena dla klienta bez VAT)'), calc: t('koszt razem + marża'), value: `${fmt(totalsCalc.totals.finalPrice, 2)} PLN`, highlight: true },
+          { label: t('VAT (23%)'), calc: t('netto × 23%'), value: `${fmt(totalsCalc.totals.vatAmount, 2)} PLN` },
+          { label: t('Brutto (cena końcowa z VAT)'), calc: t('netto + VAT'), value: `${fmt(totalsCalc.totals.finalPriceGross, 2)} PLN`, highlight: true },
+        ]
+        return (
+          <div style={card}>
+            <div style={sectionTitle}>🧮 {t("Jak liczymy tę wycenę — krok po kroku (na żywo)")}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {steps.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: i < steps.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: s.highlight ? C.orange : C.bg, color: s.highlight ? '#fff' : C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, flexShrink: 0 }}>{i + 1}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: s.highlight ? C.orange : C.text }}>{s.label}</div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{s.calc}</div>
+                  </div>
+                  <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13.5, fontWeight: 800, color: s.highlight ? C.orange : C.text, whiteSpace: 'nowrap' }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       <div style={card}>
         <div style={sectionTitle}>🧾 {t("Cena dla klienta (PLN) — aktualizuje się na żywo przy każdej zmianie marży/kursów")}</div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
