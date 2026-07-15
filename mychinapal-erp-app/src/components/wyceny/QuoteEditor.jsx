@@ -122,6 +122,24 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const photoUrl = (path) => path ? photoUrls[path] : null
 
+  // Wklejanie zrzutu ekranu ze schowka (Ctrl+V / Cmd+V) — alternatywa dla
+  // wybierania pliku z dysku, przydatna gdy zdjęcie towaru przyszło na czacie
+  // i zostało tylko skopiowane, a nie zapisane jako plik.
+  const handlePastePhoto = (key, e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          e.preventDefault()
+          handlePhoto(key, file)
+        }
+        return
+      }
+    }
+  }
+
   const [fetchingRate, setFetchingRate] = useState(false)
   const handleFetchNbpRate = async () => {
     setFetchingRate(true)
@@ -287,12 +305,13 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         {items.map((it) => (
           <div key={it._key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10, background: C.bg }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ width: 74, flexShrink: 0 }}>
+              <div style={{ width: 74, flexShrink: 0 }} tabIndex={0} onPaste={e => handlePastePhoto(it._key, e)} title={t('Kliknij, żeby zaznaczyć, potem Ctrl+V (Cmd+V) żeby wkleić zrzut ekranu — albo kliknij w ramkę, żeby wybrać plik.')}>
                 <label style={label}>{t("Zdjęcie")}</label>
                 <label style={{ width: 68, height: 68, borderRadius: 8, border: `1.5px dashed ${C.border}`, cursor: 'pointer', overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {it.photo_path ? <img src={photoUrl(it.photo_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 20, color: C.muted }}>{busyPhoto === it._key ? '…' : '📷'}</span>}
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handlePhoto(it._key, e.target.files?.[0])} />
                 </label>
+                <div style={{ fontSize: 8, color: C.muted, marginTop: 3, lineHeight: 1.3 }}>{t("kliknij tu, potem Ctrl+V żeby wkleić")}</div>
               </div>
               <div style={{ flex: 2, minWidth: 160 }}>
                 <label style={label}>{t("Nazwa towaru")}</label>
