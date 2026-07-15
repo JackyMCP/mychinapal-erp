@@ -6,6 +6,7 @@ import { useUI } from '../lib/ui'
 import useIsMobile from '../lib/useIsMobile'
 import { computeQuoteTotals, nextQuoteNumber, STATUS_LABELS } from '../components/wyceny/calc'
 import QuoteEditor from '../components/wyceny/QuoteEditor'
+import NewProjectModal from '../components/projekty/NewProjectModal'
 
 const statusColor = (s) => s === 'wyslana' ? C.green : s === 'do_marzy_pl' ? C.orange : C.blue
 const statusBg = (s) => s === 'wyslana' ? C.glight : s === 'do_marzy_pl' ? C.olight : C.blight
@@ -25,6 +26,7 @@ export default function Wyceny() {
   const [pickProject, setPickProject] = useState('')
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -50,6 +52,14 @@ export default function Wyceny() {
   }, [items])
 
   const clientProjects = useMemo(() => projects.filter(p => p.client_id === pickClient), [projects, pickClient])
+  const pickClientName = useMemo(() => clients.find(c => c.id === pickClient)?.name || '', [clients, pickClient])
+
+  const handleProjectCreated = (project) => {
+    setProjects(prev => [project, ...prev])
+    setPickProject(project.id)
+    setNewProjectOpen(false)
+    toast.success(t('Utworzono nowe zamówienie „' + project.order_label + '”.'))
+  }
 
   const filtered = quotes.filter(q => {
     if (!search) return true
@@ -128,12 +138,18 @@ export default function Wyceny() {
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Zamówienie")}</label>
-            <select value={pickProject} onChange={e => setPickProject(e.target.value)} disabled={!pickClient}
-              style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, width: '100%', marginBottom: 16, boxSizing: 'border-box' }}>
-              <option value="">{t("— wybierz —")}</option>
-              {clientProjects.map(p => <option key={p.id} value={p.id}>{p.order_label}</option>)}
-            </select>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>{t("Nie widzisz klienta/zamówienia? Utwórz je najpierw w module Klienci/Projekty — wycena zawsze dotyczy istniejącego zamówienia.")}</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <select value={pickProject} onChange={e => setPickProject(e.target.value)} disabled={!pickClient}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }}>
+                <option value="">{t("— wybierz —")}</option>
+                {clientProjects.map(p => <option key={p.id} value={p.id}>{p.order_label}</option>)}
+              </select>
+              <button type="button" onClick={() => setNewProjectOpen(true)} disabled={!pickClient} title={t('Nowe zamówienie dla tego klienta')}
+                style={{ flexShrink: 0, padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.blue}`, background: C.blight, color: C.blue, fontSize: 12, fontWeight: 700, cursor: pickClient ? 'pointer' : 'not-allowed', opacity: pickClient ? 1 : .5 }}>
+                {t("+ Nowe")}
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>{t("Nie widzisz klienta? Utwórz go najpierw w module Klienci. Zamówienie możesz założyć od razu tutaj przyciskiem „+ Nowe”.")}</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setPicking(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
               <button onClick={handleCreate} disabled={creating} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: creating ? .6 : 1 }}>
@@ -142,6 +158,15 @@ export default function Wyceny() {
             </div>
           </div>
         </div>
+      )}
+
+      {newProjectOpen && (
+        <NewProjectModal
+          clientId={pickClient}
+          clientName={pickClientName}
+          onClose={() => setNewProjectOpen(false)}
+          onCreated={handleProjectCreated}
+        />
       )}
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("🔍 Szukaj wg numeru, klienta, zamówienia…")}
