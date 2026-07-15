@@ -6,6 +6,7 @@ import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
+import AttachCategoryModal from '../ui/AttachCategoryModal'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -25,6 +26,8 @@ export default function ProjectChat({ project }) {
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
   const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
   const [imgUrls, setImgUrls] = useState({})
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -154,10 +157,30 @@ export default function ProjectChat({ project }) {
     window.open(data.signedUrl, '_blank')
   }
 
+  // Przeciągnij-i-upuść plik wprost na okno czatu tego zamówienia — od razu
+  // pyta o kategorię w popupie, z szybką opcją "Brak kategoryzacji".
+  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (file) setPendingFile(file)
+  }
+
   if (loading) return <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie czatu…")}</div>;
 
   return (
-    <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
+    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+      style={{
+        background: dragOver ? C.blight : C.white, border: `1.5px ${dragOver ? 'dashed' : 'solid'} ${dragOver ? C.blue : C.border}`,
+        borderRadius: 14, padding: '16px 18px', position: 'relative', transition: 'all .12s ease',
+      }}>
+      {dragOver && (
+        <div style={{ position: 'absolute', inset: 0, borderRadius: 14, background: 'rgba(37,99,235,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: C.blue, pointerEvents: 'none', zIndex: 2 }}>
+          {t("↓ Upuść plik tutaj")}
+        </div>
+      )}
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 12 }}>{t("💬 Czat tego zamówienia")}</div>
       <div style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 10 }}>
         {hasMore && (
@@ -206,7 +229,7 @@ export default function ProjectChat({ project }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => setAttachFile(e.target.files?.[0] || null)} />
+        <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f) }} />
         <button onClick={() => fileRef.current?.click()} title={t("Załącz dokument")} style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, cursor: 'pointer' }}>📎</button>
         <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość…")}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
@@ -216,6 +239,11 @@ export default function ProjectChat({ project }) {
           {t("Wyślij")}
         </button>
       </div>
+      {pendingFile && (
+        <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
+          onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
+          onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
+      )}
     </div>
   );
 }

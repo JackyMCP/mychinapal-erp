@@ -8,6 +8,7 @@ import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
 import { useUI } from '../../lib/ui'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
+import AttachCategoryModal from '../ui/AttachCategoryModal'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -26,6 +27,8 @@ export default function TabCzat({ clientId, clientName, projects }) {
   const [attachFile, setAttachFile] = useState(null)
   const [attachCategory, setAttachCategory] = useState(DOC_CATEGORIES[0])
   const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null) // plik czekający na wybór kategorii w popupie
+  const [dragOver, setDragOver] = useState(false)
   const [imgUrls, setImgUrls] = useState({})
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -180,6 +183,18 @@ export default function TabCzat({ clientId, clientName, projects }) {
     window.open(data.signedUrl, '_blank')
   }
 
+  // Przeciągnij-i-upuść plik (np. z Findera/Eksploratora albo z WeChat, jeśli
+  // dana aplikacja na to pozwala) wprost na okno czatu — od razu pyta o
+  // kategorię w popupie, z szybką opcją "Brak kategoryzacji".
+  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (file) setPendingFile(file)
+  }
+
   if (loading) return <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>
 
   return (
@@ -202,7 +217,16 @@ export default function TabCzat({ clientId, clientName, projects }) {
         </div>
       )}
 
-      <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', height: 480 }}>
+      <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+        style={{
+          background: dragOver ? C.blight : C.white, border: `1.5px ${dragOver ? 'dashed' : 'solid'} ${dragOver ? C.blue : C.border}`,
+          borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', height: 480, transition: 'all .12s ease', position: 'relative',
+        }}>
+        {dragOver && (
+          <div style={{ position: 'absolute', inset: 0, borderRadius: 16, background: 'rgba(37,99,235,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: C.blue, pointerEvents: 'none', zIndex: 2 }}>
+            {t("↓ Upuść plik tutaj")}
+          </div>
+        )}
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>💬 {t("Czat z")} {clientName}</div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '2px 2px' }}>
           {hasMore && (
@@ -252,7 +276,7 @@ export default function TabCzat({ clientId, clientName, projects }) {
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => setAttachFile(e.target.files?.[0] || null)} />
+          <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f) }} />
           <button onClick={() => fileRef.current?.click()} title={t("Załącz dokument")} style={{ padding: '9px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer' }}>📎</button>
           <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość do klienta…")}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
@@ -263,6 +287,11 @@ export default function TabCzat({ clientId, clientName, projects }) {
           </button>
         </div>
       </div>
+      {pendingFile && (
+        <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
+          onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
+          onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
+      )}
     </div>
   )
 }
