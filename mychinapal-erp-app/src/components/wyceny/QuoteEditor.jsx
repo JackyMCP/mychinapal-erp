@@ -9,11 +9,13 @@ import { computeQuoteTotals, STATUS_LABELS } from './calc'
 import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 
+const MAX_PHOTOS_PER_ITEM = 6
+
 const blankItem = () => ({
   _key: crypto.randomUUID(), id: null,
   name: '', specification: '', qty: 1, unit: 'set', unit_price_cny: 0,
   cbm: '', weight_kg: '', container_note: '', production_days: '',
-  hs_code: '', duty_rate_percent: '', photo_path: null, ai_suggestion: null,
+  hs_code: '', duty_rate_percent: '', photo_paths: [], ai_suggestion: null,
 })
 
 const CURRENCIES = ['PLN', 'CNY', 'USD', 'EUR']
@@ -55,7 +57,10 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     ])
     setClient(cRes.data || null)
     setProject(pRes.data || null)
-    setItems((iRes.data && iRes.data.length ? iRes.data : [blankItem()]).map(it => ({ ...it, _key: it.id || crypto.randomUUID() })))
+    setItems((iRes.data && iRes.data.length ? iRes.data : [blankItem()]).map(it => ({
+      ...it, _key: it.id || crypto.randomUUID(),
+      photo_paths: it.photo_paths && it.photo_paths.length ? it.photo_paths : (it.photo_path ? [it.photo_path] : []),
+    })))
     setContact((ccRes.data && ccRes.data[0]) || null)
     const companySettings = Object.fromEntries((csRes.data || []).map(r => [r.key, r.value]))
     setCompany(companySettings)
@@ -86,7 +91,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   }
 
   useEffect(() => {
-    const paths = items.map(it => it.photo_path).filter(Boolean)
+    const paths = [...new Set(items.flatMap(it => it.photo_paths || []).filter(Boolean))]
     if (!paths.length) return
     let cancelled = false
     ;(async () => {
@@ -101,7 +106,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       if (firstError) toast.error(t('Nie udało się wczytać podglądu zdjęcia (po kilku próbach): ') + (firstError[2]?.message || 'nieznany błąd'))
     })()
     return () => { cancelled = true }
-  }, [items.map(it => it.photo_path).join(',')])
+  }, [items.flatMap(it => it.photo_paths || []).join(',')])
 
   // Cena dla klienta jest zawsze w PLN: towar (zawsze w CNY, cena fabryczna)
   // i transport (w walucie wybranej niżej) są przeliczane osobnymi kursami
@@ -141,9 +146,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setItems(prev => prev.filter(i => i._key !== key))
   }
 
-  const handlePhoto = async (key, file) => {
+  // Pozycja może mieć teraz WIELE zdjęć (do MAX_PHOTOS_PER_ITEM) — każde
+  // dodawane zdjęcie dokłada się do tablicy photo_paths, zamiast nadpisywać
+  // pojedyncze photo_path jak wcześniej.
+  const handleAddPhoto = async (key, file) => {
     if (!file) return
     if (isFileTooBig(file)) { toast.error(t(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`)); return }
+    const current = items.find(i => i._key === key)
+    const existingPaths = current?.photo_paths || []
+    if (existingPaths.length >= MAX_PHOTOS_PER_ITEM) { toast.error(t(`Maksymalnie ${MAX_PHOTOS_PER_ITEM} zdjęć na pozycję.`)); return }
     setBusyPhoto(key)
     // Płaska ścieżka client_id/plik — dokładnie ten sam wzorzec co reszta
     // aplikacji (Czat, ProjectFiles, TabCzat...).
@@ -163,19 +174,23 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         uploaded_by: user?.id, source: 'manual',
       })
       if (docErr) { toast.error(t('Zdjęcie wgrane, ale nie udało się go zarejestrować (podgląd może nie działać): ') + docErr.message) }
-      setItem(key, { photo_path: path })
-      toast.success(t('Zdjęcie wgrane ✓'))
+      setItem(key, { photo_paths: [...existingPaths, path] })
+      toast.success(t('Zdjęcie dodane ✓'))
       // Jeśli nazwa towaru jeszcze nie jest wpisana — spróbuj ją zasugerować
-      // automatycznie na podstawie samego zdjęcia (AI), zamiast czekać, aż
-      // ktoś kliknie "Sugeruj AI" ręcznie.
-      const current = items.find(i => i._key === key)
-      if (!current?.name) handleAiSuggest(key, path)
+      // automatycznie na podstawie pierwszego zdjęcia (AI), zamiast czekać,
+      // aż ktoś kliknie "Sugeruj AI" ręcznie.
+      if (!current?.name && !existingPaths.length) handleAiSuggest(key, path)
     } catch (e) {
       // Wcześniej wyjątek tutaj (np. błąd sieci) przechodził bez żadnego
       // komunikatu — teraz zawsze pokazujemy coś, żeby nie było ciszy.
       toast.error(t('Nie udało się wgrać zdjęcia (wyjątek): ') + (e?.message || String(e)))
     }
     setBusyPhoto(null)
+  }
+
+  const removePhoto = (key, path) => {
+    const current = items.find(i => i._key === key)
+    setItem(key, { photo_paths: (current?.photo_paths || []).filter(p => p !== path) })
   }
 
   const photoUrl = (path) => path ? photoUrls[path] : null
@@ -191,7 +206,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         const file = item.getAsFile()
         if (file) {
           e.preventDefault()
-          handlePhoto(key, file)
+          handleAddPhoto(key, file)
         }
         return
       }
@@ -250,7 +265,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const handleAiSuggest = async (key, photoPathOverride = null) => {
     const it = items.find(i => i._key === key)
-    const photoPath = photoPathOverride || it?.photo_path
+    const photoPath = photoPathOverride || it?.photo_paths?.[0]
     if (!it?.name && !photoPath) { toast.error(t('Dodaj zdjęcie albo wpisz nazwę towaru, żeby AI mogło coś zasugerować.')); return }
     setBusyAi(key)
     try {
@@ -314,7 +329,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
       const payload = {
-        quote_id: quoteId, position: i + 1, photo_path: it.photo_path || null,
+        quote_id: quoteId, position: i + 1, photo_paths: it.photo_paths || [], photo_path: it.photo_paths?.[0] || null,
         name: it.name || null, specification: it.specification || null,
         qty: Number(it.qty) || 0, unit: it.unit || 'set', unit_price_cny: Number(it.unit_price_cny) || 0,
         cbm: it.cbm === '' ? null : Number(it.cbm), weight_kg: it.weight_kg === '' ? null : Number(it.weight_kg),
@@ -341,6 +356,24 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
     if (error) { toast.error(t('Nie udało się przesłać: ') + error.message); return }
+    // Zadanie (widoczne w Dashboard/Moje zadania) dla głównego opiekuna PL
+    // tego zamówienia — pełni rolę "powiadomienia", że wycena czeka na
+    // doliczenie transportu/marży i wysłanie do klienta. Brak generycznej
+    // tabeli powiadomień w aplikacji, więc to jest jedyny sensowny sposób.
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: assignment } = await supabase.from('project_assignments')
+        .select('user_id').eq('project_id', quote.project_id).eq('role', 'glowny_pl').maybeSingle()
+      if (assignment?.user_id) {
+        await supabase.from('tasks').insert({
+          title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
+          description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
+          project_id: quote.project_id, client_id: quote.client_id,
+          assigned_to: assignment.user_id, assigned_by: user?.id,
+          due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
+        })
+      }
+    } catch { /* brak zadania nie blokuje przekazania wyceny */ }
     toast.success(t('Przesłano do zespołu PL — teraz można doliczyć transport, cło i marżę.'))
     load(); onChanged && onChanged()
   }
@@ -351,21 +384,27 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     load(); onChanged && onChanged()
   }
 
-  // Buduje mapę _key -> data:URL zdjęć pozycji, do wstawienia w PDF (jspdf
-  // potrzebuje danych obrazka jako base64, nie samego URL-a).
+  // Buduje mapę _key -> [data:URL, data:URL, ...] zdjęć pozycji (jedno lub
+  // więcej), do wstawienia w PDF (jspdf potrzebuje danych obrazka jako
+  // base64, nie samego URL-a). Pierwsze zdjęcie = okładka pozycji, kolejne =
+  // małe miniatury obok.
   const buildPhotoDataUrls = async () => {
     const photoDataUrls = {}
     for (const it of items) {
-      if (it.photo_path) {
+      const paths = it.photo_paths || []
+      if (!paths.length) continue
+      const urls = []
+      for (const p of paths) {
         try {
-          const { data: signed } = await supabase.storage.from('dokumenty').createSignedUrl(it.photo_path, 300)
+          const { data: signed } = await supabase.storage.from('dokumenty').createSignedUrl(p, 300)
           if (signed?.signedUrl) {
             const resp = await fetch(signed.signedUrl)
             const blob = await resp.blob()
-            photoDataUrls[it._key] = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob) })
+            urls.push(await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob) }))
           }
-        } catch { /* brak zdjęcia w PDF, nie blokujemy wysyłki/podglądu */ }
+        } catch { /* brak jednego ze zdjęć w PDF, nie blokujemy wysyłki/podglądu */ }
       }
+      if (urls.length) photoDataUrls[it._key] = urls
     }
     return photoDataUrls
   }
@@ -394,7 +433,30 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
       else window.open(url, '_blank')
-      toast.success(t('Podgląd wygenerowany ✓ Jeśli karta się nie otworzyła, użyj linku „Pobierz podgląd PDF” poniżej.'))
+      // Zapisujemy podgląd trwale do Dokumentów (Storage + tabela documents),
+      // żeby "chce go widzieć i żeby był zapisany" — nie tylko chwilowy blob
+      // w pamięci przeglądarki, tylko coś, co da się znaleźć później w
+      // Dokumentach klienta/projektu, nawet po zamknięciu karty.
+      const previewPath = `${quote.client_id}/wycena-podglad-${quote.quote_number || quoteId}.pdf`
+      const { error: upErr } = await supabase.storage.from('dokumenty').upload(previewPath, blob, { upsert: true, contentType: 'application/pdf' })
+      if (!upErr) {
+        const { data: { user } } = await supabase.auth.getUser()
+        // Ten sam plik (ta sama ścieżka) generuje się wielokrotnie przy
+        // każdym "Podglądzie" — zamiast mnożyć wpisy w Dokumentach, jeśli już
+        // istnieje, tylko go odświeżamy (bez unikalnego constraintu na
+        // file_path w bazie, więc upsert nie zadziała — sprawdzamy ręcznie).
+        const { data: existingDoc } = await supabase.from('documents').select('id').eq('file_path', previewPath).maybeSingle()
+        if (existingDoc?.id) {
+          await supabase.from('documents').update({ uploaded_by: user?.id, created_at: new Date().toISOString() }).eq('id', existingDoc.id)
+        } else {
+          await supabase.from('documents').insert({
+            client_id: quote.client_id, project_id: quote.project_id,
+            category: 'Wycena (podgląd)', file_path: previewPath, file_name: `${quote.quote_number || 'wycena'}-podglad.pdf`,
+            uploaded_by: user?.id, source: 'manual',
+          })
+        }
+      }
+      toast.success(t('Podgląd wygenerowany i zapisany w Dokumentach ✓ Jeśli karta się nie otworzyła, użyj linku „Pobierz wygenerowany PDF” poniżej.'))
     } catch (e) {
       if (win) win.close()
       toast.error(t('Nie udało się wygenerować podglądu: ') + (e.message || e))
@@ -467,25 +529,37 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <div key={it._key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10, background: C.bg }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ width: 168, flexShrink: 0 }}>
-                <label style={label}>{t("Zdjęcie (duże, widoczne na wycenie)")}</label>
-                {/* Zwykły div (nie <label>) — dzięki temu kliknięcie tylko go
-                    zaznacza (focus), a nie otwiera od razu okna wyboru pliku,
-                    więc zaraz po kliknięciu można od razu wkleić Ctrl+V. */}
-                <div
-                  tabIndex={0}
-                  onPaste={e => handlePastePhoto(it._key, e)}
-                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handlePhoto(it._key, f) }}
-                  onDragOver={e => e.preventDefault()}
-                  style={{ width: 168, height: 168, borderRadius: 10, border: `1.5px dashed ${C.border}`, overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}
-                >
-                  {it.photo_path ? <img src={photoUrl(it.photo_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 30, color: C.muted }}>{busyPhoto === it._key ? '…' : '📷'}</span>}
+                <label style={label}>{t(`Zdjęcia (do ${MAX_PHOTOS_PER_ITEM}, pierwsze = okładka na wycenie)`)}</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {(it.photo_paths || []).map((p, pi) => (
+                    <div key={p} style={{ width: 78, height: 78, borderRadius: 9, overflow: 'hidden', position: 'relative', border: `1px solid ${C.border}`, background: C.white }}>
+                      <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {pi === 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 8, fontWeight: 700, background: 'rgba(10,22,40,.75)', color: '#fff', borderRadius: 4, padding: '1px 4px' }}>{t("okładka")}</span>}
+                      <span onClick={() => removePhoto(it._key, p)} title={t('Usuń zdjęcie')}
+                        style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,.6)', color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', lineHeight: 1 }}>✕</span>
+                    </div>
+                  ))}
+                  {(it.photo_paths || []).length < MAX_PHOTOS_PER_ITEM && (
+                    // Zwykły div (nie <label>) — dzięki temu kliknięcie tylko go
+                    // zaznacza (focus), a nie otwiera od razu okna wyboru pliku,
+                    // więc zaraz po kliknięciu można od razu wkleić Ctrl+V.
+                    <div
+                      tabIndex={0}
+                      onPaste={e => handlePastePhoto(it._key, e)}
+                      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleAddPhoto(it._key, f) }}
+                      onDragOver={e => e.preventDefault()}
+                      style={{ width: 78, height: 78, borderRadius: 9, border: `1.5px dashed ${C.border}`, overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}
+                    >
+                      <span style={{ fontSize: 22, color: C.muted }}>{busyPhoto === it._key ? '…' : '➕'}</span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
                   <label style={{ fontSize: 10, color: C.blue, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
                     {t("📁 wybierz plik")}
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handlePhoto(it._key, e.target.files?.[0])} />
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAddPhoto(it._key, e.target.files?.[0])} />
                   </label>
-                  <span style={{ fontSize: 9, color: C.muted }}>{t("lub kliknij ramkę + Ctrl+V")}</span>
+                  <span style={{ fontSize: 9, color: C.muted }}>{t("lub kliknij pole + i wklej Ctrl+V")}</span>
                 </div>
               </div>
               <div style={{ flex: 2, minWidth: 160 }}>

@@ -94,11 +94,16 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   y += 6
 
   const photoSize = 42
+  const thumbSize = 11
   const pageBottom = 278
 
   for (const r of rows) {
+    const photos = photoDataUrls[r._key] || []
+    const cover = photos[0]
+    const extraPhotos = photos.slice(1, 4) // do 3 dodatkowych miniatur pod okładką
+    const hasExtra = extraPhotos.length > 0
     const specLines = r.specification ? doc.splitTextToSize(r.specification, right - left - photoSize - 14) : []
-    const blockHeight = Math.max(photoSize + 6, 16 + specLines.length * 4 + 14)
+    const blockHeight = Math.max(photoSize + 6 + (hasExtra ? thumbSize + 4 : 0), 16 + specLines.length * 4 + 14)
 
     if (y + blockHeight > pageBottom) { doc.addPage(); y = 20 }
 
@@ -106,13 +111,21 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     doc.setLineWidth(0.3)
     doc.rect(left, y, right - left, blockHeight)
 
-    const img = photoDataUrls[r._key]
-    if (img) {
-      try { doc.addImage(img, 'JPEG', left + 3, y + 3, photoSize, photoSize, undefined, 'FAST') } catch { /* ignore malformed image */ }
+    if (cover) {
+      try { doc.addImage(cover, 'JPEG', left + 3, y + 3, photoSize, photoSize, undefined, 'FAST') } catch { /* ignore malformed image */ }
     } else {
       doc.setDrawColor(215, 215, 215)
       doc.setLineWidth(0.3)
       doc.rect(left + 3, y + 3, photoSize, photoSize)
+    }
+
+    if (hasExtra) {
+      let tx = left + 3
+      const ty2 = y + 3 + photoSize + 2
+      for (const ex of extraPhotos) {
+        try { doc.addImage(ex, 'JPEG', tx, ty2, thumbSize, thumbSize, undefined, 'FAST') } catch { /* ignore malformed image */ }
+        tx += thumbSize + 2
+      }
     }
 
     const textX = left + photoSize + 10
