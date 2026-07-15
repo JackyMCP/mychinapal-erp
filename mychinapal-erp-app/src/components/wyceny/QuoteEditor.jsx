@@ -118,6 +118,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setBusyPhoto(null)
     if (error) { toast.error(t('Nie udało się wgrać zdjęcia: ') + error.message); return }
     setItem(key, { photo_path: path })
+    // Jeśli nazwa towaru jeszcze nie jest wpisana — spróbuj ją zasugerować
+    // automatycznie na podstawie samego zdjęcia (AI), zamiast czekać, aż
+    // ktoś kliknie "Sugeruj AI" ręcznie.
+    const current = items.find(i => i._key === key)
+    if (!current?.name) handleAiSuggest(key, path)
   }
 
   const photoUrl = (path) => path ? photoUrls[path] : null
@@ -157,23 +162,36 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setFetchingRate(false)
   }
 
-  const handleAiSuggest = async (key) => {
+  const handleAiSuggest = async (key, photoPathOverride = null) => {
     const it = items.find(i => i._key === key)
-    if (!it?.name) { toast.error(t('Wpisz najpierw nazwę towaru.')); return }
+    const photoPath = photoPathOverride || it?.photo_path
+    if (!it?.name && !photoPath) { toast.error(t('Dodaj zdjęcie albo wpisz nazwę towaru, żeby AI mogło coś zasugerować.')); return }
     setBusyAi(key)
     try {
+      // Świeży podpisany URL zamiast korzystania z ewentualnie jeszcze
+      // niegotowego cache'u photoUrls (zdjęcie mogło dopiero co się wgrać).
+      let photo_url = null
+      if (photoPath) {
+        const { data: signed } = await supabase.storage.from('dokumenty').createSignedUrl(photoPath, 300)
+        photo_url = signed?.signedUrl || null
+      }
       const { data, error } = await supabase.functions.invoke('suggest-customs-code', {
-        body: { name: it.name, specification: it.specification, photo_url: photoUrl(it.photo_path) },
+        body: { name: it?.name || '', specification: it?.specification || '', photo_url },
       })
       if (error) throw error
-      if (data?.hs_code) {
-        setItem(key, { hs_code: data.hs_code, duty_rate_percent: data.duty_rate_percent ?? it.duty_rate_percent, ai_suggestion: data })
-        toast.success(t('Sugestia AI wstawiona — sprawdź i potwierdź w ISZTAR przed wysyłką.'))
+      const patch = {}
+      if (data?.hs_code) patch.hs_code = data.hs_code
+      if (data?.duty_rate_percent !== undefined && data?.duty_rate_percent !== null) patch.duty_rate_percent = data.duty_rate_percent
+      if (!it?.name && data?.name) patch.name = data.name
+      if (!it?.specification && data?.specification) patch.specification = data.specification
+      if (Object.keys(patch).length) {
+        setItem(key, { ...patch, ai_suggestion: data })
+        toast.success(t('Sugestia AI wstawiona — sprawdź i potwierdź (kod celny w ISZTAR) przed wysyłką.'))
       } else {
-        toast.error(t('AI nie zwróciło sugestii — wpisz kod ręcznie.'))
+        toast.error(t('AI nie zwróciło żadnej sugestii — uzupełnij dane ręcznie.'))
       }
     } catch (e) {
-      toast.error(t('Funkcja sugestii AI nie jest jeszcze wdrożona (wymaga edge function „suggest-customs-code”) — wpisz kod ręcznie na razie.'))
+      toast.error(t('Funkcja sugestii AI nie jest jeszcze wdrożona (wymaga edge function „suggest-customs-code”) — wpisz dane ręcznie na razie.'))
     }
     setBusyAi(null)
   }
@@ -256,8 +274,21 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           } catch { /* brak zdjęcia w PDF, nie blokujemy wysyłki */ }
         }
       }
-      const plnInfo = quote.currency === 'CNY' ? computePlnConversion(totals.finalPrice, { nbpRate: quote.nbp_rate, commissionPercent: quote.bank_commission_percent }) : null
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls, plnInfo })
+      // Wszystkie pozycje/ceny w `rows`/`totals` są policzone w CNY (cena
+      // fabryczna EXW zawsze jest w CNY). Jeśli klient ma zobaczyć cenę w PLN
+      // (wyceny zaczynane od razu przez zespół PL), trzeba przeliczyć każdą
+      // pozycję i sumę wg kursu NBP+prowizja, a cenę bazową w CNY pokazać już
+      // tylko jako pomocniczą — i odwrotnie, gdy walutą wyceny jest CNY.
+      const plnConv = computePlnConversion(totals.finalPrice, { nbpRate: quote.nbp_rate, commissionPercent: quote.bank_commission_percent })
+      let sendRows = rows, sendTotals = totals, auxPrice = null
+      if (quote.currency === 'PLN' && plnConv.effectiveRate) {
+        sendRows = rows.map(r => ({ ...r, finalPrice: r.finalPrice * plnConv.effectiveRate }))
+        sendTotals = { ...totals, finalPrice: plnConv.plnAmount }
+        auxPrice = { amount: totals.finalPrice, currency: 'CNY', note: t('cena bazowa od zespołu chińskiego') }
+      } else if (quote.currency === 'CNY' && plnConv.plnAmount) {
+        auxPrice = { amount: plnConv.plnAmount, currency: 'PLN', note: t('kurs orientacyjny NBP + prowizja banku') }
+      }
+      const blob = await generateQuotePdf({ quote, client, contact, company, rows: sendRows, totals: sendTotals, photoDataUrls, auxPrice })
       const pdfPath = `${quote.client_id}/wyceny/${quoteId}/${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -305,13 +336,27 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         {items.map((it) => (
           <div key={it._key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10, background: C.bg }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ width: 74, flexShrink: 0 }} tabIndex={0} onPaste={e => handlePastePhoto(it._key, e)} title={t('Kliknij, żeby zaznaczyć, potem Ctrl+V (Cmd+V) żeby wkleić zrzut ekranu — albo kliknij w ramkę, żeby wybrać plik.')}>
-                <label style={label}>{t("Zdjęcie")}</label>
-                <label style={{ width: 68, height: 68, borderRadius: 8, border: `1.5px dashed ${C.border}`, cursor: 'pointer', overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {it.photo_path ? <img src={photoUrl(it.photo_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 20, color: C.muted }}>{busyPhoto === it._key ? '…' : '📷'}</span>}
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handlePhoto(it._key, e.target.files?.[0])} />
-                </label>
-                <div style={{ fontSize: 8, color: C.muted, marginTop: 3, lineHeight: 1.3 }}>{t("kliknij tu, potem Ctrl+V żeby wkleić")}</div>
+              <div style={{ width: 168, flexShrink: 0 }}>
+                <label style={label}>{t("Zdjęcie (duże, widoczne na wycenie)")}</label>
+                {/* Zwykły div (nie <label>) — dzięki temu kliknięcie tylko go
+                    zaznacza (focus), a nie otwiera od razu okna wyboru pliku,
+                    więc zaraz po kliknięciu można od razu wkleić Ctrl+V. */}
+                <div
+                  tabIndex={0}
+                  onPaste={e => handlePastePhoto(it._key, e)}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handlePhoto(it._key, f) }}
+                  onDragOver={e => e.preventDefault()}
+                  style={{ width: 168, height: 168, borderRadius: 10, border: `1.5px dashed ${C.border}`, overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}
+                >
+                  {it.photo_path ? <img src={photoUrl(it.photo_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 30, color: C.muted }}>{busyPhoto === it._key ? '…' : '📷'}</span>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                  <label style={{ fontSize: 10, color: C.blue, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                    {t("📁 wybierz plik")}
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handlePhoto(it._key, e.target.files?.[0])} />
+                  </label>
+                  <span style={{ fontSize: 9, color: C.muted }}>{t("lub kliknij ramkę + Ctrl+V")}</span>
+                </div>
               </div>
               <div style={{ flex: 2, minWidth: 160 }}>
                 <label style={label}>{t("Nazwa towaru")}</label>
@@ -379,7 +424,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ background: C.bg }}>
-                {['Pozycja', 'Towar', 'Transport (udział)', 'Wart. celna', 'Cło', 'Koszt razem', 'Cena dla klienta'].map(h => (
+                {['Pozycja', 'Towar', 'Transport (udział)', 'Wart. celna', 'Cło', 'Koszt razem', 'Cena dla klienta (CNY)'].map(h => (
                   <th key={h} style={{ textAlign: 'right', padding: '6px 8px', fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{t(h)}</th>
                 ))}
               </tr>
@@ -405,16 +450,17 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.customsValue, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.dutyAmount, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.landedCost, 2)}</td>
-                <td style={{ padding: '8px', textAlign: 'right', color: C.blue, fontSize: 13 }}>{fmt(totalsCalc.totals.finalPrice, 2)} {quote.currency}</td>
+                <td style={{ padding: '8px', textAlign: 'right', color: C.blue, fontSize: 13 }}>{fmt(totalsCalc.totals.finalPrice, 2)} CNY</td>
               </tr>
             </tfoot>
           </table>
         </div>
-        <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Ten rozkład (marża, cło, koszt towaru osobno) widzi tylko zespół wewnętrzny — na PDF do klienta trafia wyłącznie kolumna „Cena dla klienta”.")}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Ten rozkład (marża, cło, koszt towaru osobno) widzi tylko zespół wewnętrzny — jest zawsze liczony w CNY, bo to waluta ceny fabrycznej. Na PDF do klienta trafia wyłącznie cena końcowa, w walucie wyceny wybranej niżej.")}</div>
       </div>
 
-      {quote.currency === 'CNY' && (() => {
+      {(() => {
         const { effectiveRate, plnAmount } = computePlnConversion(totalsCalc.totals.finalPrice, { nbpRate: quote.nbp_rate, commissionPercent: quote.bank_commission_percent })
+        const isPlnPrimary = quote.currency === 'PLN'
         return (
           <div style={card}>
             <div style={sectionTitle}>💱 {t("Przelicznik CNY → PLN (kurs NBP + prowizja banku)")}</div>
@@ -441,9 +487,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 9, background: C.blight, border: `1px solid ${C.bmid}` }}>
-              <span style={{ fontSize: 11.5, color: C.text2 }}>{t("Cena dla klienta w złotówkach (orientacyjnie)")}</span>
+              <span style={{ fontSize: 11.5, color: C.text2 }}>{isPlnPrimary ? t("Cena dla klienta w złotówkach — to jest cena wyceny") : t("Cena dla klienta w złotówkach (orientacyjnie)")}</span>
               <span style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800, color: C.blue }}>{plnAmount ? `${fmt(plnAmount, 2)} PLN` : '—'}</span>
             </div>
+            {isPlnPrimary && (
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 8 }}>{t("Cena bazowa od zespołu chińskiego (pomocniczo):")} <strong>{fmt(totalsCalc.totals.finalPrice, 2)} CNY</strong></div>
+            )}
             <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Kurs zapisuje się na wycenie w momencie zapisu/wysyłki — nie zmienia się już potem samoczynnie. BNP Paribas nie udostępnia publicznego API, dlatego bazujemy na oficjalnym kursie średnim NBP i doliczamy prowizję banku ręcznie.")}</div>
           </div>
         )

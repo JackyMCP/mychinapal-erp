@@ -77,7 +77,12 @@ export default function Wyceny() {
     const quote_number = nextQuoteNumber(quotes.map(q => q.quote_number))
     const { data, error } = await supabase.from('quotes').insert({
       quote_number, client_id: pickClient, project_id: pickProject,
-      status: startAs === 'pl' ? 'do_marzy_pl' : 'szkic_cn', created_by: user?.id,
+      status: startAs === 'pl' ? 'do_marzy_pl' : 'szkic_cn',
+      // Wyceny zaczynane od razu przez zespół PL są od razu w PLN (waluta
+      // rozmowy z polskim klientem); cena bazowa w CNY od zespołu chińskiego
+      // pokazuje się wtedy pomocniczo w przeliczniku NBP w edytorze.
+      currency: startAs === 'pl' ? 'PLN' : 'CNY',
+      created_by: user?.id,
       notes: t('1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.'),
     }).select().single()
     setCreating(false)

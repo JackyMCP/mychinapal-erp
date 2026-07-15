@@ -1,5 +1,4 @@
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 const navy = [10, 22, 40]
 const gold = [180, 140, 40]
@@ -16,7 +15,7 @@ async function fetchAsDataUrl(url) {
 // rozbicia na koszt towaru/transport/cło/marżę, które widzi tylko zespół
 // wewnętrzny w aplikacji). Wzorowane na istniejącym generatorze faktur
 // (jsPDF + autotable, granatowo-złoty branding MyChinaPal).
-export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {}, plnInfo = null }) {
+export async function generateQuotePdf({ quote, client, contact, company, rows, totals, photoDataUrls = {}, auxPrice = null }) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 14
   const right = 196
@@ -83,35 +82,75 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   }
   y += 8
 
-  // Tabela pozycji — miniatura zdjęcia (jeśli jest), nazwa+specyfikacja, ilość,
-  // czas produkcji, TYLKO cena końcowa (bez marży/kosztu/cła osobno).
-  const photoCol = 18
-  const body = rows.map((r) => [
-    '', `${r.name || ''}${r.specification ? `\n${r.specification}` : ''}`,
-    `${r.qty} ${r.unit || ''}`, r.production_days ? `${r.production_days} d` : '—',
-    r.cbm ? `${r.cbm} m³` : (r.container_note || '—'),
-    `${Number(r.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${quote.currency || 'CNY'}`,
-  ])
+  // Pozycje towaru — każda jako osobny blok z DUŻYM zdjęciem (to wycena, którą
+  // ogląda klient, więc zdjęcie produktu ma być czytelne, nie ledwo widoczna
+  // miniatura) + nazwą, specyfikacją, ilością i ceną końcową (bez rozbicia na
+  // marżę/koszt/cło — to widzi tylko zespół wewnętrzny w aplikacji).
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(...navy)
+  doc.text('ITEMS / POZYCJE TOWARU', left, y)
+  doc.setTextColor(20, 20, 20)
+  y += 6
 
-  autoTable(doc, {
-    startY: y,
-    head: [['Photo', 'Product / Towar', 'Qty', 'Production time', 'CBM / Container', `Price / Cena (${quote.currency || 'CNY'})`]],
-    body,
-    styles: { fontSize: 8, cellPadding: 2.4, minCellHeight: photoCol + 4, valign: 'middle' },
-    headStyles: { fillColor: navy, textColor: 255 },
-    columnStyles: { 0: { cellWidth: photoCol + 6 }, 2: { cellWidth: 16, halign: 'right' }, 3: { cellWidth: 26, halign: 'center' }, 4: { cellWidth: 30, halign: 'center' }, 5: { cellWidth: 34, halign: 'right' } },
-    didDrawCell: (data) => {
-      if (data.column.index === 0 && data.row.section === 'body') {
-        const r = rows[data.row.index]
-        const img = r && photoDataUrls[r._key]
-        if (img) {
-          try { doc.addImage(img, 'JPEG', data.cell.x + 2, data.cell.y + 2, photoCol, photoCol, undefined, 'FAST') } catch { /* ignore */ }
-        }
-      }
-    },
-  })
+  const photoSize = 42
+  const pageBottom = 278
 
-  y = doc.lastAutoTable.finalY + 8
+  for (const r of rows) {
+    const specLines = r.specification ? doc.splitTextToSize(r.specification, right - left - photoSize - 14) : []
+    const blockHeight = Math.max(photoSize + 6, 16 + specLines.length * 4 + 14)
+
+    if (y + blockHeight > pageBottom) { doc.addPage(); y = 20 }
+
+    doc.setDrawColor(225, 227, 231)
+    doc.setLineWidth(0.3)
+    doc.rect(left, y, right - left, blockHeight)
+
+    const img = photoDataUrls[r._key]
+    if (img) {
+      try { doc.addImage(img, 'JPEG', left + 3, y + 3, photoSize, photoSize, undefined, 'FAST') } catch { /* ignore malformed image */ }
+    } else {
+      doc.setDrawColor(215, 215, 215)
+      doc.setLineWidth(0.3)
+      doc.rect(left + 3, y + 3, photoSize, photoSize)
+    }
+
+    const textX = left + photoSize + 10
+    let ty = y + 7
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(20, 20, 20)
+    doc.text(r.name || '—', textX, ty)
+    ty += 5.5
+
+    if (specLines.length) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(100, 100, 100)
+      doc.text(specLines, textX, ty)
+      ty += specLines.length * 4
+      doc.setTextColor(20, 20, 20)
+    }
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    const metaBits = [`Qty / Ilość: ${r.qty} ${r.unit || ''}`]
+    if (r.production_days) metaBits.push(`Production / Produkcja: ${r.production_days} d`)
+    if (r.cbm) metaBits.push(`CBM: ${r.cbm} m³`)
+    else if (r.container_note) metaBits.push(r.container_note)
+    doc.text(metaBits.join('   ·   '), textX, y + blockHeight - 14)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(...gold)
+    doc.text(`${Number(r.finalPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} ${quote.currency || 'CNY'}`, right - 3, y + blockHeight - 6, { align: 'right' })
+    doc.setTextColor(20, 20, 20)
+
+    y += blockHeight + 4
+  }
+
+  if (y > 265) { doc.addPage(); y = 20 }
+  y += 4
   doc.setDrawColor(...navy)
   doc.setLineWidth(0.4)
   doc.line(left, y, right, y)
@@ -124,10 +163,12 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   doc.setTextColor(20, 20, 20)
   y += 6
 
-  if (plnInfo && plnInfo.plnAmount) {
+  if (auxPrice && auxPrice.amount) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    doc.text(`(≈ ${plnInfo.plnAmount.toLocaleString('pl-PL', { minimumFractionDigits: 2 })} PLN, kurs orientacyjny NBP+prowizja banku)`, right, y, { align: 'right' })
+    const locale = auxPrice.currency === 'PLN' ? 'pl-PL' : 'en-US'
+    const amt = Number(auxPrice.amount).toLocaleString(locale, { minimumFractionDigits: 2 })
+    doc.text(`(≈ ${amt} ${auxPrice.currency}${auxPrice.note ? ', ' + auxPrice.note : ''})`, right, y, { align: 'right' })
     y += 6
   }
   y += 6
