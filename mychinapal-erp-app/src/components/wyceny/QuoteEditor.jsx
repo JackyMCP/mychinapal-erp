@@ -117,7 +117,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!file) return
     if (isFileTooBig(file)) { toast.error(t(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`)); return }
     setBusyPhoto(key)
-    const path = `${quote.client_id}/wyceny/${quoteId}/${crypto.randomUUID()}-${safeFileName(file.name)}`
+    // Płaska ścieżka client_id/plik — dokładnie ten sam wzorzec co reszta
+    // aplikacji (Czat, ProjectFiles, TabCzat...). Zagnieżdżony podfolder
+    // "wyceny/quoteId/" łamał regułę dostępu do magazynu (upload przechodził,
+    // ale odczyt/signed URL zwracał "Object not found").
+    const path = `${quote.client_id}/wycena-${quoteId}-${crypto.randomUUID()}-${safeFileName(file.name)}`
     try {
       const { error } = await supabase.storage.from('dokumenty').upload(path, file)
       if (error) { toast.error(t('Nie udało się wgrać zdjęcia: ') + error.message); return }
@@ -310,7 +314,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         auxPrice = { amount: plnConv.plnAmount, currency: 'PLN', note: t('kurs orientacyjny NBP + prowizja banku') }
       }
       const blob = await generateQuotePdf({ quote, client, contact, company, rows: sendRows, totals: sendTotals, photoDataUrls, auxPrice })
-      const pdfPath = `${quote.client_id}/wyceny/${quoteId}/${quote.quote_number || quoteId}.pdf`
+      const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
       const { data: { user } } = await supabase.auth.getUser()
