@@ -239,8 +239,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   }
 
   const [fetchingTransportRate, setFetchingTransportRate] = useState(false)
-  const handleFetchTransportRate = async () => {
-    const cur = quote.transport_currency || 'CNY'
+  // Przyjmuje opcjonalnie jawny kod waluty — potrzebne przy zmianie selecta
+  // "Waluta transportu", bo w tym samym ticku `quote.transport_currency` w
+  // stanie jest jeszcze STARĄ wartością (setQ jest asynchroniczny), więc
+  // czytanie go z `quote` dałoby kurs dla poprzedniej waluty.
+  const handleFetchTransportRate = async (currencyOverride = null) => {
+    const cur = currencyOverride || quote.transport_currency || 'CNY'
     if (cur === 'PLN') { toast.error(t('Transport w PLN nie wymaga przeliczenia kursu.')); return }
     setFetchingTransportRate(true)
     try {
@@ -251,6 +255,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       toast.error(t('Nie udało się pobrać kursu z NBP: ') + (e.message || e))
     }
     setFetchingTransportRate(false)
+  }
+
+  // KLUCZOWE: przy zmianie waluty transportu trzeba od razu skasować stary
+  // kurs (był dla POPRZEDNIEJ waluty!) i pobrać nowy — inaczej cena liczy się
+  // dalej po nieaktualnym kursie innej waluty (np. 445 USD × stary kurs CNY
+  // ≈ 0,51 = 227 PLN zamiast ≈ 1780 PLN). To był realny, zgłoszony błąd.
+  const handleTransportCurrencyChange = (newCurrency) => {
+    setQ({ transport_currency: newCurrency, transport_rate: null, transport_rate_date: null })
+    if (newCurrency !== 'PLN') handleFetchTransportRate(newCurrency)
   }
 
   // Automatyczne pobranie kursów NBP przy otwarciu wyceny, jeśli jeszcze nie
@@ -612,7 +625,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
           <div><label style={label}>{t("Szacowany transport")}</label><input type="text" inputMode="decimal" style={field} value={quote.transport_cost || ''} onChange={e => setQ({ transport_cost: e.target.value })} /></div>
           <div><label style={label}>{t("Waluta transportu")}</label>
-            <select style={field} value={quote.transport_currency || 'CNY'} onChange={e => setQ({ transport_currency: e.target.value })}>
+            <select style={field} value={quote.transport_currency || 'CNY'} onChange={e => handleTransportCurrencyChange(e.target.value)}>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>

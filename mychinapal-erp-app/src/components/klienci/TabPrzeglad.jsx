@@ -44,6 +44,26 @@ export default function TabPrzeglad({ client, marza, contacts, projects, progres
     if (data && onClientSaved) onClientSaved(data)
   }
 
+  // Zmiana nazwy klienta — wcześniej nie było nigdzie takiej opcji w całej
+  // aplikacji (stąd "nie działa": bo jej po prostu nie było). Kliknięcie
+  // nazwy w karcie "Dane kontrahenta" otwiera edycję inline.
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(client.name || '')
+  const [savingName, setSavingName] = useState(false)
+  useEffect(() => { setNameDraft(client.name || ''); setEditingName(false) }, [client.id])
+
+  const handleSaveName = async () => {
+    const trimmed = nameDraft.trim()
+    if (!trimmed) { toast.error(t('Nazwa nie może być pusta.')); return }
+    setSavingName(true)
+    const { data, error } = await supabase.from('clients').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('id', client.id).select().single()
+    setSavingName(false)
+    if (error) { toast.error(t('Nie udało się zapisać nazwy: ') + error.message); return }
+    setEditingName(false)
+    if (data && onClientSaved) onClientSaved(data)
+    toast.success(t('Nazwa zaktualizowana ✓'))
+  }
+
   const przychod = Number(marza?.przychod) || 0
   const marzaVal = Number(marza?.marza) || 0
   const marzaPct = Number(marza?.marza_pct) || 0
@@ -71,6 +91,22 @@ export default function TabPrzeglad({ client, marza, contacts, projects, progres
 
         <div style={{ ...card, marginBottom: 14 }}>
           <div style={secTitle}>ℹ️ {t("Dane kontrahenta")}</div>
+          <div style={infoRow}>
+            <span style={{ color: C.muted }}>{t("Nazwa firmy")}</span>
+            {editingName ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input value={nameDraft} onChange={e => setNameDraft(e.target.value)} autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setEditingName(false); setNameDraft(client.name || '') } }}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, width: 170 }} />
+                <span onClick={handleSaveName} title={t('Zapisz')} style={{ cursor: 'pointer', color: C.green, fontWeight: 700 }}>{savingName ? '…' : '✓'}</span>
+                <span onClick={() => { setEditingName(false); setNameDraft(client.name || '') }} title={t('Anuluj')} style={{ cursor: 'pointer', color: C.red, fontWeight: 700 }}>✕</span>
+              </div>
+            ) : (
+              <span style={{ fontWeight: 600, cursor: 'pointer' }} onClick={() => setEditingName(true)} title={t('Kliknij, aby edytować nazwę')}>
+                {client.name} <span style={{ fontSize: 10, color: C.blue }}>✏️</span>
+              </span>
+            )}
+          </div>
           <div style={infoRow}><span style={{ color: C.muted }}>{t("NIP")}</span><span style={{ fontWeight: 600 }}>{client.nip || '—'}</span></div>
           <div style={infoRow}><span style={{ color: C.muted }}>{t("KRS")}</span><span style={{ fontWeight: 600 }}>{client.krs || '—'}</span></div>
           <div style={infoRow}><span style={{ color: C.muted }}>{t("Adres")}</span><span style={{ fontWeight: 600, textAlign: 'right' }}>{client.address || '—'}</span></div>
