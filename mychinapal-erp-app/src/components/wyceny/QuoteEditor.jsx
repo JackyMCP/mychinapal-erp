@@ -6,6 +6,7 @@ import { useUI } from '../../lib/ui'
 import useIsMobile from '../../lib/useIsMobile'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { computeQuoteTotals, toNum, STATUS_LABELS } from './calc'
+import { describeHsCode } from './hsChapters'
 import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 
@@ -13,12 +14,13 @@ const MAX_PHOTOS_PER_ITEM = 6
 
 const blankItem = () => ({
   _key: crypto.randomUUID(), id: null,
-  name: '', specification: '', qty: 1, unit: 'set', unit_price_cny: 0,
+  name: '', specification: '', qty: 1, unit: 'szt.', unit_price_cny: 0,
   cbm: '', weight_kg: '', container_note: '', production_days: '',
   hs_code: '', duty_rate_percent: '', photo_paths: [], ai_suggestion: null,
 })
 
 const CURRENCIES = ['PLN', 'CNY', 'USD', 'EUR']
+const UNIT_OPTIONS = ['szt.', 'zestaw', 'kpl.', 'para', 'opak.', 'm²', 'm³', 'kg', 'mb']
 
 const field = { border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 9px', fontSize: 11.5, width: '100%', outline: 'none', boxSizing: 'border-box' }
 const label = { fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em', display: 'block', marginBottom: 4 }
@@ -39,6 +41,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [saving, setSaving] = useState(false)
   const [busyPhoto, setBusyPhoto] = useState(null)
   const [busyAi, setBusyAi] = useState(null)
+  const [aiPrompts, setAiPrompts] = useState({})
+  const [busyAiRefine, setBusyAiRefine] = useState(null)
   const [sending, setSending] = useState(false)
   const [photoUrls, setPhotoUrls] = useState({})
   const [previewPdfUrl, setPreviewPdfUrl] = useState(null)
@@ -321,6 +325,42 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setBusyAi(null)
   }
 
+  // Dowolne polecenie w naturalnym języku ("skróć nazwę", "przetłumacz na
+  // angielski", "dodaj wymiary") stosowane do nazwy/specyfikacji pozycji —
+  // osobna edge function od sugestii kodu celnego.
+  const handleAiRefine = async (key) => {
+    const it = items.find(i => i._key === key)
+    const instruction = (aiPrompts[key] || '').trim()
+    if (!instruction) return
+    setBusyAiRefine(key)
+    try {
+      const { data, error } = await supabase.functions.invoke('refine-quote-item', {
+        body: { name: it?.name || '', specification: it?.specification || '', instruction },
+      })
+      if (error) throw error
+      const patch = {}
+      if (data?.name !== undefined && data?.name !== null) patch.name = data.name
+      if (data?.specification !== undefined && data?.specification !== null) patch.specification = data.specification
+      if (Object.keys(patch).length) {
+        setItem(key, patch)
+        setAiPrompts(prev => ({ ...prev, [key]: '' }))
+        toast.success(t('Zastosowano zmianę AI — sprawdź wynik.'))
+      } else {
+        toast.error(t('AI nie zwróciło zmiany — spróbuj innego polecenia.'))
+      }
+    } catch (e) {
+      let detail = e?.message || String(e)
+      try {
+        if (e?.context && typeof e.context.json === 'function') {
+          const body = await e.context.json()
+          if (body?.error) detail = body.error
+        }
+      } catch { /* zostaje e.message */ }
+      toast.error(t('Błąd AI: ') + detail)
+    }
+    setBusyAiRefine(null)
+  }
+
   const handleSave = async (silent = false) => {
     setSaving(true)
     const { error: qErr } = await supabase.from('quotes').update({
@@ -577,18 +617,42 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                   <span style={{ fontSize: 9, color: C.muted }}>{t("lub kliknij pole + i wklej Ctrl+V")}</span>
                 </div>
               </div>
-              <div style={{ flex: 2, minWidth: 160 }}>
+              <div style={{ flex: 2, minWidth: 220 }}>
                 <label style={label}>{t("Nazwa towaru")}</label>
-                <input style={field} value={it.name} onChange={e => setItem(it._key, { name: e.target.value })} placeholder={t("np. QINGSHEF (Duży) 轻奢F（大）")} />
+                <textarea rows={2} style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.4, minHeight: 60 }}
+                  value={it.name} onChange={e => setItem(it._key, { name: e.target.value })} placeholder={t("np. QINGSHEF (Duży) 轻奢F（大）")} />
               </div>
-              <div style={{ flex: 2, minWidth: 160 }}>
+              <div style={{ flex: 2, minWidth: 220 }}>
                 <label style={label}>{t("Specyfikacja")}</label>
-                <input style={field} value={it.specification} onChange={e => setItem(it._key, { specification: e.target.value })} placeholder={t("np. 96m², dwa pokoje, jedna łazienka, taras")} />
+                <textarea rows={2} style={{ ...field, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.4, minHeight: 60 }}
+                  value={it.specification} onChange={e => setItem(it._key, { specification: e.target.value })} placeholder={t("np. 96m², dwa pokoje, jedna łazienka, taras")} />
+              </div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <label style={label}>{t("✨ Poproś AI o zmianę nazwy/specyfikacji (opcjonalnie)")}</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input style={{ ...field, flex: 1, minWidth: 200 }} value={aiPrompts[it._key] || ''}
+                  onChange={e => setAiPrompts(prev => ({ ...prev, [it._key]: e.target.value }))}
+                  placeholder={t("np. „skróć nazwę”, „przetłumacz na angielski”, „dodaj wymiary”")} />
+                <button onClick={() => handleAiRefine(it._key)} disabled={busyAiRefine === it._key || !aiPrompts[it._key]?.trim()}
+                  style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', opacity: (busyAiRefine === it._key || !aiPrompts[it._key]?.trim()) ? .6 : 1 }}>
+                  {busyAiRefine === it._key ? t('Modyfikuję…') : t('✨ Zastosuj')}
+                </button>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(7,1fr)', gap: 8, marginTop: 10 }}>
               <div><label style={label}>{t("Ilość")}</label><input type="text" inputMode="decimal" style={field} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} /></div>
-              <div><label style={label}>{t("Jednostka")}</label><input style={field} value={it.unit} onChange={e => setItem(it._key, { unit: e.target.value })} /></div>
+              <div>
+                <label style={label}>{t("Jednostka")}</label>
+                <select style={field} value={UNIT_OPTIONS.includes(it.unit) ? it.unit : '__custom'}
+                  onChange={e => setItem(it._key, { unit: e.target.value === '__custom' ? '' : e.target.value })}>
+                  {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                  <option value="__custom">{t('Inne…')}</option>
+                </select>
+                {!UNIT_OPTIONS.includes(it.unit) && (
+                  <input style={{ ...field, marginTop: 4 }} value={it.unit} onChange={e => setItem(it._key, { unit: e.target.value })} placeholder={t('wpisz jednostkę')} />
+                )}
+              </div>
               <div><label style={label}>{t("Cena EXW (CNY/szt.)")}</label><input type="text" inputMode="decimal" style={field} value={it.unit_price_cny} onChange={e => setItem(it._key, { unit_price_cny: e.target.value })} /></div>
               <div><label style={label}>{t("CBM (m³)")}</label><input type="text" inputMode="decimal" style={field} value={it.cbm} onChange={e => setItem(it._key, { cbm: e.target.value })} /></div>
               <div><label style={label}>{t("Waga (kg)")}</label><input type="text" inputMode="decimal" style={field} value={it.weight_kg} onChange={e => setItem(it._key, { weight_kg: e.target.value })} /></div>
@@ -608,6 +672,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
               )}
               <span onClick={() => removeItem(it._key)} style={{ fontSize: 11, color: C.red, cursor: 'pointer', whiteSpace: 'nowrap', justifySelf: 'end' }}>🗑 {t("Usuń pozycję")}</span>
             </div>
+            {it.hs_code && describeHsCode(it.hs_code) && (
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                {t("Dział")} {String(it.hs_code).replace(/\D/g, '').slice(0, 2)}: <strong>{t(describeHsCode(it.hs_code))}</strong> {t("(orientacyjnie, wg pierwszych cyfr kodu — zawsze zweryfikuj dokładny kod w ISZTAR)")}
+              </div>
+            )}
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
