@@ -19,6 +19,7 @@ export const MODULES = [
   { path: '/logistyka', label: 'Logistyka & Import', icon: '🚢' },
   { path: '/poczta', label: 'Poczta', icon: '✉️' },
   { path: '/czat', label: 'Czat wewnętrzny', icon: '💬' },
+  { path: '/wyceny', label: 'Wyceny', icon: '📝' },
   { path: '/raporty', label: 'Raporty & Analizy', icon: '📊' },
   { path: '/ustawienia', label: 'Ustawienia', icon: '⚙️' },
 ]

@@ -9,7 +9,7 @@ const card = { background: C.white, border: `1px solid ${C.border}`, borderRadiu
 const label = { display: 'block', fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', marginBottom: 6 }
 const input = { width: '100%', border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 12px', fontSize: 12.5, boxSizing: 'border-box' }
 
-const KEYS = ['company_name', 'company_nip', 'company_address', 'company_bank_account', 'ksef_token', 'ksef_env', 'ksef_auto_send']
+const KEYS = ['company_name', 'company_nip', 'company_krs', 'company_regon', 'company_address', 'company_bank_account', 'ksef_token', 'ksef_env', 'ksef_auto_send']
 
 export default function TabKSeF({ invoices, onCompanySettingsChanged }) {
   const { t } = useLang()
@@ -50,6 +50,8 @@ export default function TabKSeF({ invoices, onCompanySettingsChanged }) {
         <div style={fieldWrap}>
           <div><label style={label}>{t("Nazwa firmy")}</label><input style={input} value={settings.company_name || ''} onChange={e => set('company_name', e.target.value)} /></div>
           <div><label style={label}>{t("NIP firmy")}</label><input style={input} value={settings.company_nip || ''} onChange={e => set('company_nip', e.target.value)} /></div>
+          <div><label style={label}>{t("KRS")}</label><input style={input} value={settings.company_krs || ''} onChange={e => set('company_krs', e.target.value)} /></div>
+          <div><label style={label}>{t("REGON")}</label><input style={input} value={settings.company_regon || ''} onChange={e => set('company_regon', e.target.value)} /></div>
           <div><label style={label}>{t("Adres")}</label><input style={input} value={settings.company_address || ''} onChange={e => set('company_address', e.target.value)} /></div>
           <div><label style={label}>{t("Numer konta bankowego")}</label><input style={input} value={settings.company_bank_account || ''} onChange={e => set('company_bank_account', e.target.value)} /></div>
         </div>
