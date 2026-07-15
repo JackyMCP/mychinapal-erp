@@ -10,26 +10,38 @@
 // Transport jest jeden dla całej wyceny, więc rozkładamy go na pozycje
 // proporcjonalnie do wartości towaru — tak liczy się to też przy realnym
 // rozliczeniu celnym (wartość celna = wartość transakcyjna + fracht).
+// Bezpieczne parsowanie liczb wpisywanych ręcznie przez użytkownika. Pola
+// liczbowe w tej aplikacji bywają wpisywane z przecinkiem jako separatorem
+// dziesiętnym (polska klawiatura/locale — np. "2,7"), a zwykłe Number("2,7")
+// zwraca NaN. To był realny powód, dla którego wpisanie np. marży czasem
+// "nic nie zmieniało" — NaN wpadał w `|| 0` i po cichu liczyło się tak, jakby
+// pole było puste. toNum() zawsze zwraca poprawną liczbę (albo 0).
+export function toNum(v) {
+  if (v === '' || v === null || v === undefined) return 0
+  const n = Number(String(v).replace(',', '.').replace(/\s/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
 export function computeQuoteTotals(items, {
   transportCost = 0, includeDuty = true, marginPercent = 0,
   cnyRate = 1, transportRate = 1, vatPercent = 23,
 } = {}) {
   const list = items || []
-  const cny = Number(cnyRate) || 0
-  const tRate = Number(transportRate) || 0
-  const goodsTotalPln = list.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_price_cny) || 0) * cny, 0)
-  const transportPln = (Number(transportCost) || 0) * tRate
+  const cny = toNum(cnyRate)
+  const tRate = toNum(transportRate)
+  const goodsTotalPln = list.reduce((s, it) => s + toNum(it.qty) * toNum(it.unit_price_cny) * cny, 0)
+  const transportPln = toNum(transportCost) * tRate
 
   const rows = list.map(it => {
-    const goodsValue = (Number(it.qty) || 0) * (Number(it.unit_price_cny) || 0) * cny // PLN
+    const goodsValue = toNum(it.qty) * toNum(it.unit_price_cny) * cny // PLN
     const transportShare = goodsTotalPln > 0
       ? transportPln * (goodsValue / goodsTotalPln)
       : transportPln / (list.length || 1)
     const customsValue = goodsValue + transportShare
-    const dutyAmount = includeDuty ? customsValue * ((Number(it.duty_rate_percent) || 0) / 100) : 0
+    const dutyAmount = includeDuty ? customsValue * (toNum(it.duty_rate_percent) / 100) : 0
     const landedCost = customsValue + dutyAmount
-    const finalPrice = landedCost * (1 + (Number(marginPercent) || 0) / 100) // netto PLN
-    const vatAmount = finalPrice * ((Number(vatPercent) || 0) / 100)
+    const finalPrice = landedCost * (1 + toNum(marginPercent) / 100) // netto PLN
+    const vatAmount = finalPrice * (toNum(vatPercent) / 100)
     const finalPriceGross = finalPrice + vatAmount
     return { ...it, goodsValue, transportShare, customsValue, dutyAmount, landedCost, finalPrice, vatAmount, finalPriceGross }
   })
@@ -53,9 +65,9 @@ export function computeQuoteTotals(items, {
 // stronę WWW), plus prowizja banku (%) doliczana na to, że bank sprzedaje
 // walutę drożej niż kurs średni.
 export function computePlnConversion(amount, { nbpRate, commissionPercent = 0 } = {}) {
-  const rate = Number(nbpRate) || 0
-  const effectiveRate = rate * (1 + (Number(commissionPercent) || 0) / 100)
-  return { effectiveRate, plnAmount: (Number(amount) || 0) * effectiveRate }
+  const rate = toNum(nbpRate)
+  const effectiveRate = rate * (1 + toNum(commissionPercent) / 100)
+  return { effectiveRate, plnAmount: toNum(amount) * effectiveRate }
 }
 
 export function nextQuoteNumber(existingNumbers = []) {

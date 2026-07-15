@@ -5,7 +5,7 @@ import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import useIsMobile from '../../lib/useIsMobile'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
-import { computeQuoteTotals, STATUS_LABELS } from './calc'
+import { computeQuoteTotals, toNum, STATUS_LABELS } from './calc'
 import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 
@@ -111,10 +111,10 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // Cena dla klienta jest zawsze w PLN: towar (zawsze w CNY, cena fabryczna)
   // i transport (w walucie wybranej niżej) są przeliczane osobnymi kursami
   // NBP + prowizja banku. VAT doliczany na końcu (23% — standardowa stawka).
-  const cnyRateEff = (Number(quote?.nbp_rate) || 0) * (1 + (Number(quote?.bank_commission_percent) || 0) / 100)
+  const cnyRateEff = toNum(quote?.nbp_rate) * (1 + toNum(quote?.bank_commission_percent) / 100)
   const transportRateEff = (quote?.transport_currency || 'CNY') === 'PLN'
     ? 1
-    : (Number(quote?.transport_rate) || 0) * (1 + (Number(quote?.bank_commission_percent) || 0) / 100)
+    : toNum(quote?.transport_rate) * (1 + toNum(quote?.bank_commission_percent) / 100)
   const VAT_PERCENT = 23
 
   const totalsCalc = useMemo(() => computeQuoteTotals(items, {
@@ -311,11 +311,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const handleSave = async (silent = false) => {
     setSaving(true)
     const { error: qErr } = await supabase.from('quotes').update({
-      transport_cost: quote.transport_cost || 0, include_duty: quote.include_duty ?? true,
-      margin_percent: quote.margin_percent, valid_until: quote.valid_until || null,
+      transport_cost: toNum(quote.transport_cost), include_duty: quote.include_duty ?? true,
+      margin_percent: quote.margin_percent === '' || quote.margin_percent === null || quote.margin_percent === undefined ? null : toNum(quote.margin_percent),
+      valid_until: quote.valid_until || null,
       notes: quote.notes || null, currency: 'PLN', updated_at: new Date().toISOString(),
       nbp_rate: quote.nbp_rate || null, nbp_rate_date: quote.nbp_rate_date || null,
-      bank_commission_percent: quote.bank_commission_percent === '' ? null : quote.bank_commission_percent,
+      bank_commission_percent: quote.bank_commission_percent === '' || quote.bank_commission_percent === null || quote.bank_commission_percent === undefined ? null : toNum(quote.bank_commission_percent),
       transport_currency: quote.transport_currency || 'CNY',
       transport_rate: quote.transport_rate || null, transport_rate_date: quote.transport_rate_date || null,
     }).eq('id', quoteId)
@@ -331,11 +332,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       const payload = {
         quote_id: quoteId, position: i + 1, photo_paths: it.photo_paths || [], photo_path: it.photo_paths?.[0] || null,
         name: it.name || null, specification: it.specification || null,
-        qty: Number(it.qty) || 0, unit: it.unit || 'set', unit_price_cny: Number(it.unit_price_cny) || 0,
-        cbm: it.cbm === '' ? null : Number(it.cbm), weight_kg: it.weight_kg === '' ? null : Number(it.weight_kg),
+        qty: toNum(it.qty), unit: it.unit || 'set', unit_price_cny: toNum(it.unit_price_cny),
+        cbm: it.cbm === '' || it.cbm === null || it.cbm === undefined ? null : toNum(it.cbm),
+        weight_kg: it.weight_kg === '' || it.weight_kg === null || it.weight_kg === undefined ? null : toNum(it.weight_kg),
         container_note: it.container_note || null,
-        production_days: it.production_days === '' ? null : Number(it.production_days),
-        hs_code: it.hs_code || null, duty_rate_percent: it.duty_rate_percent === '' ? null : Number(it.duty_rate_percent),
+        production_days: it.production_days === '' || it.production_days === null || it.production_days === undefined ? null : toNum(it.production_days),
+        hs_code: it.hs_code || null, duty_rate_percent: it.duty_rate_percent === '' || it.duty_rate_percent === null || it.duty_rate_percent === undefined ? null : toNum(it.duty_rate_percent),
         ai_suggestion: it.ai_suggestion || null,
       }
       if (it.id) {
@@ -572,17 +574,17 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(7,1fr)', gap: 8, marginTop: 10 }}>
-              <div><label style={label}>{t("Ilość")}</label><input type="number" style={field} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} /></div>
+              <div><label style={label}>{t("Ilość")}</label><input type="text" inputMode="decimal" style={field} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} /></div>
               <div><label style={label}>{t("Jednostka")}</label><input style={field} value={it.unit} onChange={e => setItem(it._key, { unit: e.target.value })} /></div>
-              <div><label style={label}>{t("Cena EXW (CNY/szt.)")}</label><input type="number" style={field} value={it.unit_price_cny} onChange={e => setItem(it._key, { unit_price_cny: e.target.value })} /></div>
-              <div><label style={label}>{t("CBM (m³)")}</label><input type="number" style={field} value={it.cbm} onChange={e => setItem(it._key, { cbm: e.target.value })} /></div>
-              <div><label style={label}>{t("Waga (kg)")}</label><input type="number" style={field} value={it.weight_kg} onChange={e => setItem(it._key, { weight_kg: e.target.value })} /></div>
+              <div><label style={label}>{t("Cena EXW (CNY/szt.)")}</label><input type="text" inputMode="decimal" style={field} value={it.unit_price_cny} onChange={e => setItem(it._key, { unit_price_cny: e.target.value })} /></div>
+              <div><label style={label}>{t("CBM (m³)")}</label><input type="text" inputMode="decimal" style={field} value={it.cbm} onChange={e => setItem(it._key, { cbm: e.target.value })} /></div>
+              <div><label style={label}>{t("Waga (kg)")}</label><input type="text" inputMode="decimal" style={field} value={it.weight_kg} onChange={e => setItem(it._key, { weight_kg: e.target.value })} /></div>
               <div><label style={label}>{t("Kontener (opc.)")}</label><input style={field} value={it.container_note} onChange={e => setItem(it._key, { container_note: e.target.value })} placeholder="2*40HQ" /></div>
-              <div><label style={label}>{t("Czas produkcji (dni)")}</label><input type="number" style={field} value={it.production_days} onChange={e => setItem(it._key, { production_days: e.target.value })} /></div>
+              <div><label style={label}>{t("Czas produkcji (dni)")}</label><input type="text" inputMode="decimal" style={field} value={it.production_days} onChange={e => setItem(it._key, { production_days: e.target.value })} /></div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr auto auto', gap: 8, marginTop: 10, alignItems: 'end' }}>
               <div><label style={label}>{t("Kod CN/HS")}</label><input style={field} value={it.hs_code} onChange={e => setItem(it._key, { hs_code: e.target.value })} placeholder="9406.10" /></div>
-              <div><label style={label}>{t("Stawka cła (%)")}</label><input type="number" style={field} value={it.duty_rate_percent} onChange={e => setItem(it._key, { duty_rate_percent: e.target.value })} /></div>
+              <div><label style={label}>{t("Stawka cła (%)")}</label><input type="text" inputMode="decimal" style={field} value={it.duty_rate_percent} onChange={e => setItem(it._key, { duty_rate_percent: e.target.value })} /></div>
               <button onClick={() => handleAiSuggest(it._key)} disabled={busyAi === it._key}
                 style={{ padding: '7px 11px', borderRadius: 7, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {busyAi === it._key ? t('Analizuję…') : t('🤖 Sugeruj AI')}
@@ -608,7 +610,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       <div style={card}>
         <div style={sectionTitle}>💰 {t("Transport, cło i marża (zespół polski)")}</div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-          <div><label style={label}>{t("Szacowany transport")}</label><input type="number" style={field} value={quote.transport_cost || ''} onChange={e => setQ({ transport_cost: e.target.value })} /></div>
+          <div><label style={label}>{t("Szacowany transport")}</label><input type="text" inputMode="decimal" style={field} value={quote.transport_cost || ''} onChange={e => setQ({ transport_cost: e.target.value })} /></div>
           <div><label style={label}>{t("Waluta transportu")}</label>
             <select style={field} value={quote.transport_currency || 'CNY'} onChange={e => setQ({ transport_currency: e.target.value })}>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -616,7 +618,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </div>
           <div>
             <label style={label}>{t("Marża (%)")}</label>
-            <input type="number" style={field} value={quote.margin_percent ?? ''} onChange={e => setQ({ margin_percent: e.target.value })} placeholder="np. 30" />
+            <input type="text" inputMode="decimal" style={field} value={quote.margin_percent ?? ''} onChange={e => setQ({ margin_percent: e.target.value })} placeholder="np. 30" />
           </div>
           <div><label style={label}>{t("Ważna do")}</label><input type="date" style={field} value={quote.valid_until || ''} onChange={e => setQ({ valid_until: e.target.value })} /></div>
         </div>
@@ -680,7 +682,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </div>
           <div>
             <label style={label}>{t("Prowizja banku (%)")}</label>
-            <input type="number" style={field} value={quote.bank_commission_percent ?? ''} onChange={e => setQ({ bank_commission_percent: e.target.value })} placeholder="np. 3" />
+            <input type="text" inputMode="decimal" style={field} value={quote.bank_commission_percent ?? ''} onChange={e => setQ({ bank_commission_percent: e.target.value })} placeholder="np. 3" />
           </div>
           <div>
             <label style={label}>{t("Kurs efektywny (towar)")}</label>
@@ -712,11 +714,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       </div>
 
       <div style={card}>
-        <div style={sectionTitle}>🧾 {t("Cena dla klienta (PLN)")}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 10 }}>
+        <div style={sectionTitle}>🧾 {t("Cena dla klienta (PLN) — aktualizuje się na żywo przy każdej zmianie marży/kursów")}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
           <div style={{ padding: '12px 14px', borderRadius: 9, background: C.bg, border: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t("Netto")}</div>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fmt(totalsCalc.totals.finalPrice, 2)} PLN</div>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t("Koszt (bez marży)")}</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fmt(totalsCalc.totals.landedCost, 2)} PLN</div>
+          </div>
+          <div style={{ padding: '12px 14px', borderRadius: 9, background: C.olight, border: `1px solid ${C.orange}` }}>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: C.orange, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t(`Netto (z marżą ${quote.margin_percent || 0}%)`)}</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4, color: C.orange }}>{fmt(totalsCalc.totals.finalPrice, 2)} PLN</div>
           </div>
           <div style={{ padding: '12px 14px', borderRadius: 9, background: C.bg, border: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t("VAT (23%)")}</div>
@@ -727,7 +733,10 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4, color: C.blue }}>{fmt(totalsCalc.totals.finalPriceGross, 2)} PLN</div>
           </div>
         </div>
-        <div style={{ fontSize: 10.5, color: C.muted, marginTop: 10 }}>{t("Cena bazowa towaru od zespołu chińskiego (pomocniczo):")} <strong>{fmt(totalsCalc.totals.goodsValue && cnyRateEff ? totalsCalc.totals.goodsValue / cnyRateEff : 0, 2)} CNY</strong></div>
+        <div style={{ fontSize: 10.5, color: C.muted, marginTop: 10 }}>
+          {t("Marża w kwocie:")} <strong>{fmt(totalsCalc.totals.finalPrice - totalsCalc.totals.landedCost, 2)} PLN</strong>
+          {' · '}{t("Cena bazowa towaru od zespołu chińskiego (pomocniczo):")} <strong>{fmt(totalsCalc.totals.goodsValue && cnyRateEff ? totalsCalc.totals.goodsValue / cnyRateEff : 0, 2)} CNY</strong>
+        </div>
       </div>
 
       <div style={card}>

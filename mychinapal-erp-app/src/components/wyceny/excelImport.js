@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { toNum } from './calc'
 
 // Import "najlepszego wysiłku" z wyceny fabrycznej w Excelu (format widziany
 // w praktyce: Nr. / Picture / Name / Specification / QTY（set）/ EXW Unit
@@ -44,8 +45,15 @@ export async function parseQuoteExcel(file) {
     for (const [colIdx, field] of Object.entries(colMap)) {
       const val = row[Number(colIdx)]
       if (val === '' || val === null || val === undefined) continue
-      if (field === 'qty' || field === 'unit_price_cny') item[field] = Number(val) || 0
-      else if (field === 'cbm') { const n = Number(val); item.cbm = Number.isNaN(n) ? '' : n; if (Number.isNaN(n)) item.container_note = String(val) }
+      // Komórki bywają liczbami (Excel) albo tekstem z przecinkiem jako
+      // separatorem dziesiętnym (np. "2,7") — zamieniamy przecinek na kropkę
+      // przed parsowaniem, żeby Number() nie zwracał po cichu NaN/0.
+      const asNumber = (v) => {
+        const s = String(v ?? '').trim().replace(',', '.')
+        return s === '' ? NaN : Number(s)
+      }
+      if (field === 'qty' || field === 'unit_price_cny') item[field] = toNum(val)
+      else if (field === 'cbm') { const n = asNumber(val); item.cbm = Number.isNaN(n) ? '' : n; if (Number.isNaN(n)) item.container_note = String(val) }
       else item[field] = String(val)
       if (field === 'name' && item.name) hasName = true
     }
