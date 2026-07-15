@@ -67,20 +67,35 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   // Bucket 'dokumenty' jest prywatny — do podglądu miniatur w edytorze
   // potrzebujemy podpisanych URL-i (nie da się użyć publicznego linku).
+  // Zaraz po wgraniu pliku odczyt czasem chwilę "nie widzi" nowego obiektu
+  // (opóźnienie propagacji w Storage) i zwraca "Object not found" — dlatego
+  // próbujemy kilka razy z krótkim odstępem, zanim uznamy to za realny błąd.
+  const sleep = (ms) => new Promise(res => setTimeout(res, ms))
+  const createSignedUrlWithRetry = async (path, attempts = 5, delayMs = 700) => {
+    let lastError = null
+    for (let i = 0; i < attempts; i++) {
+      const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(path, 3600)
+      if (data?.signedUrl) return { signedUrl: data.signedUrl, error: null }
+      lastError = error
+      if (i < attempts - 1) await sleep(delayMs)
+    }
+    return { signedUrl: null, error: lastError }
+  }
+
   useEffect(() => {
     const paths = items.map(it => it.photo_path).filter(Boolean)
     if (!paths.length) return
     let cancelled = false
     ;(async () => {
       const entries = await Promise.all(paths.map(async (p) => {
-        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(p, 3600)
+        const { signedUrl, error } = await createSignedUrlWithRetry(p)
         if (error) console.error('createSignedUrl błąd dla', p, error)
-        return [p, data?.signedUrl, error]
+        return [p, signedUrl, error]
       }))
       if (cancelled) return
       setPhotoUrls(prev => ({ ...prev, ...Object.fromEntries(entries.filter(([, u]) => u).map(([p, u]) => [p, u])) }))
       const firstError = entries.find(([, u, err]) => !u && err)
-      if (firstError) toast.error(t('Nie udało się wczytać podglądu zdjęcia: ') + (firstError[2]?.message || 'nieznany błąd'))
+      if (firstError) toast.error(t('Nie udało się wczytać podglądu zdjęcia (po kilku próbach): ') + (firstError[2]?.message || 'nieznany błąd'))
     })()
     return () => { cancelled = true }
   }, [items.map(it => it.photo_path).join(',')])
@@ -184,11 +199,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setBusyAi(key)
     try {
       // Świeży podpisany URL zamiast korzystania z ewentualnie jeszcze
-      // niegotowego cache'u photoUrls (zdjęcie mogło dopiero co się wgrać).
+      // niegotowego cache'u photoUrls (zdjęcie mogło dopiero co się wgrać) —
+      // z retry, bo odczyt tuż po zapisie czasem chwilę nie widzi obiektu.
       let photo_url = null
       if (photoPath) {
-        const { data: signed } = await supabase.storage.from('dokumenty').createSignedUrl(photoPath, 300)
-        photo_url = signed?.signedUrl || null
+        const { signedUrl } = await createSignedUrlWithRetry(photoPath, 4, 600)
+        photo_url = signedUrl
       }
       const { data, error } = await supabase.functions.invoke('suggest-customs-code', {
         body: { name: it?.name || '', specification: it?.specification || '', photo_url },
