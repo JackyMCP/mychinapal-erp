@@ -5,7 +5,7 @@ import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import useIsMobile from '../../lib/useIsMobile'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
-import { STATUS_LABELS } from './calc'
+import { computeQuoteTotals, STATUS_LABELS } from './calc'
 import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 

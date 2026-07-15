@@ -206,7 +206,17 @@ export default function Wyceny() {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
         {filtered.map((q, i) => {
           const qItems = itemsByQuote[q.id] || []
-          const { totals } = computeQuoteTotals(qItems, { transportCost: q.transport_cost, includeDuty: q.include_duty, marginPercent: q.margin_percent || 0 })
+          // Na etapie szkicu CN nie ma jeszcze pobranych kursów NBP — pokazujemy
+          // wtedy surową wartość towaru w CNY (cena fabryczna). Po przejściu do
+          // zespołu PL / wysłaniu do klienta liczymy już naprawdę w PLN (wg
+          // zapisanych na wycenie kursów NBP + prowizji banku).
+          const cnyEff = (Number(q.nbp_rate) || 0) * (1 + (Number(q.bank_commission_percent) || 0) / 100)
+          const transportEff = (q.transport_currency || 'CNY') === 'PLN'
+            ? 1
+            : (Number(q.transport_rate) || 0) * (1 + (Number(q.bank_commission_percent) || 0) / 100)
+          const { totals } = q.status === 'szkic_cn'
+            ? computeQuoteTotals(qItems, {})
+            : computeQuoteTotals(qItems, { transportCost: q.transport_cost, includeDuty: q.include_duty, marginPercent: q.margin_percent || 0, cnyRate: cnyEff, transportRate: transportEff })
           return (
             <div key={q.id} className="wyc-card" style={{ animationDelay: `${i * 0.03}s`, background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, cursor: 'pointer', position: 'relative' }} onClick={() => setOpenId(q.id)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -218,7 +228,7 @@ export default function Wyceny() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: C.muted }}>
                 <span>{qItems.length} {t("pozycji")}</span>
                 <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, color: C.text, fontSize: 13 }}>
-                  {q.status === 'szkic_cn' ? fmt(totals.goodsValue, 0) : fmt(totals.finalPrice, 0)} {q.currency}
+                  {q.status === 'szkic_cn' ? `${fmt(totals.goodsValue, 0)} CNY` : `${fmt(totals.finalPrice, 0)} PLN`}
                 </span>
               </div>
               <div style={{ fontSize: 9.5, color: C.muted, marginTop: 8 }}>{new Date(q.created_at).toLocaleDateString('pl-PL')}</div>
