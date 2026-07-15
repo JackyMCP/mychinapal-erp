@@ -118,15 +118,22 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (isFileTooBig(file)) { toast.error(t(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`)); return }
     setBusyPhoto(key)
     const path = `${quote.client_id}/wyceny/${quoteId}/${crypto.randomUUID()}-${safeFileName(file.name)}`
-    const { error } = await supabase.storage.from('dokumenty').upload(path, file)
+    try {
+      const { error } = await supabase.storage.from('dokumenty').upload(path, file)
+      if (error) { toast.error(t('Nie udało się wgrać zdjęcia: ') + error.message); return }
+      setItem(key, { photo_path: path })
+      toast.success(t('Zdjęcie wgrane ✓'))
+      // Jeśli nazwa towaru jeszcze nie jest wpisana — spróbuj ją zasugerować
+      // automatycznie na podstawie samego zdjęcia (AI), zamiast czekać, aż
+      // ktoś kliknie "Sugeruj AI" ręcznie.
+      const current = items.find(i => i._key === key)
+      if (!current?.name) handleAiSuggest(key, path)
+    } catch (e) {
+      // Wcześniej wyjątek tutaj (np. błąd sieci) przechodził bez żadnego
+      // komunikatu — teraz zawsze pokazujemy coś, żeby nie było ciszy.
+      toast.error(t('Nie udało się wgrać zdjęcia (wyjątek): ') + (e?.message || String(e)))
+    }
     setBusyPhoto(null)
-    if (error) { toast.error(t('Nie udało się wgrać zdjęcia: ') + error.message); return }
-    setItem(key, { photo_path: path })
-    // Jeśli nazwa towaru jeszcze nie jest wpisana — spróbuj ją zasugerować
-    // automatycznie na podstawie samego zdjęcia (AI), zamiast czekać, aż
-    // ktoś kliknie "Sugeruj AI" ręcznie.
-    const current = items.find(i => i._key === key)
-    if (!current?.name) handleAiSuggest(key, path)
   }
 
   const photoUrl = (path) => path ? photoUrls[path] : null
