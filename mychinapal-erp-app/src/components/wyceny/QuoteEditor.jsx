@@ -133,13 +133,23 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (isFileTooBig(file)) { toast.error(t(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`)); return }
     setBusyPhoto(key)
     // Płaska ścieżka client_id/plik — dokładnie ten sam wzorzec co reszta
-    // aplikacji (Czat, ProjectFiles, TabCzat...). Zagnieżdżony podfolder
-    // "wyceny/quoteId/" łamał regułę dostępu do magazynu (upload przechodził,
-    // ale odczyt/signed URL zwracał "Object not found").
+    // aplikacji (Czat, ProjectFiles, TabCzat...).
     const path = `${quote.client_id}/wycena-${quoteId}-${crypto.randomUUID()}-${safeFileName(file.name)}`
     try {
       const { error } = await supabase.storage.from('dokumenty').upload(path, file)
       if (error) { toast.error(t('Nie udało się wgrać zdjęcia: ') + error.message); return }
+      // KLUCZOWE: polityka SELECT na bucket 'dokumenty' wymaga, żeby dla
+      // każdego pliku istniał odpowiadający mu wiersz w tabeli `documents`
+      // (file_path = ścieżka w Storage) — inaczej odczyt/signed URL zawsze
+      // zwraca "Object not found", niezależnie od tego czy plik faktycznie
+      // istnieje. Bez tego wpisu podgląd zdjęcia nigdy by nie zadziałał.
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error: docErr } = await supabase.from('documents').insert({
+        client_id: quote.client_id, project_id: quote.project_id,
+        category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: file.name || 'zdjecie.jpg',
+        uploaded_by: user?.id, source: 'manual',
+      })
+      if (docErr) { toast.error(t('Zdjęcie wgrane, ale nie udało się go zarejestrować (podgląd może nie działać): ') + docErr.message) }
       setItem(key, { photo_path: path })
       toast.success(t('Zdjęcie wgrane ✓'))
       // Jeśli nazwa towaru jeszcze nie jest wpisana — spróbuj ją zasugerować
