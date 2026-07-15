@@ -27,6 +27,7 @@ export default function Wyceny() {
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [startAs, setStartAs] = useState('cn')
 
   const loadAll = async () => {
     setLoading(true)
@@ -76,12 +77,12 @@ export default function Wyceny() {
     const quote_number = nextQuoteNumber(quotes.map(q => q.quote_number))
     const { data, error } = await supabase.from('quotes').insert({
       quote_number, client_id: pickClient, project_id: pickProject,
-      status: 'szkic_cn', created_by: user?.id,
+      status: startAs === 'pl' ? 'do_marzy_pl' : 'szkic_cn', created_by: user?.id,
       notes: t('1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.'),
     }).select().single()
     setCreating(false)
     if (error) { toast.error(t('Nie udało się utworzyć wyceny: ') + error.message); return }
-    setPicking(false); setPickClient(''); setPickProject('')
+    setPicking(false); setPickClient(''); setPickProject(''); setStartAs('cn')
     await loadAll()
     setOpenId(data.id)
   }
@@ -150,8 +151,27 @@ export default function Wyceny() {
               </button>
             </div>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>{t("Nie widzisz klienta? Utwórz go najpierw w module Klienci. Zamówienie możesz założyć od razu tutaj przyciskiem „+ Nowe”.")}</div>
+
+            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Kto zaczyna tę wycenę?")}</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, border: `1.5px solid ${startAs === 'cn' ? C.blue : C.border}`, background: startAs === 'cn' ? C.blight : C.white, borderRadius: 9, padding: '9px 11px', cursor: 'pointer' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}>
+                  <input type="radio" name="startAs" checked={startAs === 'cn'} onChange={() => setStartAs('cn')} />
+                  {t("Zespół chiński")}
+                </span>
+                <span style={{ fontSize: 9.5, color: C.muted }}>{t("Szkic bez marży — dopiero potem zespół PL dolicza koszty")}</span>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, border: `1.5px solid ${startAs === 'pl' ? C.blue : C.border}`, background: startAs === 'pl' ? C.blight : C.white, borderRadius: 9, padding: '9px 11px', cursor: 'pointer' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}>
+                  <input type="radio" name="startAs" checked={startAs === 'pl'} onChange={() => setStartAs('pl')} />
+                  {t("Zespół polski")}
+                </span>
+                <span style={{ fontSize: 9.5, color: C.muted }}>{t("Mam już Excel/zdjęcia/ceny — pomiń krok chiński, wpisz od razu transport i marżę")}</span>
+              </label>
+            </div>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setPicking(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
+              <button onClick={() => { setPicking(false); setStartAs('cn') }} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
               <button onClick={handleCreate} disabled={creating} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: creating ? .6 : 1 }}>
                 {creating ? t("Tworzenie…") : t("Utwórz wycenę")}
               </button>
