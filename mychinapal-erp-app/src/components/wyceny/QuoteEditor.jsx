@@ -191,7 +191,17 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         toast.error(t('AI nie zwróciło żadnej sugestii — uzupełnij dane ręcznie.'))
       }
     } catch (e) {
-      toast.error(t('Funkcja sugestii AI nie jest jeszcze wdrożona (wymaga edge function „suggest-customs-code”) — wpisz dane ręcznie na razie.'))
+      // Wyciągamy realny komunikat błędu z odpowiedzi edge function (jeśli
+      // to FunctionsHttpError z ciałem JSON), zamiast zawsze zakładać, że
+      // funkcja po prostu nie jest wdrożona — to mogło zmylić przy diagnozie.
+      let detail = e?.message || String(e)
+      try {
+        if (e?.context && typeof e.context.json === 'function') {
+          const body = await e.context.json()
+          if (body?.error) detail = body.error
+        }
+      } catch { /* nie udało się odczytać treści błędu — zostaje e.message */ }
+      toast.error(t('Błąd sugestii AI: ') + detail)
     }
     setBusyAi(null)
   }
