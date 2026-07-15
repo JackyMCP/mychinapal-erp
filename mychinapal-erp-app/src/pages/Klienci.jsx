@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
+import { useUI } from '../lib/ui'
 import PageHeader from '../components/PageHeader'
 import { C } from '../lib/theme'
 import { avatarColor, initials, daysSince, healthColor, TYP_LABELS } from '../components/klienci/utils'
@@ -30,6 +31,7 @@ const TABS = [
 export default function Klienci() {
   const { t } = useLang()
   const { profile, isZarzad } = useAuth()
+  const { toast } = useUI()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -49,6 +51,11 @@ export default function Klienci() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [showNewClient, setShowNewClient] = useState(false)
+
+  // Edycja nazwy klienta bezpośrednio z listy (bez wchodzenia w panel klienta)
+  const [editingListId, setEditingListId] = useState(null)
+  const [listNameDraft, setListNameDraft] = useState('')
+  const [savingListName, setSavingListName] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -144,6 +151,28 @@ export default function Klienci() {
   const handleBack = () => { setSelectedId(null); setSearchParams({}) }
 
   const handleClientSaved = (updated) => setClients(prev => prev.map(c => c.id === updated.id ? updated : c))
+
+  const startEditListName = (c, e) => {
+    e.stopPropagation()
+    setEditingListId(c.id)
+    setListNameDraft(c.name || '')
+  }
+  const cancelEditListName = (e) => {
+    e?.stopPropagation()
+    setEditingListId(null)
+    setListNameDraft('')
+  }
+  const handleSaveListName = async (c, e) => {
+    e?.stopPropagation()
+    const trimmed = listNameDraft.trim()
+    if (!trimmed) return
+    setSavingListName(true)
+    const { data, error } = await supabase.from('clients').update({ name: trimmed, updated_at: new Date().toISOString() }).eq('id', c.id).select().single()
+    setSavingListName(false)
+    if (error) { toast.error(t('Nie udało się zapisać nazwy: ') + error.message); return }
+    if (data) handleClientSaved(data)
+    setEditingListId(null)
+  }
   const handleClientCreated = (created) => {
     setShowNewClient(false)
     setClients(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
@@ -182,7 +211,21 @@ export default function Klienci() {
                   style={{ padding: '14px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(c.name) }}>{initials(c.name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700 }}>{c.name}</div>
+                    {editingListId === c.id ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                        <input value={listNameDraft} onChange={e => setListNameDraft(e.target.value)} autoFocus
+                          onKeyDown={e => { if (e.key === 'Enter') handleSaveListName(c, e); if (e.key === 'Escape') cancelEditListName(e) }}
+                          style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 12.5, width: 200 }} />
+                        <span onClick={e => handleSaveListName(c, e)} title={t('Zapisz')} style={{ cursor: 'pointer', color: C.green, fontWeight: 700 }}>{savingListName ? '…' : '✓'}</span>
+                        <span onClick={cancelEditListName} title={t('Anuluj')} style={{ cursor: 'pointer', color: C.red, fontWeight: 700 }}>✕</span>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {c.name}
+                        <span onClick={e => startEditListName(c, e)} title={t('Zmień nazwę')}
+                          style={{ fontSize: 10.5, color: C.blue, cursor: 'pointer', opacity: .7 }}>✏️</span>
+                      </div>
+                    )}
                     <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{t(TYP_LABELS[c.typ] || c.typ)} · {act?.project_count || 0} {t("zamówień")}{m ? ` · ${Math.round(Number(m.przychod) || 0).toLocaleString('pl-PL')} PLN` : ''}</div>
                   </div>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: healthColor(days) }} title={days === null ? 'brak danych o kontakcie' : `ostatni kontakt ${days} dni temu`} />
