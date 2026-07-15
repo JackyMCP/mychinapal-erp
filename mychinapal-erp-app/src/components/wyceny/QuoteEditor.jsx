@@ -445,6 +445,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // małe miniatury obok.
   const buildPhotoDataUrls = async () => {
     const photoDataUrls = {}
+    const failedItems = []
     for (const it of items) {
       const paths = it.photo_paths || []
       if (!paths.length) continue
@@ -460,6 +461,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         } catch { /* brak jednego ze zdjęć w PDF, nie blokujemy wysyłki/podglądu */ }
       }
       if (urls.length) photoDataUrls[it._key] = urls
+      // Jeśli pozycja MIAŁA zdjęcia, ale żadne się nie wczytało — to nie
+      // powinno być ciche. Wcześniej brak zdjęcia w PDF-ie nie był w ogóle
+      // sygnalizowany, więc wyglądało to jak "losowo jednego zdjęcia nie
+      // widać" bez wyjaśnienia dlaczego.
+      else failedItems.push(it.name || t('pozycja bez nazwy'))
+    }
+    if (failedItems.length) {
+      toast.error(t('Nie udało się wczytać zdjęć do PDF dla: ') + failedItems.join(', ') + t(' — sprawdź połączenie i spróbuj ponownie.'))
     }
     return photoDataUrls
   }
