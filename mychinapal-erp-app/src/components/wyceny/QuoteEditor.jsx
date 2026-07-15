@@ -73,10 +73,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     let cancelled = false
     ;(async () => {
       const entries = await Promise.all(paths.map(async (p) => {
-        const { data } = await supabase.storage.from('dokumenty').createSignedUrl(p, 3600)
-        return [p, data?.signedUrl]
+        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(p, 3600)
+        if (error) console.error('createSignedUrl błąd dla', p, error)
+        return [p, data?.signedUrl, error]
       }))
-      if (!cancelled) setPhotoUrls(prev => ({ ...prev, ...Object.fromEntries(entries.filter(([, u]) => u)) }))
+      if (cancelled) return
+      setPhotoUrls(prev => ({ ...prev, ...Object.fromEntries(entries.filter(([, u]) => u).map(([p, u]) => [p, u])) }))
+      const firstError = entries.find(([, u, err]) => !u && err)
+      if (firstError) toast.error(t('Nie udało się wczytać podglądu zdjęcia: ') + (firstError[2]?.message || 'nieznany błąd'))
     })()
     return () => { cancelled = true }
   }, [items.map(it => it.photo_path).join(',')])
