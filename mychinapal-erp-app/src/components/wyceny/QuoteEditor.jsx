@@ -1074,7 +1074,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     const win = window.open('', '_blank')
     setSending('preview')
     try {
-      const blob = await exportHtmlToPdfBlob(docHtml)
+      const blob = await exportHtmlToPdfBlob(docHtml, { continuationLabel: `${company?.company_name || 'MyChinaPal'} — ${quote?.quote_number || ''}` })
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
@@ -1148,7 +1148,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     setSending(true)
     try {
-      const blob = await exportHtmlToPdfBlob(docHtml)
+      const blob = await exportHtmlToPdfBlob(docHtml, { continuationLabel: `${company?.company_name || 'MyChinaPal'} — ${quote?.quote_number || ''}` })
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
