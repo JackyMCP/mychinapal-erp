@@ -590,20 +590,46 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setItem(key, { photo_paths: (current?.photo_paths || []).filter(p => p !== path) })
   }
 
-  // Zmiana kolejności zdjęć przeciąganiem — pierwsze zdjęcie w tablicy
-  // zawsze jest okładką pozycji (patrz etykieta "okładka" niżej), więc samo
-  // przesunięcie zdjęcia na początek listy wystarczy, żeby zmienić okładkę.
-  const draggedPhoto = useRef(null)
-  const reorderPhotos = (key, fromPath, toPath) => {
-    if (!fromPath || !toPath || fromPath === toPath) return
-    const current = items.find(i => i._key === key)
-    const paths = [...(current?.photo_paths || [])]
-    const fromIdx = paths.indexOf(fromPath)
-    const toIdx = paths.indexOf(toPath)
-    if (fromIdx === -1 || toIdx === -1) return
-    paths.splice(fromIdx, 1)
-    paths.splice(toIdx, 0, fromPath)
-    setItem(key, { photo_paths: paths })
+  // Przeciąganie zdjęć — w ramach JEDNEJ pozycji zmienia tylko kolejność
+  // (pierwsze zdjęcie w tablicy zawsze jest okładką, patrz etykieta "okładka"
+  // niżej), a przeciągnięcie na INNĄ pozycję PRZENOSI zdjęcie między
+  // pozycjami. To drugie jest potrzebne, bo automatyczne dopasowanie zdjęć do
+  // wierszy przy imporcie Excela od zespołu CN działa na podstawie pozycji
+  // obrazka w arkuszu i czasem "rozjeżdża się" o jeden wiersz (zdjęcie
+  // wizualnie nachodzące na granicę dwóch wierszy trafia do złego wiersza) —
+  // to jedyny sposób, żeby to poprawić ręcznie bez usuwania i wgrywania
+  // zdjęcia na nowo.
+  const draggedPhoto = useRef(null) // { key, path }
+  const movePhoto = (fromKey, fromPath, toKey, toPath) => {
+    if (!fromKey || !fromPath) return
+    if (fromKey === toKey) {
+      if (fromPath === toPath) return
+      const current = items.find(i => i._key === toKey)
+      const paths = [...(current?.photo_paths || [])]
+      const fromIdx = paths.indexOf(fromPath)
+      if (fromIdx === -1) return
+      paths.splice(fromIdx, 1)
+      const toIdx = toPath ? paths.indexOf(toPath) : paths.length
+      paths.splice(toIdx === -1 ? paths.length : toIdx, 0, fromPath)
+      setItem(toKey, { photo_paths: paths })
+      return
+    }
+    const sourceItem = items.find(i => i._key === fromKey)
+    const targetItem = items.find(i => i._key === toKey)
+    if (!sourceItem || !targetItem) return
+    if ((targetItem.photo_paths || []).length >= MAX_PHOTOS_PER_ITEM) {
+      toast.error(t(`Ta pozycja ma już maksymalnie ${MAX_PHOTOS_PER_ITEM} zdjęć.`))
+      return
+    }
+    const newSourcePaths = (sourceItem.photo_paths || []).filter(p => p !== fromPath)
+    const targetPaths = [...(targetItem.photo_paths || [])]
+    const toIdx = toPath ? targetPaths.indexOf(toPath) : targetPaths.length
+    targetPaths.splice(toIdx === -1 ? targetPaths.length : toIdx, 0, fromPath)
+    setItems(prev => prev.map(p => {
+      if (p._key === fromKey) return { ...p, photo_paths: newSourcePaths }
+      if (p._key === toKey) return { ...p, photo_paths: targetPaths }
+      return p
+    }))
   }
 
   const photoUrl = (path) => path ? photoUrls[path] : null
@@ -1245,16 +1271,34 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <div key={it._key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10, background: C.bg }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ width: 168, flexShrink: 0 }}>
-                <label style={label}>{t(`Zdjęcia (do ${MAX_PHOTOS_PER_ITEM}, przeciągnij żeby zmienić kolejność — pierwsze = okładka)`)}</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <label style={label}>{t(`Zdjęcia (do ${MAX_PHOTOS_PER_ITEM}, przeciągnij żeby zmienić kolejność albo przenieść do innej pozycji — pierwsze = okładka)`)}</label>
+                <div
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    // Upuszczenie na PUSTYM tle listy (nie na konkretnym zdjęciu, nie
+                    // na pliku z dysku) — trafia tu głównie wtedy, gdy pozycja nie ma
+                    // jeszcze ŻADNEGO zdjęcia (import z Excela "rozjechał" dopasowanie
+                    // i ta pozycja została bez zdjęcia) — dopisujemy przeciągane na koniec.
+                    if (e.dataTransfer.files?.length) return
+                    e.preventDefault()
+                    const dragged = draggedPhoto.current
+                    if (dragged) movePhoto(dragged.key, dragged.path, it._key, null)
+                    draggedPhoto.current = null
+                  }}
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 78 }}>
                   {(it.photo_paths || []).map((p, pi) => (
                     <div key={p}
                       draggable
-                      onDragStart={() => { draggedPhoto.current = p }}
+                      onDragStart={() => { draggedPhoto.current = { key: it._key, path: p } }}
                       onDragOver={e => e.preventDefault()}
-                      onDrop={e => { e.preventDefault(); reorderPhotos(it._key, draggedPhoto.current, p); draggedPhoto.current = null }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        const dragged = draggedPhoto.current
+                        if (dragged) movePhoto(dragged.key, dragged.path, it._key, p)
+                        draggedPhoto.current = null
+                      }}
                       onDragEnd={() => { draggedPhoto.current = null }}
-                      title={t('Przeciągnij, żeby zmienić kolejność')}
+                      title={t('Przeciągnij, żeby zmienić kolejność albo przenieść do innej pozycji')}
                       style={{ width: 78, height: 78, borderRadius: 9, overflow: 'hidden', position: 'relative', border: `1px solid ${C.border}`, background: C.white, cursor: 'grab' }}>
                       <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
                       {pi === 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 8, fontWeight: 700, background: 'rgba(10,22,40,.75)', color: '#fff', borderRadius: 4, padding: '1px 4px' }}>{t("okładka")}</span>}
@@ -1269,7 +1313,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                     <div
                       tabIndex={0}
                       onPaste={e => handlePastePhoto(it._key, e)}
-                      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleAddPhoto(it._key, f) }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        const f = e.dataTransfer.files?.[0]
+                        if (f) { handleAddPhoto(it._key, f); return }
+                        const dragged = draggedPhoto.current
+                        if (dragged) movePhoto(dragged.key, dragged.path, it._key, null)
+                        draggedPhoto.current = null
+                      }}
                       onDragOver={e => e.preventDefault()}
                       style={{ width: 78, height: 78, borderRadius: 9, border: `1.5px dashed ${C.border}`, overflow: 'hidden', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}
                     >
