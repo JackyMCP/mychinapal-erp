@@ -11,6 +11,7 @@ import { generateQuotePdf } from './pdf'
 import { generateQuotePdfFromLayout } from './pdfFromLayout'
 import QuoteLayoutEditor from './QuoteLayoutEditor'
 import { parseQuoteExcel } from './excelImport'
+import ExcelImportPreview from './ExcelImportPreview'
 
 const MAX_PHOTOS_PER_ITEM = 6
 // Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
@@ -68,6 +69,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false)
   const [layoutPhotoDataUrls, setLayoutPhotoDataUrls] = useState(null)
   const [layoutLoading, setLayoutLoading] = useState(false)
+  // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
+  // zatwierdzenia (albo anulowania) przez użytkownika, zanim cokolwiek z
+  // nich trafi do wyceny (zdjęcia jeszcze NIE są wgrane do Storage na tym
+  // etapie — dopiero po zatwierdzeniu, żeby nie wgrywać zdjęć odrzuconych wierszy).
+  const [excelPreviewRows, setExcelPreviewRows] = useState(null)
+  const [excelPreviewFileName, setExcelPreviewFileName] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -199,12 +206,39 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const setItem = (key, patch) => setItems(prev => prev.map(it => it._key === key ? { ...it, ...patch } : it))
   const addItem = () => setItems(prev => [...prev, blankItem()])
   const [importing, setImporting] = useState(false)
+  // Krok 1: tylko parsowanie — pokazujemy podgląd, NIC jeszcze nie jest
+  // wgrywane do Storage ani wysyłane do AI. Dopiero po zatwierdzeniu podglądu
+  // (handleConfirmExcelImport) leci reszta: tłumaczenie, sugestia CN/HS,
+  // wgranie zdjęć. Dzięki temu błędnie sparsowany/dopasowany wiersz (zła
+  // kolumna, złe zdjęcie) można poprawić albo usunąć, zanim cokolwiek
+  // kosztownego się z nim stanie.
   const handleImportExcel = async (file) => {
     if (!file) return
     setImporting(true)
     try {
       const parsed = await parseQuoteExcel(file)
       if (!parsed.length) { toast.error(t('Nie udało się rozpoznać żadnych pozycji w tym pliku — sprawdź nagłówki kolumn lub wpisz pozycje ręcznie.')); setImporting(false); return }
+      setExcelPreviewRows(parsed)
+      setExcelPreviewFileName(file.name || '')
+    } catch (e) {
+      toast.error(t('Nie udało się odczytać pliku Excel: ') + (e.message || e))
+    }
+    setImporting(false)
+  }
+
+  const handleCancelExcelPreview = () => {
+    setExcelPreviewRows(null)
+    setExcelPreviewFileName('')
+  }
+
+  // Krok 2: użytkownik zatwierdził (ewentualnie poprawiony/okrojony) podgląd
+  // — dopiero teraz wgrywamy zdjęcia, tłumaczymy i pytamy AI o kod CN/HS.
+  const handleConfirmExcelImport = async (confirmedRows) => {
+    setExcelPreviewRows(null)
+    setExcelPreviewFileName('')
+    setImporting(true)
+    try {
+      const parsed = confirmedRows
       const withPhotos = parsed.filter(p => p._photoDataUrls?.length).length
       // Zdjęcia wyciągnięte z komórek Excela (patrz excelImport.js) trzeba
       // wgrać do Storage tak samo jak każde inne zdjęcie pozycji — łącznie
@@ -1080,6 +1114,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <div style={{ fontSize: 9.5, color: C.muted, alignSelf: 'center' }}>{t("Rozpozna kolumny typu Name/Specification/QTY/EXW Unit Price/Volume — resztę uzupełnisz ręcznie.")}</div>
         </div>
       </div>
+
+      {excelPreviewRows && (
+        <ExcelImportPreview
+          rows={excelPreviewRows}
+          fileName={excelPreviewFileName}
+          onCancel={handleCancelExcelPreview}
+          onConfirm={handleConfirmExcelImport}
+        />
+      )}
 
       {aiFilesOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}

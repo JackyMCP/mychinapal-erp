@@ -1,5 +1,11 @@
 import * as XLSX from 'xlsx'
 import { toNum } from './calc'
+import { supabase } from '../../lib/supabaseClient'
+
+// Pola, na które sztywna mapa nagłówków (HEADER_MAP/APPEND_MAP) potrafi
+// dopasować kolumnę — te same nazwy są używane jako enum w edge function
+// map-excel-headers (fallback AI dla nagłówków, których reguły nie rozpoznają).
+const AI_MAPPABLE_FIELDS = ['name', 'specification', 'qty', 'unit_price_cny', 'cbm', 'weight_kg', 'duty_rate_percent', 'container_note', 'append', 'ignore']
 
 // Import "najlepszego wysiłku" z wyceny fabrycznej w Excelu. Widziane w
 // praktyce formaty różnią się bardzo: albo angielskie nagłówki fabryczne
@@ -86,11 +92,18 @@ async function extractRowImages(buf, sheetStartRow0) {
       const media = wb.model?.media?.[img.imageId]
       if (!media?.buffer) continue
       // ExcelJS podaje pozycję kotwicy jako ułamkową pozycję wiersza (0-indeksowaną,
-      // np. 2.0457 = "trochę poniżej górnej krawędzi wiersza 3" w Excelu). Zaokrąglamy
-      // w dół do pełnego wiersza i sprowadzamy do tej samej bazy co tablica `rows`
-      // z XLSX.utils.sheet_to_json (która zaczyna się od pierwszego wiersza w
-      // zakresie arkusza, nie zawsze od wiersza 1).
-      const rowIdx = Math.floor(img.range?.tl?.row ?? -1) - sheetStartRow0
+      // np. 2.0457 = "trochę poniżej górnej krawędzi wiersza 3" w Excelu). Samo
+      // Math.floor(tl.row) potrafi się mylić o jeden wiersz, gdy zdjęcie jest
+      // wstawione z niewielkim przesunięciem w dół względem górnej krawędzi swojego
+      // wiersza (częste, gdy dostawca ręcznie przeciągał/wklejał zdjęcia) — wtedy
+      // środek obrazka (średnia tl.row i br.row, jeśli br dostępne) trafia bliżej
+      // KOLEJNEGO wiersza niż ten, do którego faktycznie należy zdjęcie. Zaokrąglamy
+      // więc środek zakresu do najbliższego wiersza zamiast ucinać w dół — to
+      // znacznie zmniejsza liczbę zdjęć przypisanych o jeden wiersz za nisko/wysoko.
+      const tlRow = img.range?.tl?.row ?? -1
+      const brRow = img.range?.br?.row
+      const centerRow = brRow !== undefined ? (tlRow + brRow) / 2 : tlRow
+      const rowIdx = Math.round(centerRow) - sheetStartRow0
       if (rowIdx < 0) continue
       const ext = String(media.extension || 'png').toLowerCase()
       const mime = ext === 'jpg' ? 'jpeg' : ext
@@ -196,6 +209,46 @@ export async function parseQuoteExcel(file) {
       colMap = rebuilt.cMap
       appendColMap = rebuilt.aMap
       dataStartIdx = headerRowIdx + 2
+    }
+  }
+
+  // Kolumny, których sztywna mapa nagłówków (HEADER_MAP/APPEND_MAP/looksLikeUnitPriceHeader)
+  // NIE rozpoznała, a mają niepusty tekst nagłówka — to zwykle nietypowa/nowa nazwa
+  // kolumny u konkretnego dostawcy (inny język, skrót, literówka). Zamiast po cichu
+  // gubić taką kolumnę, prosimy AI (Claude) o dopasowanie na podstawie nagłówka +
+  // kilku przykładowych wartości z danych. To NAJLEPSZY WYSIŁEK — jeśli się nie uda
+  // (brak sieci, błąd funkcji, AI nie jest pewne), kolumna po prostu zostaje
+  // nierozpoznana, dokładnie jak wcześniej.
+  const unresolvedCols = []
+  headerRow.forEach((h, i) => {
+    const headerText = String(h ?? '').trim()
+    if (!headerText || colMap[i] || appendColMap[i]) return
+    const samples = []
+    for (let r = dataStartIdx; r < rows.length && samples.length < 3; r++) {
+      const v = rows[r]?.[i]
+      if (v !== '' && v !== null && v !== undefined) samples.push(String(v))
+    }
+    unresolvedCols.push({ index: i, header: headerText, samples })
+  })
+  if (unresolvedCols.length) {
+    try {
+      const usedFields = new Set(Object.values(colMap))
+      const { data, error } = await supabase.functions.invoke('map-excel-headers', {
+        body: { columns: unresolvedCols, allowedFields: AI_MAPPABLE_FIELDS },
+      })
+      if (!error && data?.mapping) {
+        for (const col of unresolvedCols) {
+          const guess = data.mapping[String(col.index)]
+          if (!guess || guess === 'ignore') continue
+          if (guess === 'append') { appendColMap[col.index] = col.header; continue }
+          if (AI_MAPPABLE_FIELDS.includes(guess) && !usedFields.has(guess)) {
+            colMap[col.index] = guess
+            usedFields.add(guess)
+          }
+        }
+      }
+    } catch {
+      // Najlepszy wysiłek — brak dopasowania AI nie blokuje reszty importu.
     }
   }
 
