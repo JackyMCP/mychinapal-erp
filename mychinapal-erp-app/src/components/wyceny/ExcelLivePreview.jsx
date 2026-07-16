@@ -10,11 +10,12 @@ import { toNum } from './calc'
 // przy wysyłce — więc nie ma szans, żeby podgląd "rozjechał się" z tym, co
 // faktycznie zostanie wysłane.
 //
-// Zdjęcia i ilość/jednostka NIE są tu edytowalne (mają już swoje miejsce w
-// formularzu pozycji wyżej — dublowanie edycji liczb w dwóch miejscach
-// groziłoby pomyłką); edytowalne są: nazwa/specyfikacja pozycji, ręczna cena
-// netto/szt. (to samo pole "Cena PLN/szt." co w formularzu, tylko wygodniej
-// dostępne tu, przy finalnej cenie) i tekst "Warunki".
+// Edytowalne bezpośrednio tutaj: nazwa/specyfikacja pozycji, zdjęcie (drag&
+// drop — współdzieli mechanizm z sekcją "Pozycje towaru" wyżej, więc można
+// przeciągnąć zdjęcie MIĘDZY dwoma miejscami w formularzu), ręczna cena
+// netto/szt. (to samo pole "Cena PLN/szt." co w formularzu), dane NABYWCY
+// (nadpisania TYLKO tej wyceny — nie zmieniają karty klienta w Klienci/CRM)
+// i tekst "Warunki". Ilość/jednostka zostają tylko w formularzu wyżej.
 
 const NAVY = '#0A1628'
 const GOLD = '#B48C28'
@@ -26,8 +27,12 @@ const cellInput = {
   border: `1px solid ${BORDER}`, borderRadius: 6, padding: '5px 7px', fontSize: 11.5,
   width: '100%', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff',
 }
+const buyerInput = { ...cellInput, padding: '4px 6px', fontSize: 10.5, marginBottom: 3 }
 
-export default function ExcelLivePreview({ quote, client, contact, company, rows, totals, photoUrl, logoDataUrl, onChangeItem, onChangeNotes }) {
+export default function ExcelLivePreview({
+  quote, client, contact, company, rows, totals, photoUrl, logoDataUrl,
+  onChangeItem, onChangeNotes, onChangeQuote, draggedPhoto, movePhoto,
+}) {
   const sellerLines = [
     company?.company_name || 'MyChinaPal Sp. z o.o.',
     company?.company_address || '',
@@ -35,14 +40,31 @@ export default function ExcelLivePreview({ quote, client, contact, company, rows
     company?.company_krs ? `KRS: ${company.company_krs}` : '',
     company?.company_regon ? `REGON: ${company.company_regon}` : '',
   ].filter(Boolean)
-  const buyerLines = [
-    client?.full_name || client?.name || '',
-    client?.address || '',
-    client?.nip ? `NIP: ${client.nip}` : '',
-    client?.krs ? `KRS: ${client.krs}` : '',
-    contact?.email || '',
-    contact?.phone || '',
-  ].filter(Boolean)
+
+  // Wartość pola nabywcy = nadpisanie tej wyceny, jeśli ustawione, inaczej
+  // dane z karty klienta/kontaktu (pokazane jako placeholder, gdy nadpisania
+  // jeszcze nie ma — więc widać skąd bierze się domyślna treść).
+  const buyerFallback = {
+    name: client?.full_name || client?.name || '',
+    address: client?.address || '',
+    nip: client?.nip || '',
+    email: contact?.email || '',
+    phone: contact?.phone || '',
+  }
+  const hasAnyBuyerOverride = ['name', 'address', 'nip', 'email', 'phone']
+    .some(k => quote?.[`buyer_${k}_override`])
+  const setBuyerField = (key, value) => onChangeQuote({ [`buyer_${key}_override`]: value || null })
+  const resetBuyerOverrides = () => onChangeQuote({
+    buyer_name_override: null, buyer_address_override: null, buyer_nip_override: null,
+    buyer_email_override: null, buyer_phone_override: null,
+  })
+
+  const handlePhotoDrop = (e, toKey, toPath) => {
+    e.preventDefault()
+    const dragged = draggedPhoto?.current
+    if (dragged && movePhoto) movePhoto(dragged.key, dragged.path, toKey, toPath)
+    if (draggedPhoto) draggedPhoto.current = null
+  }
 
   return (
     <div style={{ border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden', background: '#fff', fontFamily: "'Calibri', 'Segoe UI', sans-serif" }}>
@@ -70,10 +92,25 @@ export default function ExcelLivePreview({ quote, client, contact, company, rows
           {sellerLines.map((l, i) => <div key={i} style={{ fontSize: 10.5, color: i === 0 ? '#141414' : MUTED, fontWeight: i === 0 ? 700 : 400, lineHeight: 1.5 }}>{l}</div>)}
         </div>
         <div>
-          <div style={{ fontSize: 9, fontWeight: 800, color: NAVY, marginBottom: 4, letterSpacing: '.04em' }}>NABYWCA</div>
-          {buyerLines.length ? buyerLines.map((l, i) => <div key={i} style={{ fontSize: 10.5, color: i === 0 ? '#141414' : MUTED, fontWeight: i === 0 ? 700 : 400, lineHeight: 1.5 }}>{l}</div>) : (
-            <div style={{ fontSize: 10.5, color: MUTED }}>—</div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: NAVY, letterSpacing: '.04em' }}>NABYWCA</div>
+            {hasAnyBuyerOverride && (
+              <button type="button" onClick={resetBuyerOverrides} title="Przywróć dane z karty klienta"
+                style={{ fontSize: 8.5, color: MUTED, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                ↺ dane klienta
+              </button>
+            )}
+          </div>
+          <input value={quote?.buyer_name_override ?? ''} placeholder={buyerFallback.name || 'Nazwa nabywcy'}
+            onChange={e => setBuyerField('name', e.target.value)} style={{ ...buyerInput, fontWeight: 700 }} />
+          <input value={quote?.buyer_address_override ?? ''} placeholder={buyerFallback.address || 'Adres'}
+            onChange={e => setBuyerField('address', e.target.value)} style={buyerInput} />
+          <input value={quote?.buyer_nip_override ?? ''} placeholder={buyerFallback.nip ? `NIP: ${buyerFallback.nip}` : 'NIP'}
+            onChange={e => setBuyerField('nip', e.target.value)} style={buyerInput} />
+          <input value={quote?.buyer_email_override ?? ''} placeholder={buyerFallback.email || 'E-mail'}
+            onChange={e => setBuyerField('email', e.target.value)} style={buyerInput} />
+          <input value={quote?.buyer_phone_override ?? ''} placeholder={buyerFallback.phone || 'Telefon'}
+            onChange={e => setBuyerField('phone', e.target.value)} style={{ ...buyerInput, marginBottom: 0 }} />
         </div>
       </div>
 
@@ -96,11 +133,18 @@ export default function ExcelLivePreview({ quote, client, contact, company, rows
               return (
                 <tr key={row._key} style={{ background: idx % 2 === 1 ? BG_SOFT : '#fff', borderBottom: `1px solid ${BORDER}` }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: MUTED, verticalAlign: 'top' }}>{idx + 1}</td>
-                  <td style={{ padding: '8px 10px', verticalAlign: 'top' }}>
+                  <td style={{ padding: '8px 10px', verticalAlign: 'top' }}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => handlePhotoDrop(e, row._key, cover || null)}>
                     {cover ? (
-                      <img src={photoUrl(cover)} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}`, display: 'block' }} />
+                      <img src={photoUrl(cover)} alt="" draggable
+                        onDragStart={() => { if (draggedPhoto) draggedPhoto.current = { key: row._key, path: cover } }}
+                        onDragEnd={() => { if (draggedPhoto) draggedPhoto.current = null }}
+                        title="Przeciągnij, żeby przenieść do innej pozycji"
+                        style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${BORDER}`, display: 'block', cursor: 'grab' }} />
                     ) : (
-                      <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px dashed ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: MUTED }}>—</div>
+                      <div title="Przeciągnij tu zdjęcie z innej pozycji"
+                        style={{ width: 46, height: 46, borderRadius: 6, border: `1px dashed ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: MUTED }}>—</div>
                     )}
                   </td>
                   <td style={{ padding: '8px 10px', verticalAlign: 'top', minWidth: 220 }}>

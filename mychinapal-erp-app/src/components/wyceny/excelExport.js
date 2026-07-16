@@ -97,13 +97,17 @@ export async function buildClientQuoteWorkbook({ quote, client, contact, company
     company?.company_krs ? `KRS: ${company.company_krs}` : '',
     company?.company_regon ? `REGON: ${company.company_regon}` : '',
   ].filter(Boolean)
+  // Dane nabywcy: jeśli zespół PL nadpisał je dla TEJ konkretnej wyceny
+  // (pola quotes.buyer_*_override, edytowalne w ExcelLivePreview — np. gdy
+  // karta klienta w Klienci/CRM ma braki/błędy akurat na potrzeby tego
+  // zamówienia), mają pierwszeństwo przed danymi z karty klienta/kontaktu.
   const buyerLines = [
-    client?.full_name || client?.name || '',
-    client?.address || '',
-    client?.nip ? `NIP: ${client.nip}` : '',
+    quote?.buyer_name_override || client?.full_name || client?.name || '',
+    quote?.buyer_address_override || client?.address || '',
+    (quote?.buyer_nip_override || client?.nip) ? `NIP: ${quote?.buyer_nip_override || client.nip}` : '',
     client?.krs ? `KRS: ${client.krs}` : '',
-    contact?.email || '',
-    contact?.phone || '',
+    quote?.buyer_email_override || contact?.email || '',
+    quote?.buyer_phone_override || contact?.phone || '',
   ].filter(Boolean)
 
   sheet.mergeCells(`A${r}:C${r}`)

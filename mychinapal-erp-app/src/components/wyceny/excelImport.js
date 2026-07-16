@@ -139,6 +139,24 @@ function extractProductionDays(text) {
   return m ? m[1] : ''
 }
 
+// Wiersz "RAZEM/TOTAL/SUMA" na dole tabeli (podsumowanie zamówienia, nie
+// pojedynczy produkt) bywa błędnie importowany jako REALNA pozycja, kiedy ma
+// przy sobie jakieś zdjęcie zakotwiczone w pobliżu (np. pieczątka/podpis na
+// dole dokumentu) — bo dotychczasowa reguła włączała wiersz bez nazwy, jeśli
+// tylko miał obraz (`hasName || rowImages.length`). Realny przykład, który
+// wykrył tę wadę: wiersz bez nazwy, z ilością równą SUMIE ilości wszystkich
+// wcześniejszych pozycji i wartością w kolumnie CBM równą sumie (cena×ilość)
+// wszystkich wcześniejszych pozycji — czyli klasyczny wiersz podsumowania,
+// którego "objętość" w rzeczywistości była łączną wartością zamówienia w
+// CNY, przypadkowo trafiającą w kolumnę zmapowaną jako CBM. Taki wiersz
+// pomijamy CAŁKOWICIE (razem z jego zdjęciem — to prawdopodobnie pieczątka,
+// nie zdjęcie produktu), zamiast tworzyć z niego fantomową, bezsensowną
+// pozycję (bez nazwy, z absurdalną "objętością").
+const TOTAL_ROW_REGEX = /(razem|\btotal\b|grand\s*total|\bsuma\b|lacznie|w sumie|podsumowanie)/i
+function looksLikeTotalRowLabel(rawRow) {
+  return (rawRow || []).some(c => TOTAL_ROW_REGEX.test(foldDiacritics(String(c ?? '').toLowerCase())))
+}
+
 export async function parseQuoteExcel(file) {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
@@ -253,6 +271,7 @@ export async function parseQuoteExcel(file) {
   }
 
   const items = []
+  let qtySumSoFar = 0
   for (let r = dataStartIdx; r < rows.length; r++) {
     const row = rows[r]
     if (!row || row.every(c => c === '' || c === null || c === undefined)) continue
@@ -289,14 +308,26 @@ export async function parseQuoteExcel(file) {
     const prodDays = extractProductionDays(item.specification)
     if (prodDays) item.production_days = prodDays
 
-    // Wiersze bez nazwy to zwykle podsumowania/stopki albo (przy dwuwierszowym
-    // nagłówku) kontynuacja nagłówka — pomijamy je, chyba że wiersz ma za to
-    // zdjęcie (produkt bez opisanej nazwy w Excelu, ale z fotką — i tak warto
-    // go zaimportować, nazwę można dopisać/dogenerować AI).
+    // Wiersz bez nazwy, który ALBO ma etykietę razem/total/suma w jakiejś
+    // komórce, ALBO jego ilość dokładnie sumuje się z ilościami wszystkich
+    // wcześniejszych, nazwanych pozycji — to wiersz podsumowania zamówienia,
+    // nie produkt. Pomijamy go całkowicie (razem z ewentualnym zdjęciem —
+    // patrz komentarz przy TOTAL_ROW_REGEX), żeby nie tworzyć fantomowej
+    // pozycji z absurdalną "ilością"/"objętością".
+    const isTotalRow = !hasName && qtySumSoFar > 0 && (
+      looksLikeTotalRowLabel(row) || toNum(item.qty) === qtySumSoFar
+    )
+    if (isTotalRow) continue
+
+    // Wiersze bez nazwy to poza tym zwykle (przy dwuwierszowym nagłówku)
+    // kontynuacja nagłówka — pomijamy je, chyba że wiersz ma za to zdjęcie
+    // (produkt bez opisanej nazwy w Excelu, ale z fotką — i tak warto go
+    // zaimportować, nazwę można dopisać/dogenerować AI).
     const rowImages = imagesByRowIdx[r] || []
     if (hasName || rowImages.length) {
       if (rowImages.length) item._photoDataUrls = rowImages
       items.push(item)
+      if (hasName) qtySumSoFar += toNum(item.qty)
     }
   }
   return items

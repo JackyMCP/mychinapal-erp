@@ -946,6 +946,9 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       pl_delivery_to_client_cost: quote.pl_delivery_to_client_cost === '' || quote.pl_delivery_to_client_cost === null || quote.pl_delivery_to_client_cost === undefined ? null : toNum(quote.pl_delivery_to_client_cost),
       pl_delivery_currency: quote.pl_delivery_currency || 'PLN',
       pl_delivery_rate: quote.pl_delivery_rate || null, pl_delivery_rate_date: quote.pl_delivery_rate_date || null,
+      buyer_name_override: quote.buyer_name_override || null, buyer_address_override: quote.buyer_address_override || null,
+      buyer_nip_override: quote.buyer_nip_override || null, buyer_email_override: quote.buyer_email_override || null,
+      buyer_phone_override: quote.buyer_phone_override || null,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
 
@@ -1842,13 +1845,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       <div style={card}>
         <div style={sectionTitle}>👁 {t("Podgląd Excela (dokładnie to trafi do klienta — edytuj bezpośrednio poniżej)")}</div>
         <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12 }}>
-          {t("To jest żywy podgląd tego samego pliku, który wyślesz klientowi — edycja tu (nazwa/specyfikacja pozycji, cena netto/szt., Warunki) zapisuje się wprost do wyceny, tak jak formularz wyżej. Zdjęcia i ilość edytujesz w sekcji „Pozycje towaru” powyżej.")}
+          {t("To jest żywy podgląd tego samego pliku, który wyślesz klientowi — edycja tu (nazwa/specyfikacja, cena netto/szt., dane nabywcy, Warunki) zapisuje się wprost do wyceny, tak jak formularz wyżej. Zdjęcie każdej pozycji możesz tu przeciągnąć na inną — przydatne, gdy import z Excela pomylił dopasowanie. Ilość edytujesz w sekcji „Pozycje towaru” powyżej.")}
         </div>
         <ExcelLivePreview
           quote={quote} client={client} contact={contact} company={company}
           rows={totalsCalc.rows} totals={totalsCalc.totals}
           photoUrl={photoUrl} logoDataUrl={logoNavyDataUrl}
           onChangeItem={setItem} onChangeNotes={(notes) => setQ({ notes })}
+          onChangeQuote={(patch) => setQ(patch)}
+          draggedPhoto={draggedPhoto} movePhoto={movePhoto}
         />
       </div>
 
