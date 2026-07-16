@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabaseClient'
 import { C, fmt } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import useIsMobile from '../lib/useIsMobile'
-import { computeQuoteTotals, nextQuoteNumber, STATUS_LABELS } from '../components/wyceny/calc'
+import { computeQuoteTotals, STATUS_LABELS } from '../components/wyceny/calc'
 import QuoteEditor from '../components/wyceny/QuoteEditor'
 import NewProjectModal from '../components/projekty/NewProjectModal'
+import { createQuoteFromExcelFile, isExcelFile } from '../lib/quoteIntake'
 
 const statusColor = (s) => s === 'wyslana' ? C.green : s === 'do_marzy_pl' ? C.orange : C.blue
 const statusBg = (s) => s === 'wyslana' ? C.glight : s === 'do_marzy_pl' ? C.olight : C.blight
@@ -26,9 +27,9 @@ export default function Wyceny() {
   const [pickClient, setPickClient] = useState('')
   const [pickProject, setPickProject] = useState('')
   const [creating, setCreating] = useState(false)
+  const [pickFile, setPickFile] = useState(null)
   const [search, setSearch] = useState('')
   const [newProjectOpen, setNewProjectOpen] = useState(false)
-  const [startAs, setStartAs] = useState('cn')
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Pozwala przejść jednym kliknięciem wprost do konkretnej wyceny z
@@ -81,26 +82,29 @@ export default function Wyceny() {
       || (q.projects?.order_label || '').toLowerCase().includes(s)
   })
 
+  // Od tej wersji wycena NIE jest już tworzona ręcznie — zespół CN dostarcza
+  // gotowy plik Excel (tutaj, albo w panelu zamówienia, albo na czacie
+  // zamówienia z przypisaniem kategorii "Wycena" — wszystkie trzy sposoby
+  // wywołują tę samą funkcję i dają identyczny efekt). Aplikacja parsuje
+  // plik, tworzy wycenę + pozycje + zdjęcia i powiadamia cały zespół PL.
   const handleCreate = async () => {
     if (!pickClient || !pickProject) { toast.error(t('Wybierz klienta i zamówienie.')); return }
+    if (!pickFile) { toast.error(t('Wybierz plik Excel z wyceną od zespołu CN.')); return }
+    if (!isExcelFile(pickFile)) { toast.error(t('To musi być plik Excel (.xlsx / .xls).')); return }
     setCreating(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const quote_number = nextQuoteNumber(quotes.map(q => q.quote_number))
-    const { data, error } = await supabase.from('quotes').insert({
-      quote_number, client_id: pickClient, project_id: pickProject,
-      status: startAs === 'pl' ? 'do_marzy_pl' : 'szkic_cn',
-      // Wyceny zaczynane od razu przez zespół PL są od razu w PLN (waluta
-      // rozmowy z polskim klientem); cena bazowa w CNY od zespołu chińskiego
-      // pokazuje się wtedy pomocniczo w przeliczniku NBP w edytorze.
-      currency: startAs === 'pl' ? 'PLN' : 'CNY',
-      created_by: user?.id,
-      notes: t('1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.'),
-    }).select().single()
+    const project = projects.find(p => p.id === pickProject)
+    const client = clients.find(c => c.id === pickClient)
+    const result = await createQuoteFromExcelFile(pickFile, project, client, quotes.map(q => q.quote_number))
     setCreating(false)
-    if (error) { toast.error(t('Nie udało się utworzyć wyceny: ') + error.message); return }
-    setPicking(false); setPickClient(''); setPickProject(''); setStartAs('cn')
+    if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny: ') + result.error); return }
+    setPicking(false); setPickClient(''); setPickProject(''); setPickFile(null)
     await loadAll()
-    setOpenId(data.id)
+    setOpenId(result.quoteId)
+    const notifyMsg = result.notifyFailed
+      ? t(` (⚠ nie udało się powiadomić części zespołu PL)`)
+      : t(` — zespół PL (${result.notified}) dostał powiadomienie`)
+    toast.success(t(`Wycena przyjęta ✓ ${result.itemCount} pozycji`) + notifyMsg)
+    if (result.uploadFailCount) toast.error(t(`Nie udało się wgrać ${result.uploadFailCount} zdjęć z Excela.`))
   }
 
   const handleDelete = async (q, e) => {
@@ -136,10 +140,10 @@ export default function Wyceny() {
           <div style={{ width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)' }}>📝</div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 21, fontWeight: 800 }}>{t("Wyceny")}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 3 }}>{t("Generator wycen dla klientów — od ceny fabrycznej po gotowy PDF")}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 3 }}>{t("Wyceny od zespołu CN — dolicz koszty i marżę, wyślij do klienta")}</div>
           </div>
           <button onClick={() => setPicking(true)} style={{ padding: '11px 20px', borderRadius: 11, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', boxShadow: '0 6px 18px rgba(37,99,235,.4)' }}>
-            {t("+ Nowa wycena")}
+            {t("+ Wgraj wycenę")}
           </button>
         </div>
       </div>
@@ -147,7 +151,8 @@ export default function Wyceny() {
       {picking && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPicking(false)}>
           <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 440, maxWidth: '92vw', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{t("Nowa wycena")}</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{t("Wgraj wycenę od zespołu CN")}</div>
+            <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14 }}>{t("Wybierz plik Excel z wyceną — aplikacja rozpozna pozycje, zdjęcia i ceny, i powiadomi cały zespół PL przypisany do zamówienia.")}</div>
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Klient")}</label>
             <select value={pickClient} onChange={e => { setPickClient(e.target.value); setPickProject('') }}
               style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, width: '100%', marginBottom: 12, boxSizing: 'border-box' }}>
@@ -168,28 +173,27 @@ export default function Wyceny() {
             </div>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>{t("Nie widzisz klienta? Utwórz go najpierw w module Klienci. Zamówienie możesz założyć od razu tutaj przyciskiem „+ Nowe”.")}</div>
 
-            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Kto zaczyna tę wycenę?")}</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, border: `1.5px solid ${startAs === 'cn' ? C.blue : C.border}`, background: startAs === 'cn' ? C.blight : C.white, borderRadius: 9, padding: '9px 11px', cursor: 'pointer' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}>
-                  <input type="radio" name="startAs" checked={startAs === 'cn'} onChange={() => setStartAs('cn')} />
-                  {t("Zespół chiński")}
+            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Plik Excel z wyceną od zespołu CN")}</label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 10, border: `1.5px dashed ${pickFile ? C.blue : C.border}`,
+              background: pickFile ? C.blight : C.bg, borderRadius: 9, padding: '12px 13px', cursor: 'pointer', marginBottom: 16,
+            }}>
+              <span style={{ fontSize: 18 }}>📄</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: pickFile ? C.blue : C.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pickFile ? pickFile.name : t("Wybierz plik .xlsx / .xls…")}
                 </span>
-                <span style={{ fontSize: 9.5, color: C.muted }}>{t("Szkic bez marży — dopiero potem zespół PL dolicza koszty")}</span>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, border: `1.5px solid ${startAs === 'pl' ? C.blue : C.border}`, background: startAs === 'pl' ? C.blight : C.white, borderRadius: 9, padding: '9px 11px', cursor: 'pointer' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}>
-                  <input type="radio" name="startAs" checked={startAs === 'pl'} onChange={() => setStartAs('pl')} />
-                  {t("Zespół polski")}
+                <span style={{ display: 'block', fontSize: 9.5, color: C.muted, marginTop: 1 }}>
+                  {t("Pozycje, ceny i zdjęcia zostaną rozpoznane automatycznie")}
                 </span>
-                <span style={{ fontSize: 9.5, color: C.muted }}>{t("Mam już Excel/zdjęcia/ceny — pomiń krok chiński, wpisz od razu transport i marżę")}</span>
-              </label>
-            </div>
+              </span>
+              <input type="file" accept=".xlsx,.xls,.xlsm" onChange={e => setPickFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+            </label>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setPicking(false); setStartAs('cn') }} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
-              <button onClick={handleCreate} disabled={creating} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: creating ? .6 : 1 }}>
-                {creating ? t("Tworzenie…") : t("Utwórz wycenę")}
+              <button onClick={() => { setPicking(false); setPickFile(null) }} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
+              <button onClick={handleCreate} disabled={creating || !pickClient || !pickProject || !pickFile} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (creating || !pickClient || !pickProject || !pickFile) ? .6 : 1 }}>
+                {creating ? t("Przetwarzanie…") : t("Przyjmij wycenę")}
               </button>
             </div>
           </div>
