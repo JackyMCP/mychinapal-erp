@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs'
-import { fetchAsDataUrl } from './pdf'
+import { fetchAsDataUrl } from './fileUtils'
 import { toNum } from './calc'
 
 // Generator wyceny dla klienta w formacie EXCEL (zastępuje dotychczasowy
