@@ -92,6 +92,29 @@ async function fetchCustomsSuggestion(name, specification, photoPath) {
 // zdecydować, czy dany wgrany plik w ogóle kwalifikuje się do tego przepływu
 // (tylko pliki .xlsx/.xls/.xlsm z kategorią "Wycena").
 export { isExcelFile }
+// parseQuoteExcel — re-eksport, żeby ekran szybkiego podglądu (Wyceny.jsx)
+// mógł sparsować plik SAM, pokazać wiersze/zdjęcia do poprawienia (patrz
+// ExcelImportPreview.jsx — przeciąganie zdjęć między wierszami) i dopiero
+// PO zatwierdzeniu przekazać je do createQuoteFromParsedItems niżej.
+export { parseQuoteExcel }
+
+/**
+ * Sprawdza, czy zamówienie ma komu przypisać zadanie (zespół PL) — wywoływane
+ * ZANIM pokaże się ekran podglądu importu, żeby nie kazać nikomu poprawiać
+ * dopasowania zdjęć tylko po to, żeby na końcu i tak dostać błąd braku
+ * przypisanego zespołu.
+ * @returns {Promise<{ok:boolean, plUserIds:string[], error:string|null}>}
+ */
+export async function checkPlTeamAssigned(project) {
+  const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
+    .select('user_id, role').eq('project_id', project.id).neq('role', 'glowny_cn')
+  if (assignErr) return { ok: false, plUserIds: [], error: 'Nie udało się sprawdzić zespołu PL zamówienia: ' + assignErr.message }
+  const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
+  if (!plUserIds.length) {
+    return { ok: false, plUserIds: [], error: 'To zamówienie nie ma jeszcze przypisanego nikogo z zespołu PL — przypisz opiekuna w panelu Projekty & Zamówienia, dopiero potem wgraj wycenę.' }
+  }
+  return { ok: true, plUserIds, error: null }
+}
 
 /**
  * Główna funkcja przyjęcia wyceny od zespołu CN.
@@ -102,6 +125,35 @@ export { isExcelFile }
  * @returns {Promise<{ok:boolean, quoteId:string|null, itemCount:number, notified:number, notifyFailed:boolean, uploadFailCount:number, error:string|null}>}
  */
 export async function createQuoteFromExcelFile(file, project, client, existingQuoteNumbers = []) {
+  // Sparsuj Excel PRZED zapisem czegokolwiek — jeśli się nie uda, nic nie
+  // zostaje utworzone. To wariant BEZ ekranu podglądu (używany przez
+  // ProjectFiles/czat, gdzie nie ma miejsca na modal) — reszta pracy dzieje
+  // się w createQuoteFromParsedItems, dokładnie tak samo jak przy podglądzie.
+  let parsedItems
+  try {
+    parsedItems = await parseQuoteExcel(file)
+  } catch (e) {
+    return { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, overwritten: false, error: 'Nie udało się odczytać pliku Excel: ' + (e?.message || e) }
+  }
+  if (!parsedItems.length) {
+    return { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, overwritten: false, error: 'Nie rozpoznano żadnych pozycji w tym pliku Excel.' }
+  }
+  return createQuoteFromParsedItems(parsedItems, file, project, client, existingQuoteNumbers)
+}
+
+/**
+ * Jak createQuoteFromExcelFile, ale przyjmuje JUŻ sparsowane (i ewentualnie
+ * ręcznie poprawione na ekranie podglądu — patrz ExcelImportPreview.jsx)
+ * pozycje zamiast parsować plik samodzielnie. Dzięki temu ekran podglądu
+ * może dać zespołowi szansę poprawić dopasowanie zdjęć do wierszy PRZED
+ * utworzeniem czegokolwiek w bazie.
+ * @param {Array} parsedItems - wynik parseQuoteExcel, opcjonalnie poprawiony ręcznie
+ * @param {File} file - oryginalny plik Excel (do zapisania w Storage/dokumentach)
+ * @param {{id:string, client_id:string}} project
+ * @param {{id:string, name?:string}} client
+ * @param {string[]} existingQuoteNumbers
+ */
+export async function createQuoteFromParsedItems(parsedItems, file, project, client, existingQuoteNumbers = []) {
   const result = { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, error: null, overwritten: false }
   try {
     const { data: { user } } = await supabase.auth.getUser()
@@ -109,23 +161,10 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
     // 1) Sprawdź ZAWCZASU, czy jest komu przypisać zadanie — bez zespołu PL
     // przyjęcie wyceny ma się nie udać z czytelnym błędem, zamiast po cichu
     // "zniknąć" bez żadnego powiadomienia.
-    const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
-      .select('user_id, role').eq('project_id', project.id).neq('role', 'glowny_cn')
-    if (assignErr) { result.error = 'Nie udało się sprawdzić zespołu PL zamówienia: ' + assignErr.message; return result }
-    const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
-    if (!plUserIds.length) {
-      result.error = 'To zamówienie nie ma jeszcze przypisanego nikogo z zespołu PL — przypisz opiekuna w panelu Projekty & Zamówienia, dopiero potem wgraj wycenę.'
-      return result
-    }
+    const plCheck = await checkPlTeamAssigned(project)
+    if (!plCheck.ok) { result.error = plCheck.error; return result }
+    const plUserIds = plCheck.plUserIds
 
-    // 2) Sparsuj Excel PRZED zapisem czegokolwiek — jeśli się nie uda, nic nie zostaje utworzone.
-    let parsedItems
-    try {
-      parsedItems = await parseQuoteExcel(file)
-    } catch (e) {
-      result.error = 'Nie udało się odczytać pliku Excel: ' + (e?.message || e)
-      return result
-    }
     if (!parsedItems.length) {
       result.error = 'Nie rozpoznano żadnych pozycji w tym pliku Excel.'
       return result

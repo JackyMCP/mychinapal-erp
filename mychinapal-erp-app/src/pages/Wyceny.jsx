@@ -8,7 +8,8 @@ import useIsMobile from '../lib/useIsMobile'
 import { computeQuoteTotals, STATUS_LABELS } from '../components/wyceny/calc'
 import QuoteEditor from '../components/wyceny/QuoteEditor'
 import NewProjectModal from '../components/projekty/NewProjectModal'
-import { createQuoteFromExcelFile, isExcelFile } from '../lib/quoteIntake'
+import ExcelImportPreview from '../components/wyceny/ExcelImportPreview'
+import { isExcelFile, checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems } from '../lib/quoteIntake'
 
 const statusColor = (s) => s === 'wyslana' ? C.green : s === 'do_marzy_pl' ? C.orange : C.blue
 const statusBg = (s) => s === 'wyslana' ? C.glight : s === 'do_marzy_pl' ? C.olight : C.blight
@@ -28,6 +29,11 @@ export default function Wyceny() {
   const [pickProject, setPickProject] = useState('')
   const [creating, setCreating] = useState(false)
   const [pickFile, setPickFile] = useState(null)
+  const [parsing, setParsing] = useState(false)
+  // null = ekran podglądu ukryty; tablica = pokazany, z wierszami do
+  // poprawienia (nazwa/specyfikacja/ilość/cena, dopasowanie zdjęć drag&drop)
+  // ZANIM cokolwiek trafi do bazy — patrz ExcelImportPreview.jsx.
+  const [previewItems, setPreviewItems] = useState(null)
   const [search, setSearch] = useState('')
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -83,21 +89,44 @@ export default function Wyceny() {
   })
 
   // Od tej wersji wycena NIE jest już tworzona ręcznie — zespół CN dostarcza
-  // gotowy plik Excel (tutaj, albo w panelu zamówienia, albo na czacie
-  // zamówienia z przypisaniem kategorii "Wycena" — wszystkie trzy sposoby
-  // wywołują tę samą funkcję i dają identyczny efekt). Aplikacja parsuje
-  // plik, tworzy wycenę + pozycje + zdjęcia i powiadamia cały zespół PL.
-  const handleCreate = async () => {
+  // gotowy plik Excel. Zanim jednak cokolwiek trafi do bazy, plik jest
+  // parsowany i pokazany na ekranie SZYBKIEGO PODGLĄDU (ExcelImportPreview)
+  // — tam da się poprawić nazwę/specyfikację/ilość/cenę i, co najważniejsze,
+  // PRZECIĄGNĄĆ zdjęcie na inną pozycję, jeśli parser dopasował je do złego
+  // wiersza (realnie zgłoszony problem: zdjęcia "rozjeżdżały się" o wiersz).
+  // Dopiero zatwierdzenie tego ekranu tworzy/nadpisuje wycenę + pozycje +
+  // zdjęcia i powiadamia cały zespół PL.
+  const handlePickFileContinue = async () => {
     if (!pickClient || !pickProject) { toast.error(t('Wybierz klienta i zamówienie.')); return }
     if (!pickFile) { toast.error(t('Wybierz plik Excel z wyceną od zespołu CN.')); return }
     if (!isExcelFile(pickFile)) { toast.error(t('To musi być plik Excel (.xlsx / .xls).')); return }
+    const project = projects.find(p => p.id === pickProject)
+    setParsing(true)
+    const plCheck = await checkPlTeamAssigned(project)
+    if (!plCheck.ok) { setParsing(false); toast.error(t('Nie udało się przyjąć wyceny: ') + plCheck.error); return }
+    let parsedItems
+    try {
+      parsedItems = await parseQuoteExcel(pickFile)
+    } catch (e) {
+      setParsing(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
+    }
+    setParsing(false)
+    if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
+    setPicking(false)
+    setPreviewItems(parsedItems)
+  }
+
+  const handleCancelPreview = () => { setPreviewItems(null); setPicking(true) }
+
+  const handleConfirmPreview = async (editedItems) => {
+    setPreviewItems(null)
     setCreating(true)
     const project = projects.find(p => p.id === pickProject)
     const client = clients.find(c => c.id === pickClient)
-    const result = await createQuoteFromExcelFile(pickFile, project, client, quotes.map(q => q.quote_number))
+    const result = await createQuoteFromParsedItems(editedItems, pickFile, project, client, quotes.map(q => q.quote_number))
     setCreating(false)
     if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny: ') + result.error); return }
-    setPicking(false); setPickClient(''); setPickProject(''); setPickFile(null)
+    setPickClient(''); setPickProject(''); setPickFile(null)
     await loadAll()
     setOpenId(result.quoteId)
     const notifyMsg = result.notifyFailed
@@ -193,12 +222,21 @@ export default function Wyceny() {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => { setPicking(false); setPickFile(null) }} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
-              <button onClick={handleCreate} disabled={creating || !pickClient || !pickProject || !pickFile} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (creating || !pickClient || !pickProject || !pickFile) ? .6 : 1 }}>
-                {creating ? t("Przetwarzanie…") : t("Przyjmij wycenę")}
+              <button onClick={handlePickFileContinue} disabled={parsing || creating || !pickClient || !pickProject || !pickFile} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (parsing || creating || !pickClient || !pickProject || !pickFile) ? .6 : 1 }}>
+                {parsing ? t("Analizowanie pliku…") : (creating ? t("Przetwarzanie…") : t("Dalej — podgląd"))}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {previewItems && (
+        <ExcelImportPreview
+          rows={previewItems}
+          fileName={pickFile?.name}
+          onConfirm={handleConfirmPreview}
+          onCancel={handleCancelPreview}
+        />
       )}
 
       {newProjectOpen && (
