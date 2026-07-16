@@ -1,9 +1,11 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
+import { taskTargetPath } from '../../lib/taskLinks'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -25,6 +27,7 @@ const STATUS_LABEL = { todo: 'Do zrobienia', in_progress: 'W trakcie', done: 'Za
 export default function AllTasksPanel({ onClose, profiles, currentUserId }) {
   const { t } = useLang()
   const { toast } = useUI()
+  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [tasks, setTasks] = useState([])
@@ -97,17 +100,20 @@ export default function AllTasksPanel({ onClose, profiles, currentUserId }) {
           {!loading && filtered.length === 0 && <EmptyState icon="✅" title={t("Brak zadań spełniających filtr")} subtitle={t("Zmień filtry powyżej, żeby zobaczyć więcej.")} />}
           {!loading && filtered.map(task => {
             const due = dueLabel(task.due_date)
+            const link = taskTargetPath(task)
             return (
-              <div key={task.id} style={{ padding: '10px 8px', borderRadius: 9, borderBottom: `1px solid ${C.border}` }}>
+              <div key={task.id} onClick={() => link && (onClose(), navigate(link))}
+                title={link ? t('Kliknij, żeby przejść do powiązanej wyceny/faktury/zamówienia/klienta') : undefined}
+                style={{ padding: '10px 8px', borderRadius: 9, borderBottom: `1px solid ${C.border}`, cursor: link ? 'pointer' : 'default' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>{task.title}</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>{task.title}{link && <span style={{ color: C.blue, marginLeft: 6 }}>↗</span>}</div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {due && <span style={pill(due.cls === 'overdue' ? C.rlight : due.cls === 'today' ? C.olight : C.bg, due.cls === 'overdue' ? C.red : due.cls === 'today' ? C.orange : C.muted)}>{t(due.text)}</span>}
                     {task.status === 'done' && <span style={pill('#DCFCE7', C.green)}>{t("zakończone")}</span>}
                     {task.status === 'in_progress' && <span style={pill(C.blight, C.blue)}>{t("w trakcie")}</span>}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, marginTop: 7, alignItems: 'center', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
                   <select value={task.assigned_to || ''} onChange={e => reassign(task, e.target.value)}
                     style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 7px', fontSize: 10.5, color: C.text2 }}>
                     {profiles.map(p => <option key={p.id} value={p.id}>{p.id === currentUserId ? `${p.full_name} (ja)` : p.full_name}</option>)}

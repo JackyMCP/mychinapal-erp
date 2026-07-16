@@ -897,13 +897,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
     if (error) { toast.error(t('Nie udało się przesłać: ') + error.message); return }
+    // Karty w Bazie produktów (Magazyn) mają istnieć od razu, jak tylko
+    // zespół chiński skończy wycenę i przekaże ją dalej — nie dopiero po
+    // wysłaniu do klienta (to mogło być tygodnie później). Najlepszy
+    // wysiłek: błąd synchronizacji katalogu nie ma blokować przekazania.
+    await syncQuoteItemsToProductCatalog()
     let taskFailCount = 0
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const results = await Promise.all(plUserIds.map(uid => supabase.from('tasks').insert({
         title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
         description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
-        project_id: quote.project_id, client_id: quote.client_id,
+        project_id: quote.project_id, client_id: quote.client_id, quote_id: quote.id,
         assigned_to: uid, assigned_by: user?.id,
         due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
       })))

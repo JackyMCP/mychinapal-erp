@@ -144,7 +144,7 @@ export default function Projekty() {
           <RealCostsTable project={selected} onSaved={(updated) => setProjects(prev => prev.map(p => p.id === updated.id ? updated : p))} />
 
           <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', margin: '4px 0 10px' }}>{t("Etapy zamówienia")}</div>
-          <StageTimeline project={selected} documents={projectDocs} onDocumentsChanged={loadAll} />
+          <StageTimeline project={selected} documents={projectDocs} onDocumentsChanged={loadAll} quotes={quotesByProject[selected.id] || []} />
 
           <ProjectFiles project={selected} documents={projectDocs} onChanged={loadAll} />
 

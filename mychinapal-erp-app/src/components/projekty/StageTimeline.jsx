@@ -3,12 +3,12 @@ import { useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
-import { STAGE_DEFS } from './stageDefs'
+import { STAGE_DEFS, computeStageProgress } from './stageDefs'
 import { useUI } from '../../lib/ui'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg })
 
-function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
+function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHandedOffOrSent }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const [open, setOpen] = useState(status === 'current')
@@ -95,11 +95,21 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
               <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', margin: '14px 0 6px' }}>{t("Wymagane dokumenty")}</div>
               {stage.categories.map(cat => {
                 const docs = docsByCategory[cat] || []
+                // Etap 1 / kategoria "Wycena": zanim finalny PDF trafi do
+                // Dokumentów (dopiero przy wysyłce do klienta), wycena już
+                // "jest w toku" u zespołu PL (status do_marzy_pl/wyslana w
+                // module Wyceny) — to też ma liczyć się jako spełnione, żeby
+                // ta pozycja nie wisiała na czerwono mimo realnego postępu.
+                const satisfiedByQuote = cat === 'Wycena' && !docs.length && quoteHandedOffOrSent
+                const done = docs.length > 0 || satisfiedByQuote
                 return (
                   <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12 }}>
-                      <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: docs.length ? C.glight : C.rlight, color: docs.length ? C.green : C.red }}>{docs.length ? '✓' : '✗'}</div>
-                      {t(cat)}{docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`) : t(" — brakuje")}
+                      <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: done ? C.glight : C.rlight, color: done ? C.green : C.red }}>{done ? '✓' : '✗'}</div>
+                      {t(cat)}
+                      {docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`)
+                        : satisfiedByQuote ? t(" — przekazana do zespołu PL, czeka na doliczenie marży i wysyłkę do klienta")
+                        : t(" — brakuje")}
                     </div>
                     {docs.length > 0 && (
                       <div style={{ marginTop: 6, marginLeft: 28, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -152,7 +162,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded }) {
   );
 }
 
-export default function StageTimeline({ project, documents, onDocumentsChanged }) {
+export default function StageTimeline({ project, documents, onDocumentsChanged, quotes = [] }) {
   const {
     t
   } = useLang();
@@ -162,20 +172,20 @@ export default function StageTimeline({ project, documents, onDocumentsChanged }
     if (!docsByCategory[d.category]) docsByCategory[d.category] = []
     docsByCategory[d.category].push(d)
   }
-  const presentCategories = new Set(documents.map(d => d.category))
-  let currentIndex = null
-  const doneStages = new Set()
-  for (const stage of STAGE_DEFS) {
-    const satisfied = stage.categories.every(c => presentCategories.has(c))
-    if (satisfied) doneStages.add(stage.key)
-    else if (currentIndex === null) currentIndex = stage.key
-  }
+  // Ta sama logika co stageDefs.js computeStageProgress (używana na listach
+  // Dashboard/Klienci/Projekty/MojeProjekty) — musi być identyczna TUTAJ też,
+  // inaczej ten szczegółowy widok etapów pokazuje co innego niż kafelek listy
+  // (był realny bug: kafelek już pokazywał postęp, a ten widok dalej
+  // "Wycena — brakuje" na czerwono, bo miał własną, niezależną kopię logiki
+  // patrzącą WYŁĄCZNIE na tabelę `documents`, bez świadomości wycen).
+  const { doneStages, currentIndex } = computeStageProgress(documents, quotes)
+  const quoteHandedOffOrSent = (quotes || []).some(q => q.status === 'do_marzy_pl' || q.status === 'wyslana')
 
   return (
     <div>
       {STAGE_DEFS.map(stage => {
         const status = doneStages.has(stage.key) ? 'done' : (stage.key === currentIndex ? 'current' : (currentIndex !== null && stage.key > currentIndex ? 'locked' : 'done'))
-        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} />
+        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} quoteHandedOffOrSent={quoteHandedOffOrSent} />
       })}
     </div>
   )

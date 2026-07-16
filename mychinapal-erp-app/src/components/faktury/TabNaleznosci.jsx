@@ -37,7 +37,7 @@ export default function TabNaleznosci({ invoices, currentUserId, onChanged }) {
   const handleTask = async (inv) => {
     const { error } = await supabase.from('tasks').insert({
       title: `Przypomnieć o płatności — faktura ${inv.number} (${inv.clients?.name || ''})`,
-      client_id: inv.client_id, assigned_to: currentUserId, assigned_by: currentUserId,
+      client_id: inv.client_id, invoice_id: inv.id, assigned_to: currentUserId, assigned_by: currentUserId,
       due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
     })
     if (error) { toast.error('Nie udało się utworzyć zadania: ' + error.message); return }

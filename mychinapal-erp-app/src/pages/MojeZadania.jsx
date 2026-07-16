@@ -8,6 +8,7 @@ import { C } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
 import AllTasksPanel from '../components/dashboard/AllTasksPanel'
+import { taskTargetPath } from '../lib/taskLinks'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -77,21 +78,26 @@ export default function MojeZadania() {
     <div style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px', color: color || C.muted, marginBottom: 8 }}>{label} ({items.length})</div>
       <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: '4px 12px' }}>
-        {items.map(task => (
-          <div key={task.id} className="mz-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 4px', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700 }}>{task.title}</div>
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
-                {task.due_date ? new Date(task.due_date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : t('bez terminu')}
-                {task.status === 'in_progress' && <span style={{ marginLeft: 8, ...pill(C.blight, C.blue) }}>{t('w trakcie')}</span>}
+        {items.map(task => {
+          const link = taskTargetPath(task)
+          return (
+            <div key={task.id} className="mz-row" onClick={() => link && navigate(link)}
+              title={link ? t('Kliknij, żeby przejść do powiązanej wyceny/faktury/zamówienia/klienta') : undefined}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '11px 4px', borderBottom: `1px solid ${C.border}`, cursor: link ? 'pointer' : 'default' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>{task.title}{link && <span style={{ color: C.blue, marginLeft: 6 }}>↗</span>}</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>
+                  {task.due_date ? new Date(task.due_date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : t('bez terminu')}
+                  {task.status === 'in_progress' && <span style={{ marginLeft: 8, ...pill(C.blight, C.blue) }}>{t('w trakcie')}</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                {task.status === 'todo' && <button onClick={(e) => { e.stopPropagation(); setStatus(task, 'in_progress') }} style={{ fontSize: 10, fontWeight: 700, padding: '5px 11px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer' }}>{t("▶ Rozpocznij")}</button>}
+                {task.status === 'in_progress' && <button onClick={(e) => { e.stopPropagation(); setStatus(task, 'done') }} style={{ fontSize: 10, fontWeight: 700, padding: '5px 11px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer' }}>{t("✓ Zakończ")}</button>}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              {task.status === 'todo' && <button onClick={() => setStatus(task, 'in_progress')} style={{ fontSize: 10, fontWeight: 700, padding: '5px 11px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer' }}>{t("▶ Rozpocznij")}</button>}
-              {task.status === 'in_progress' && <button onClick={() => setStatus(task, 'done')} style={{ fontSize: 10, fontWeight: 700, padding: '5px 11px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer' }}>{t("✓ Zakończ")}</button>}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       <style>{`.mz-row:last-child { border-bottom: none; } .mz-row:hover { background: ${C.bg}; }`}</style>
     </div>

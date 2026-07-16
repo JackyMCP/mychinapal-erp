@@ -6,6 +6,7 @@ import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
 import { useNavigate } from 'react-router-dom'
 import AllTasksPanel from './AllTasksPanel'
+import { taskTargetPath } from '../../lib/taskLinks'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -81,15 +82,18 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged, isZ
       {active.length === 0 && !showAdd && <EmptyState icon="✅" title={t("Brak aktywnych zadań")} subtitle={t("Wszystko odhaczone — możesz dodać nowe zadanie.")} />}
       {active.map(task => {
         const due = dueLabel(task.due_date)
+        const link = taskTargetPath(task)
         return (
-          <div key={task.id} className="mytask-row" style={{ padding: '9px 6px', borderRadius: 9, borderBottom: `1px solid ${C.border}`, transition: 'background .15s ease' }}>
+          <div key={task.id} className="mytask-row" onClick={() => link && navigate(link)}
+            title={link ? t('Kliknij, żeby przejść do powiązanej wyceny/faktury/zamówienia/klienta') : undefined}
+            style={{ padding: '9px 6px', borderRadius: 9, borderBottom: `1px solid ${C.border}`, transition: 'background .15s ease', cursor: link ? 'pointer' : 'default' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 600 }}>{t(task.title)}</div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{t(task.title)}{link && <span style={{ color: C.blue, marginLeft: 6 }}>↗</span>}</div>
               {due && <span style={pill(due.cls === 'overdue' ? C.rlight : due.cls === 'today' ? C.olight : C.bg, due.cls === 'overdue' ? C.red : due.cls === 'today' ? C.orange : C.muted)}>{t(due.text)}</span>}
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-              {task.status === 'todo' && <button onClick={() => setStatus(task, 'in_progress')} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("▶ Rozpocznij")}</button>}
-              {task.status === 'in_progress' && <button onClick={() => setStatus(task, 'done')} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("✓ Zakończ")}</button>}
+              {task.status === 'todo' && <button onClick={(e) => { e.stopPropagation(); setStatus(task, 'in_progress') }} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.bmid}`, color: C.blue, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("▶ Rozpocznij")}</button>}
+              {task.status === 'in_progress' && <button onClick={(e) => { e.stopPropagation(); setStatus(task, 'done') }} className="mytask-btn" style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid #BBF7D0', color: C.green, background: '#fff', cursor: 'pointer', transition: 'transform .15s ease, box-shadow .15s ease' }}>{t("✓ Zakończ")}</button>}
               {task.status === 'in_progress' && <span style={pill(C.blight, C.blue)}>{t("w trakcie")}</span>}
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { useLang } from "../lib/i18n/LanguageContext";
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { C, fmt } from '../lib/theme'
 import { useUI } from '../lib/ui'
@@ -28,6 +29,16 @@ export default function Wyceny() {
   const [search, setSearch] = useState('')
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [startAs, setStartAs] = useState('cn')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Pozwala przejść jednym kliknięciem wprost do konkretnej wyceny z
+  // zewnątrz (np. z zadania w Centrum zadań — "Dodaj marżę i wyślij wycenę
+  // ..." — patrz lib/taskLinks.js) przez link /wyceny?quote=<id>, zamiast
+  // zmuszać do szukania jej ręcznie na liście.
+  useEffect(() => {
+    const wanted = searchParams.get('quote')
+    if (wanted) setOpenId(wanted)
+  }, [searchParams])
 
   const loadAll = async () => {
     setLoading(true)
@@ -103,7 +114,7 @@ export default function Wyceny() {
   if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>{t("Ładowanie wycen…")}</div>
 
   if (openId) {
-    return <QuoteEditor quoteId={openId} onBack={() => { setOpenId(null); loadAll() }} onChanged={loadAll} />
+    return <QuoteEditor quoteId={openId} onBack={() => { setOpenId(null); setSearchParams({}); loadAll() }} onChanged={loadAll} />
   }
 
   return (
