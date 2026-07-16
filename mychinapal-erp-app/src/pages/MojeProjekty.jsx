@@ -32,16 +32,25 @@ export default function MojeProjekty() {
       setProjects(myActiveProjects)
 
       if (myActiveProjects.length > 0) {
-        const { data: docsData } = await supabase.from('documents').select('project_id, category').in('project_id', myActiveProjects.map(p => p.id))
+        const [{ data: docsData }, { data: quotesData }] = await Promise.all([
+          supabase.from('documents').select('project_id, category').in('project_id', myActiveProjects.map(p => p.id)),
+          supabase.from('quotes').select('project_id, status').in('project_id', myActiveProjects.map(p => p.id)),
+        ])
         const docsByProject = {}
         for (const d of (docsData || [])) {
           if (!d.project_id) continue
           if (!docsByProject[d.project_id]) docsByProject[d.project_id] = []
           docsByProject[d.project_id].push(d)
         }
+        const quotesByProject = {}
+        for (const q of (quotesData || [])) {
+          if (!q.project_id) continue
+          if (!quotesByProject[q.project_id]) quotesByProject[q.project_id] = []
+          quotesByProject[q.project_id].push(q)
+        }
         const stages = {}
         for (const p of myActiveProjects) {
-          const { currentIndex, progressPct } = computeStageProgress(docsByProject[p.id] || [])
+          const { currentIndex, progressPct } = computeStageProgress(docsByProject[p.id] || [], quotesByProject[p.id] || [])
           const stageDef = currentIndex ? STAGE_DEFS.find(s => s.key === currentIndex) : null
           stages[p.id] = {
             label: stageDef ? stageDef.name : t('Zakończone (wszystkie etapy)'),

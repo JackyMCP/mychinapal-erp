@@ -12,6 +12,7 @@ import { generateQuotePdfFromLayout } from './pdfFromLayout'
 import QuoteLayoutEditor from './QuoteLayoutEditor'
 import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
+import { createProductsFromQuoteItems } from '../../lib/productCatalog'
 
 const MAX_PHOTOS_PER_ITEM = 6
 // Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
@@ -857,28 +858,40 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
+    // Zadanie (widoczne w Dashboard/Moje zadania) dla głównego opiekuna PL
+    // tego zamówienia — pełni rolę "powiadomienia", że wycena czeka na
+    // doliczenie transportu/marży i wysłanie do klienta. Brak generycznej
+    // tabeli powiadomień w aplikacji, więc to jest jedyny sensowny sposób —
+    // sprawdzamy to PRZED zmianą statusu: jeśli nie ma komu przypisać
+    // zadania, przekazanie ma się nie udać z czytelnym błędem, a nie po
+    // cichu "zniknąć" bez żadnego powiadomienia (tak było wcześniej).
+    const { data: assignment, error: assignErr } = await supabase.from('project_assignments')
+      .select('user_id').eq('project_id', quote.project_id).eq('role', 'glowny_pl').maybeSingle()
+    if (assignErr) { toast.error(t('Nie udało się sprawdzić opiekuna PL zamówienia: ') + assignErr.message); return }
+    if (!assignment?.user_id) {
+      toast.error(t('To zamówienie nie ma jeszcze przypisanego głównego opiekuna PL — przypisz go w panelu Projekty & Zamówienia, dopiero potem przekaż wycenę do zespołu PL.'))
+      return
+    }
     const ok = await handleSave(true)
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
     if (error) { toast.error(t('Nie udało się przesłać: ') + error.message); return }
-    // Zadanie (widoczne w Dashboard/Moje zadania) dla głównego opiekuna PL
-    // tego zamówienia — pełni rolę "powiadomienia", że wycena czeka na
-    // doliczenie transportu/marży i wysłanie do klienta. Brak generycznej
-    // tabeli powiadomień w aplikacji, więc to jest jedyny sensowny sposób.
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const { data: assignment } = await supabase.from('project_assignments')
-        .select('user_id').eq('project_id', quote.project_id).eq('role', 'glowny_pl').maybeSingle()
-      if (assignment?.user_id) {
-        await supabase.from('tasks').insert({
-          title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
-          description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
-          project_id: quote.project_id, client_id: quote.client_id,
-          assigned_to: assignment.user_id, assigned_by: user?.id,
-          due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
-        })
-      }
-    } catch { /* brak zadania nie blokuje przekazania wyceny */ }
+      await supabase.from('tasks').insert({
+        title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
+        description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
+        project_id: quote.project_id, client_id: quote.client_id,
+        assigned_to: assignment.user_id, assigned_by: user?.id,
+        due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
+      })
+    } catch {
+      // Status wyceny już zmieniony (nie chcemy tego cofać) — ale zgłaszamy
+      // wyraźnie, że samo zadanie się nie utworzyło, zamiast milczeć.
+      toast.error(t('Wycena przekazana, ale nie udało się utworzyć zadania dla zespołu PL — poinformuj go ręcznie.'))
+      load(); onChanged && onChanged()
+      return
+    }
     toast.success(t('Przesłano do zespołu PL — teraz można doliczyć transport, cło i marżę.'))
     load(); onChanged && onChanged()
   }
@@ -1003,33 +1016,13 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // nadpisujemy istniejących, ręcznie skompletowanych kart (stany, ceny
   // sprzedaży itd. mogą być tam już starannie ustawione). Najlepszy wysiłek:
   // błąd synchronizacji katalogu nigdy nie blokuje wysłania wyceny do klienta.
+  // Zdjęcie kopiowane jest z prywatnego bucketu 'dokumenty' (gdzie leżą
+  // zdjęcia pozycji wyceny) do publicznego 'produkty' (którego oczekuje
+  // Kartoteka towarów w Magazynie) — patrz productCatalog.js.
   const syncQuoteItemsToProductCatalog = async () => {
     try {
-      const names = [...new Set(items.map(it => (it.name || '').trim()).filter(Boolean))]
-      if (!names.length) return
-      const { data: existing } = await supabase.from('products').select('name').eq('company', 'PL').in('name', names)
-      const existingLower = new Set((existing || []).map(p => (p.name || '').trim().toLowerCase()))
       const { data: { user } } = await supabase.auth.getUser()
-      const seenThisBatch = new Set()
-      const toInsert = []
-      items.forEach((it, idx) => {
-        const name = (it.name || '').trim()
-        if (!name) return
-        const key = name.toLowerCase()
-        if (existingLower.has(key) || seenThisBatch.has(key)) return
-        seenThisBatch.add(key)
-        toInsert.push({
-          code: `WYC-${(quote.quote_number || quoteId).toString().slice(0, 24)}-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
-          name,
-          unit: it.unit || 'szt.',
-          is_service: false,
-          photo_path: it.photo_paths?.[0] || null,
-          source: 'wycena',
-          created_by: user?.id || null,
-          company: 'PL',
-        })
-      })
-      if (toInsert.length) await supabase.from('products').insert(toInsert)
+      await createProductsFromQuoteItems(items, { quoteNumber: quote.quote_number || quoteId, company: 'PL', userId: user?.id || null })
     } catch {
       // Katalog produktów to funkcja pomocnicza — jej błąd nie ma prawa
       // przerwać wysyłki wyceny do klienta.
@@ -1196,6 +1189,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                   const hasManualPln = it.unit_price_pln !== null && it.unit_price_pln !== undefined && it.unit_price_pln !== ''
                   const unitPln = hasManualPln ? toNum(it.unit_price_pln) : suggestedPln
                   const marginPerUnit = hasManualPln ? unitPln - suggestedPln : 0
+                  const marginPercent = hasManualPln && suggestedPln > 0 ? (marginPerUnit / suggestedPln) * 100 : 0
                   const lineTotalPln = toNum(it.qty) * unitPln
                   return (
                     <div style={{ marginTop: 6 }}>
@@ -1212,7 +1206,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                       </div>
                       <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
                         {hasManualPln
-                          ? t(`Marża: ${fmt(marginPerUnit, 2)} PLN/szt. · Razem: ${fmt(lineTotalPln, 2)} PLN`)
+                          ? t(`Marża: ${fmt(marginPerUnit, 2)} PLN/szt. (${fmt(marginPercent, 1)}%) · Razem: ${fmt(lineTotalPln, 2)} PLN`)
                           : t(`Auto wg kursu (bez marży ręcznej) · Razem: ${fmt(lineTotalPln, 2)} PLN`)}
                       </div>
                     </div>

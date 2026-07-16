@@ -43,6 +43,7 @@ export default function Klienci() {
   const [profiles, setProfiles] = useState([])
 
   const [documents, setDocuments] = useState([])
+  const [clientQuotes, setClientQuotes] = useState([])
   const [contacts, setContacts] = useState([])
   const [tasks, setTasks] = useState([])
   const [clientUnread, setClientUnread] = useState({})
@@ -89,17 +90,19 @@ export default function Klienci() {
 
   const reloadDetail = async (id) => {
     const cid = id || selectedId
-    if (!cid) { setDocuments([]); setContacts([]); setTasks([]); return }
-    const [docRes, contactRes, taskRes] = await Promise.all([
+    if (!cid) { setDocuments([]); setContacts([]); setTasks([]); setClientQuotes([]); return }
+    const [docRes, contactRes, taskRes, quotesRes] = await Promise.all([
       supabase.from('documents').select('*').eq('client_id', cid).order('created_at', { ascending: false }),
       supabase.from('client_contacts').select('*').eq('client_id', cid).order('created_at'),
       supabase.from('tasks').select('*').eq('client_id', cid).order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('quotes').select('project_id, status').eq('client_id', cid),
     ])
     if (docRes.error) console.error(docRes.error)
     if (taskRes.error) console.error(taskRes.error)
     setDocuments(docRes.data || [])
     setContacts(contactRes.data || [])
     setTasks(taskRes.data || [])
+    setClientQuotes(quotesRes.data || [])
   }
 
   // Suma nieprzeczytanych wiadomości na czacie klienta (włącznie z jego
@@ -153,11 +156,21 @@ export default function Klienci() {
     return map
   }, [documents])
 
+  const quotesByProject = useMemo(() => {
+    const map = {}
+    for (const q of clientQuotes) {
+      if (!q.project_id) continue
+      if (!map[q.project_id]) map[q.project_id] = []
+      map[q.project_id].push(q)
+    }
+    return map
+  }, [clientQuotes])
+
   const progressByProject = useMemo(() => {
     const map = {}
-    for (const p of selectedProjects) map[p.id] = computeStageProgress(docsByProject[p.id] || [])
+    for (const p of selectedProjects) map[p.id] = computeStageProgress(docsByProject[p.id] || [], quotesByProject[p.id] || [])
     return map
-  }, [selectedProjects, docsByProject])
+  }, [selectedProjects, docsByProject, quotesByProject])
 
   const lastContactDays = (act) => {
     if (!act) return null

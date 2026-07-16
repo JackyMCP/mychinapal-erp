@@ -30,6 +30,7 @@ export default function Projekty() {
   const [clients, setClients] = useState([])
   const [marzaByProject, setMarzaByProject] = useState({})
   const [documents, setDocuments] = useState([])
+  const [quotes, setQuotes] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -38,16 +39,18 @@ export default function Projekty() {
 
   const loadAll = async () => {
     setLoading(true)
-    const [prRes, clRes, mzRes, docRes] = await Promise.all([
+    const [prRes, clRes, mzRes, docRes, quotesRes] = await Promise.all([
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('clients').select('id,name'),
       supabase.from('v_marza_zlecenie').select('*'),
       supabase.from('documents').select('*'),
+      supabase.from('quotes').select('project_id, status'),
     ])
     setProjects(prRes.data || [])
     setClients(clRes.data || [])
     setMarzaByProject(Object.fromEntries((mzRes.data || []).map(m => [m.project_id, m])))
     setDocuments(docRes.data || [])
+    setQuotes(quotesRes.data || [])
     setLoading(false)
   }
 
@@ -69,11 +72,21 @@ export default function Projekty() {
     return map
   }, [documents])
 
+  const quotesByProject = useMemo(() => {
+    const map = {}
+    for (const q of quotes) {
+      if (!q.project_id) continue
+      if (!map[q.project_id]) map[q.project_id] = []
+      map[q.project_id].push(q)
+    }
+    return map
+  }, [quotes])
+
   const progressByProject = useMemo(() => {
     const map = {}
-    for (const p of projects) map[p.id] = computeStageProgress(docsByProject[p.id] || [])
+    for (const p of projects) map[p.id] = computeStageProgress(docsByProject[p.id] || [], quotesByProject[p.id] || [])
     return map
-  }, [projects, docsByProject])
+  }, [projects, docsByProject, quotesByProject])
 
   const filtered = useMemo(() => {
     return projects.filter(p => {
