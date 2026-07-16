@@ -130,7 +130,7 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
 
     return `
       <tr>
-        <td style="padding:16px 10px 16px 16px; vertical-align:top; text-align:center; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`}; width:34px;">
+        <td style="padding:16px 10px 16px 16px; vertical-align:middle; text-align:center; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`}; width:34px;">
           <div style="font-family:${SERIF_HEAD}; font-size:12px; font-weight:800; color:${MUTED};">${idx + 1}</div>
         </td>
         <td style="padding:16px 14px; vertical-align:top; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
@@ -138,22 +138,22 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
             <div style="flex-shrink:0;">
               ${photoBlock(photos)}
             </div>
-            <div style="min-width:0; padding-top:2px;">
+            <div style="flex:1 1 auto; min-width:0; padding-top:2px;">
               <div style="font-family:${SANS}; font-size:13.5px; font-weight:700; color:${TEXT}; line-height:1.4;">${escapeHtml(r.name || '—')}</div>
               ${r.specification ? `<div style="font-family:${SANS}; font-size:11px; color:${MUTED}; margin-top:5px; line-height:1.55;">${escapeHtml(r.specification)}</div>` : ''}
               ${metaBits.length ? `<div style="font-family:${SANS}; font-size:10.5px; color:${MUTED}; margin-top:7px; display:flex; gap:12px; flex-wrap:wrap;">${metaBits.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
             </div>
           </div>
         </td>
-        <td style="padding:16px 10px; vertical-align:top; text-align:center; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
+        <td style="padding:16px 10px; vertical-align:middle; text-align:center; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
           <div style="font-family:${SANS}; font-size:12.5px; font-weight:600; color:${TEXT};">${r.qty}</div>
           <div style="font-family:${SANS}; font-size:10px; color:${MUTED}; margin-top:1px;">${escapeHtml(r.unit || '')}</div>
         </td>
-        <td style="padding:16px 10px; vertical-align:top; text-align:right; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
+        <td style="padding:16px 10px; vertical-align:middle; text-align:right; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
           <div style="font-family:${SANS}; font-size:12.5px; font-weight:600; color:${TEXT};">${fmtPlnHtml(unitNetto)}</div>
           <div style="font-family:${SANS}; font-size:9.5px; color:${MUTED}; margin-top:1px;">PLN / szt.</div>
         </td>
-        <td style="padding:16px 16px 16px 10px; vertical-align:top; text-align:right; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
+        <td style="padding:16px 16px 16px 10px; vertical-align:middle; text-align:right; white-space:nowrap; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
           <div style="font-family:${SERIF_HEAD}; font-size:15px; font-weight:800; color:${GOLD};">${fmtPlnHtml(r.finalPrice)}</div>
           <div style="font-family:${SANS}; font-size:9.5px; color:${MUTED}; margin-top:1px;">PLN netto</div>
         </td>
