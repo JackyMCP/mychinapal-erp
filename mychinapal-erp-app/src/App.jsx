@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider } from './lib/i18n/LanguageContext'
 import { UIProvider } from './lib/ui'
 import CommandPalette from './components/CommandPalette'
+import GlobalMentionListener from './components/czat/GlobalMentionListener'
 import GlobalStyles from './components/ui/GlobalStyles'
 import Sidebar, { MOBILE_TOPBAR_HEIGHT } from './components/Sidebar'
 import SplashScreen from './components/SplashScreen'
@@ -37,6 +38,7 @@ function Shell() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: C.bg }}>
       <CommandPalette />
+      <GlobalMentionListener />
       <Sidebar />
       <div style={{ flex: 1, minWidth: 0, paddingTop: isMobile ? `calc(${MOBILE_TOPBAR_HEIGHT}px + env(safe-area-inset-top))` : 0 }}>
         <Routes>

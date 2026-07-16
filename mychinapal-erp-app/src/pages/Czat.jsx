@@ -15,6 +15,9 @@ import { MOBILE_TOPBAR_HEIGHT } from '../components/Sidebar'
 import { triggerTranslation, triggerPushNotification } from '../lib/translateMessage'
 import UnreadBadge from '../components/czat/UnreadBadge'
 import AttachCategoryModal from '../components/ui/AttachCategoryModal'
+import MentionInput from '../components/czat/MentionInput'
+import MentionText from '../components/czat/MentionText'
+import { extractMentions } from '../lib/mentions'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -64,6 +67,11 @@ export default function Czat() {
   const [showFiles, setShowFiles] = useState(false)
   const [clientOrderChannels, setClientOrderChannels] = useState([])
   const [unreadCounts, setUnreadCounts] = useState({})
+  const [clientUnread, setClientUnread] = useState({})
+  const [allProfiles, setAllProfiles] = useState([])
+  const [showMentions, setShowMentions] = useState(false)
+  const [myMentions, setMyMentions] = useState([])
+  const [loadingMentions, setLoadingMentions] = useState(false)
   const activeIdRef = useRef(null)
   const myIdRef = useRef(null)
 
@@ -104,6 +112,7 @@ export default function Czat() {
     await supabase.from('chat_channel_reads').upsert({
       channel_id: channelId, user_id: user.id, last_read_at: new Date().toISOString(),
     })
+    loadClientUnread()
   }
 
   const openChannel = (channelId) => { setActiveId(channelId); markChannelRead(channelId) }
@@ -116,11 +125,37 @@ export default function Czat() {
     setUnreadCounts(map)
   }
 
+  // Suma nieprzeczytanych na WSZYSTKICH czatach danego klienta (czat klienta +
+  // wszystkie czaty zamówień pod nim) — żeby kafelek klienta na tej liście
+  // (i zakładka "Czat" w panelu klienta, patrz Klienci.jsx) pokazywały pełną
+  // liczbę, a nie tylko wiadomości wysłane bezpośrednio na czacie klienta.
+  const loadClientUnread = async () => {
+    const { data, error } = await supabase.from('v_chat_client_unread_counts').select('*')
+    if (error) { console.error(error); return }
+    setClientUnread(Object.fromEntries((data || []).map(r => [r.client_id, r.unread_count])))
+  }
+
+  const loadMyMentions = async () => {
+    if (!myIdRef.current) return
+    setLoadingMentions(true)
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, content, created_at, channel_id, profiles(full_name), chat_channels(name)')
+      .contains('mentioned_user_ids', [myIdRef.current])
+      .order('created_at', { ascending: false })
+      .limit(30)
+    setLoadingMentions(false)
+    if (error) { console.error(error); return }
+    setMyMentions(data || [])
+  }
+
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
 
   useEffect(() => {
     loadChannels()
     loadUnreadCounts()
+    loadClientUnread()
+    supabase.from('profiles').select('id,full_name').then(({ data }) => setAllProfiles(data || []))
     supabase.auth.getUser().then(({ data }) => { myIdRef.current = data?.user?.id || null })
   }, [])
 
@@ -135,6 +170,7 @@ export default function Czat() {
         if (!row || row.sender_id === myIdRef.current) return
         if (row.channel_id === activeIdRef.current) { markChannelRead(row.channel_id); return }
         setUnreadCounts(prev => ({ ...prev, [row.channel_id]: (prev[row.channel_id] || 0) + 1 }))
+        loadClientUnread()
       })
       .subscribe()
     return () => supabase.removeChannel(sub)
@@ -292,9 +328,11 @@ export default function Czat() {
       attachmentDocId = doc.id
     }
 
+    const mentionIds = extractMentions(text, allProfiles)
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
       channel_id: activeId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
       attachment_document_id: attachmentDocId,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
     }).select(MSG_SELECT).single()
     setSending(false)
     if (error) { console.error(error); toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
@@ -368,10 +406,31 @@ export default function Czat() {
       {(!isMobile || mobileShowList) && (
       <div style={{ width: isMobile ? '100%' : 252, borderRight: `1px solid ${C.border}`, background: C.white, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ height: 3, flexShrink: 0, background: `linear-gradient(90deg, ${C.navy}, ${C.blue}, ${C.purple}, ${C.navy})`, backgroundSize: '300% 100%', animation: 'czBarShift 6s ease infinite' }} />
-        <div style={{ padding: '13px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '13px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13.5, fontWeight: 700 }}>{t("Kanały")}</div>
-          <button onClick={() => setShowNew(true)} style={{ padding: '4px 10px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff' }}>+ {t("Nowy")}</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => { setShowMentions(v => !v); if (!showMentions) loadMyMentions() }}
+              title={t('Wiadomości, w których Cię wspomniano')}
+              style={{ padding: '4px 9px', borderRadius: 7, border: `1px solid ${C.border}`, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: showMentions ? C.blight : 'transparent', color: C.blue }}>
+              🔔 {t("Wzmianki")}
+            </button>
+            <button onClick={() => setShowNew(true)} style={{ padding: '4px 10px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff' }}>+ {t("Nowy")}</button>
+          </div>
         </div>
+        {showMentions && (
+          <div style={{ borderBottom: `1px solid ${C.border}`, maxHeight: 260, overflowY: 'auto', padding: '8px 10px', background: C.bg }}>
+            {loadingMentions && <div style={{ fontSize: 11, color: C.muted, padding: 8 }}>{t("Ładowanie…")}</div>}
+            {!loadingMentions && myMentions.length === 0 && <div style={{ fontSize: 11, color: C.muted, padding: 8 }}>{t("Nikt jeszcze Cię tu nie wspomniał.")}</div>}
+            {myMentions.map(m => (
+              <div key={m.id} onClick={() => { setShowMentions(false); openChannel(m.channel_id) }}
+                style={{ padding: '8px 9px', borderRadius: 9, cursor: 'pointer', background: '#fff', border: `1px solid ${C.border}`, marginBottom: 6 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: C.blue }}>#{m.chat_channels?.name || '?'} · <span style={{ color: C.muted, fontWeight: 600 }}>{m.profiles?.full_name}</span></div>
+                <div style={{ fontSize: 11.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.content}</div>
+                <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{fmtTime(m.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
           {loadingChannels && <div style={{ padding: 14, fontSize: 11, color: C.muted }}>{t("Ładowanie…")}</div>}
           {!loadingChannels && visibleChannels.length === 0 && <EmptyState icon="💬" title={t("Brak kanałów")} subtitle={t("Utwórz pierwszy kanał, żeby zacząć rozmowę.")} />}
@@ -395,7 +454,7 @@ export default function Czat() {
                       {ch.clients?.name || ch.projects?.order_label ? `${ch.clients?.name || ''}${ch.projects?.order_label ? ` · ${ch.projects.order_label}` : ''}` : t(st.label)}
                     </div>
                   </div>
-                  <UnreadBadge count={unreadCounts[ch.id]} />
+                  <UnreadBadge count={type === 'klient' && ch.client_id ? (clientUnread[ch.client_id] || 0) : unreadCounts[ch.id]} />
                 </div>
               </div>
             );
@@ -490,7 +549,7 @@ export default function Czat() {
                     <div key={m.id} className="cz-msg" style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '65%' }}>
                       {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || t("Nieznany")}</div>}
                       <div style={{ background: mine ? activeStyle.color : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {m.content}
+                        <MentionText text={m.content} profiles={allProfiles} mine={mine} />
                         {m.translated_content && m.translated_content !== m.content && (
                           <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${mine ? 'rgba(255,255,255,.25)' : C.border}`, fontSize: 11.5, fontStyle: 'italic', opacity: 0.85 }}>
                             🌐 {m.translated_content}
@@ -536,9 +595,8 @@ export default function Czat() {
                     style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, cursor: active?.client_id ? 'pointer' : 'not-allowed', background: 'transparent', color: active?.client_id ? C.text2 : C.muted, opacity: active?.client_id ? 1 : 0.5 }}>
                     📎
                   </button>
-                  <input value={text} onChange={e => setText(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-                    placeholder={t("Napisz wiadomość…")} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12.5, outline: 'none' }} />
+                  <MentionInput value={text} onChange={setText} onEnter={handleSend} profiles={allProfiles}
+                    placeholder={t("Napisz wiadomość… (@ żeby wspomnieć kogoś)")} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12.5, outline: 'none' }} />
                   <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: activeStyle.color, color: '#fff', opacity: (sending || (!text.trim() && !attachFile)) ? 0.5 : 1 }}>
                     {t("Wyślij")}
                   </button>

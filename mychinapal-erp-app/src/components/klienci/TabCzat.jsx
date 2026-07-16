@@ -9,12 +9,16 @@ import { DOC_CATEGORIES } from '../projekty/stageDefs'
 import { useUI } from '../../lib/ui'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 import AttachCategoryModal from '../ui/AttachCategoryModal'
+import MentionInput from '../czat/MentionInput'
+import MentionText from '../czat/MentionText'
+import UnreadBadge from '../czat/UnreadBadge'
+import { extractMentions } from '../../lib/mentions'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
-export default function TabCzat({ clientId, clientName, projects }) {
+export default function TabCzat({ clientId, clientName, projects, profiles: profilesProp }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const navigate = useNavigate()
@@ -33,8 +37,35 @@ export default function TabCzat({ clientId, clientName, projects }) {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
+  const [ownProfiles, setOwnProfiles] = useState([])
+  const [unreadMap, setUnreadMap] = useState({})
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
+  const profiles = profilesProp && profilesProp.length ? profilesProp : ownProfiles
+
+  useEffect(() => {
+    if (profilesProp && profilesProp.length) return
+    supabase.from('profiles').select('id,full_name').then(({ data }) => setOwnProfiles(data || []))
+  }, [profilesProp])
+
+  // Liczniki nieprzeczytanych na czatach zamówień tego klienta (żeby dało się
+  // rozróżnić, które kafelki mają nowe wiadomości bez wchodzenia w każdy z
+  // osobna) — odświeżane na starcie i przy każdej nowej wiadomości na
+  // dowolnym kanale w aplikacji.
+  const loadUnread = async () => {
+    const { data, error } = await supabase.from('v_chat_unread_counts').select('*')
+    if (error) { console.error(error); return }
+    setUnreadMap(Object.fromEntries((data || []).map(r => [r.channel_id, r.unread_count])))
+  }
+
+  useEffect(() => {
+    loadUnread()
+    const sub = supabase
+      .channel(`client-chat-unread-${clientId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, () => loadUnread())
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [clientId])
 
   useEffect(() => {
     (async () => {
@@ -50,6 +81,10 @@ export default function TabCzat({ clientId, clientName, projects }) {
         ch = created
       }
       setChannelId(ch.id)
+      // Otwarcie zakładki Czat w panelu klienta liczy się jako przeczytanie
+      // czatu klienta (nie czatów zamówień pod nim — te otwiera się osobno).
+      await supabase.from('chat_channel_reads').upsert({ channel_id: ch.id, user_id: user.id, last_read_at: new Date().toISOString() })
+      loadUnread()
 
       // Każde zamówienie tego klienta musi mieć swój kanał czatu, żeby dało
       // się do niego zrobić odnośnik tutaj — jeśli ktoś jeszcze nie otworzył
@@ -164,9 +199,11 @@ export default function TabCzat({ clientId, clientName, projects }) {
       if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
+    const mentionIds = extractMentions(text, profiles)
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
       channel_id: channelId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
       attachment_document_id: attachmentDocId,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
     }).select(MSG_SELECT).single()
     setSending(false)
     if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
@@ -207,10 +244,11 @@ export default function TabCzat({ clientId, clientName, projects }) {
               <div key={c.id} onClick={() => navigate(`/czat?channel=${c.id}`)} className="ux-hover-lift"
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, background: C.olight, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <span style={{ width: 30, height: 30, borderRadius: 8, background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>📦</span>
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
                   <div style={{ fontSize: 10, color: C.muted }}>{t("Czat zamówienia →")}</div>
                 </div>
+                <UnreadBadge count={unreadMap[c.id]} />
               </div>
             ))}
           </div>
@@ -246,7 +284,7 @@ export default function TabCzat({ clientId, clientName, projects }) {
                 <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff', background: avatarColor(name) }}>{initials(name)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div><span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span> <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span></div>
-                  <div style={{ fontSize: 12.5, marginTop: 1 }}>{m.content}</div>
+                  <div style={{ fontSize: 12.5, marginTop: 1 }}><MentionText text={m.content} profiles={profiles} /></div>
                   {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
                   {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
                     <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
@@ -278,9 +316,9 @@ export default function TabCzat({ clientId, clientName, projects }) {
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f) }} />
           <button onClick={() => fileRef.current?.click()} title={t("Załącz dokument")} style={{ padding: '9px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: '#fff', cursor: 'pointer' }}>📎</button>
-          <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość do klienta…")}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-            style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 9, padding: '10px 13px', fontSize: 12.5 }} />
+          <MentionInput value={text} onChange={setText} onEnter={handleSend} profiles={profiles}
+            placeholder={t("Napisz wiadomość do klienta… (@ żeby wspomnieć kogoś)")}
+            style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '10px 13px', fontSize: 12.5 }} />
           <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)}
             style={{ border: 'none', background: C.blue, color: '#fff', borderRadius: 9, padding: '10px 18px', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: (sending || (!text.trim() && !attachFile)) ? .5 : 1 }}>
             {t("Wyślij")}

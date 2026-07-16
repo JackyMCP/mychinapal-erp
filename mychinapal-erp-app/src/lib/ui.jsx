@@ -8,9 +8,9 @@ export function UIProvider({ children }) {
   const [confirmState, setConfirmState] = useState(null)
   const idRef = useRef(0)
 
-  const pushToast = useCallback((kind, message) => {
+  const pushToast = useCallback((kind, message, opts = {}) => {
     const id = ++idRef.current
-    setToasts(prev => [...prev, { id, kind, message, show: false }])
+    setToasts(prev => [...prev, { id, kind, message, show: false, onClick: opts.onClick, icon: opts.icon }])
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setToasts(prev => prev.map(t => (t.id === id ? { ...t, show: true } : t)))
@@ -23,8 +23,8 @@ export function UIProvider({ children }) {
   }, [])
 
   const toast = {
-    success: (msg) => pushToast('ok', msg),
-    error: (msg) => pushToast('err', msg),
+    success: (msg, opts) => pushToast('ok', msg, opts),
+    error: (msg, opts) => pushToast('err', msg, opts),
   }
 
   const confirm = useCallback((message, opts = {}) => {
@@ -44,14 +44,15 @@ export function UIProvider({ children }) {
 
       <div style={{ position: 'fixed', bottom: 22, right: 22, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 9999, maxWidth: 'calc(100vw - 44px)' }}>
         {toasts.map(t => (
-          <div key={t.id} style={{
+          <div key={t.id} onClick={t.onClick} style={{
             display: 'flex', alignItems: 'center', gap: 10, background: C.navy, color: '#fff', padding: '12px 16px',
             borderRadius: 11, fontSize: 12.5, fontWeight: 600, boxShadow: '0 12px 30px rgba(0,0,0,.25)', minWidth: 240, maxWidth: 380,
             borderLeft: `4px solid ${t.kind === 'ok' ? C.green : C.red}`,
             transform: t.show ? 'translateX(0)' : 'translateX(120%)', opacity: t.show ? 1 : 0,
             transition: 'transform .32s cubic-bezier(.2,.9,.3,1.2), opacity .25s ease',
+            cursor: t.onClick ? 'pointer' : 'default',
           }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{t.kind === 'ok' ? '✅' : '⚠️'}</span>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>{t.icon || (t.kind === 'ok' ? '✅' : '⚠️')}</span>
             <span style={{ lineHeight: 1.4 }}>{t.message}</span>
           </div>
         ))}

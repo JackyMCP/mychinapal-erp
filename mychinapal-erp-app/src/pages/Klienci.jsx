@@ -45,6 +45,7 @@ export default function Klienci() {
   const [documents, setDocuments] = useState([])
   const [contacts, setContacts] = useState([])
   const [tasks, setTasks] = useState([])
+  const [clientUnread, setClientUnread] = useState({})
 
   const [selectedId, setSelectedId] = useState(null)
   const [tab, setTab] = useState('Przegląd')
@@ -101,13 +102,36 @@ export default function Klienci() {
     setTasks(taskRes.data || [])
   }
 
+  // Suma nieprzeczytanych wiadomości na czacie klienta (włącznie z jego
+  // czatami zamówień) — pokazywana jako plakietka na zakładce "Czat", żeby
+  // było od razu widać, że ktoś napisał, bez wchodzenia do modułu Czat.
+  const loadClientUnread = async () => {
+    const { data, error } = await supabase.from('v_chat_client_unread_counts').select('*')
+    if (error) { console.error(error); return }
+    setClientUnread(Object.fromEntries((data || []).map(r => [r.client_id, r.unread_count])))
+  }
+
   useEffect(() => {
     loadAll()
+    loadClientUnread()
     const wanted = searchParams.get('client')
     if (wanted) setSelectedId(wanted)
+    const sub = supabase
+      .channel('klienci_chat_unread_rollup')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, () => loadClientUnread())
+      .subscribe()
+    return () => supabase.removeChannel(sub)
   }, [])
 
   useEffect(() => { reloadDetail(selectedId) }, [selectedId])
+
+  // Otwarcie zakładki Czat oznacza kanał klienta jako przeczytany (patrz
+  // TabCzat.jsx) — po chwili odśwież plakietkę, żeby zniknęła.
+  useEffect(() => {
+    if (tab !== 'Czat' || !selectedId) return
+    const tmr = setTimeout(loadClientUnread, 1200)
+    return () => clearTimeout(tmr)
+  }, [tab, selectedId])
 
   const clientNameById = useMemo(() => Object.fromEntries(clients.map(c => [c.id, c.name])), [clients])
 
@@ -302,6 +326,7 @@ export default function Klienci() {
             if (key === 'Zamówienia' && selectedProjects.length > 0) badge = selectedProjects.length
             if (key === 'Dokumenty' && documents.length > 0) badge = documents.length
             if (key === 'Zadania' && openTasks > 0) badge = openTasks
+            if (key === 'Czat' && selected && clientUnread[selected.id] > 0) badge = clientUnread[selected.id]
             return (
               <div key={key} onClick={() => setTab(key)}
                 style={{ padding: '10px 16px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, color: tab === key ? '#fff' : C.muted, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7, background: tab === key ? C.navy : 'transparent', transition: '.15s' }}>
@@ -334,7 +359,7 @@ export default function Klienci() {
           <TabZadania tasks={tasks} profiles={profiles} currentUserId={profile?.id} clientId={selected.id}
             onChanged={() => reloadDetail(selected.id)} />
         )}
-        {tab === 'Czat' && <TabCzat clientId={selected.id} clientName={selected.name} projects={selectedProjects} />}
+        {tab === 'Czat' && <TabCzat clientId={selected.id} clientName={selected.name} projects={selectedProjects} profiles={profiles} />}
       </div>
     </div>
   )

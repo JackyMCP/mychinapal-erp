@@ -7,6 +7,9 @@ import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 import AttachCategoryModal from '../ui/AttachCategoryModal'
+import MentionInput from '../czat/MentionInput'
+import MentionText from '../czat/MentionText'
+import { extractMentions } from '../../lib/mentions'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -32,15 +35,20 @@ export default function ProjectChat({ project }) {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
+  const [profiles, setProfiles] = useState([])
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
+
+  useEffect(() => {
+    supabase.from('profiles').select('id,full_name').then(({ data }) => setProfiles(data || []))
+  }, [])
 
   useEffect(() => {
     (async () => {
       setLoading(true)
       let { data: ch } = await supabase.from('chat_channels').select('id').eq('project_id', project.id).limit(1).maybeSingle()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!ch) {
-        const { data: { user } } = await supabase.auth.getUser()
         const { data: created, error } = await supabase.from('chat_channels').insert({
           name: project.order_label, client_id: project.client_id, project_id: project.id, created_by: user.id,
         }).select().single()
@@ -48,6 +56,10 @@ export default function ProjectChat({ project }) {
         ch = created
       }
       setChannelId(ch.id)
+      // Otwarcie czatu tego zamówienia (np. wejście w zakładkę panelu
+      // zamówienia) liczy się jako przeczytanie — inaczej licznik nigdy by
+      // się nie zerował, bo ten komponent wcześniej w ogóle go nie znał.
+      if (user) await supabase.from('chat_channel_reads').upsert({ channel_id: ch.id, user_id: user.id, last_read_at: new Date().toISOString() })
       setLoading(false)
     })()
   }, [project.id])
@@ -138,9 +150,11 @@ export default function ProjectChat({ project }) {
       if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
+    const mentionIds = extractMentions(text, profiles)
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
       channel_id: channelId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
       attachment_document_id: attachmentDocId,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
     }).select(MSG_SELECT).single()
     setSending(false)
     if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
@@ -200,7 +214,7 @@ export default function ProjectChat({ project }) {
                 <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
                 <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
               </div>
-              <div style={{ fontSize: 12, marginTop: 2 }}>{m.content}</div>
+              <div style={{ fontSize: 12, marginTop: 2 }}><MentionText text={m.content} profiles={profiles} /></div>
               {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
               {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
                 <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
@@ -231,9 +245,9 @@ export default function ProjectChat({ project }) {
       <div style={{ display: 'flex', gap: 8 }}>
         <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setPendingFile(f) }} />
         <button onClick={() => fileRef.current?.click()} title={t("Załącz dokument")} style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, cursor: 'pointer' }}>📎</button>
-        <input value={text} onChange={e => setText(e.target.value)} placeholder={t("Napisz wiadomość…")}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-          style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12 }} />
+        <MentionInput value={text} onChange={setText} onEnter={handleSend} profiles={profiles}
+          placeholder={t("Napisz wiadomość… (@ żeby wspomnieć kogoś)")}
+          style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 12 }} />
         <button onClick={handleSend} disabled={sending || (!text.trim() && !attachFile)}
           style={{ padding: '9px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: (sending || (!text.trim() && !attachFile)) ? .5 : 1 }}>
           {t("Wyślij")}

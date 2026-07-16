@@ -35,13 +35,18 @@ self.addEventListener('push', (event) => {
   try { payload = event.data ? event.data.json() : {} } catch { payload = { title: 'MyChinaPal', body: event.data ? event.data.text() : '' } }
 
   const title = payload.title || 'MyChinaPal'
+  // Wzmianki @Ktoś dostają mocniejsze powiadomienie: zostaje na ekranie
+  // dopóki go nie dotkniesz (requireInteraction) i inny wzorzec wibracji,
+  // żeby dało się je odróżnić od zwykłej nowej wiadomości na czacie.
   const options = {
     body: payload.body || '',
     icon: payload.icon || '/icon-192.png',
     badge: payload.badge || '/icon-192.png',
     tag: payload.tag || undefined, // ta sama "tag" (np. channel_id) grupuje/podmienia powiadomienia z tego samego kanału zamiast je mnożyć
+    renotify: !!payload.mention,
+    requireInteraction: !!payload.mention,
     data: { url: payload.url || '/czat' },
-    vibrate: [80, 40, 80],
+    vibrate: payload.mention ? [200, 100, 200, 100, 200] : [80, 40, 80],
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })
