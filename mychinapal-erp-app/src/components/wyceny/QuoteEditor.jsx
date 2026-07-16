@@ -8,6 +8,8 @@ import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { computeQuoteTotals, toNum, STATUS_LABELS } from './calc'
 import { describeHsCode } from './hsChapters'
 import { generateQuotePdf } from './pdf'
+import { generateQuotePdfFromLayout } from './pdfFromLayout'
+import QuoteLayoutEditor from './QuoteLayoutEditor'
 import { parseQuoteExcel } from './excelImport'
 
 const MAX_PHOTOS_PER_ITEM = 6
@@ -56,6 +58,9 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [aiFilesList, setAiFilesList] = useState([])
   const [aiFilesInstruction, setAiFilesInstruction] = useState('')
   const [aiFilesBusy, setAiFilesBusy] = useState(false)
+  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false)
+  const [layoutPhotoDataUrls, setLayoutPhotoDataUrls] = useState(null)
+  const [layoutLoading, setLayoutLoading] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -711,6 +716,36 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return photoDataUrls
   }
 
+  // Jeśli wycena ma zapisany własny wygląd (quote.layout_json — z edytora
+  // "jak Canva"), PDF generuje się z NIEGO, a nie ze starego, sztywnego
+  // szablonu — nowe wyceny domyślnie nie mają layout_json (NULL), więc
+  // zachowują dotychczasowy wygląd bez żadnej zmiany, dopóki użytkownik sam
+  // nie otworzy i nie zapisze edytora wyglądu.
+  const generatePdfBlob = async (photoDataUrls) => {
+    if (quote.layout_json) {
+      return generateQuotePdfFromLayout({ layout: quote.layout_json, quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+    }
+    return generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+  }
+
+  const handleOpenLayoutEditor = async () => {
+    setLayoutLoading(true)
+    try {
+      const urls = await buildPhotoDataUrls()
+      setLayoutPhotoDataUrls(urls)
+      setLayoutEditorOpen(true)
+    } catch (e) {
+      toast.error(t('Nie udało się przygotować podglądu do edytora: ') + (e.message || e))
+    }
+    setLayoutLoading(false)
+  }
+
+  const handleSaveLayout = async (layoutJson) => {
+    const { error } = await supabase.from('quotes').update({ layout_json: layoutJson }).eq('id', quoteId)
+    if (error) throw error
+    setQ({ layout_json: layoutJson })
+  }
+
   const handlePreviewPdf = async () => {
     // Okno musi się otworzyć SYNCHRONICZNIE w reakcji na kliknięcie — jeśli
     // otworzymy je dopiero po zakończeniu generowania PDF (czyli po kilku
@@ -723,7 +758,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setSending('preview')
     try {
       const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+      const blob = await generatePdfBlob(photoDataUrls)
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
@@ -776,7 +811,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setSending(true)
     try {
       const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+      const blob = await generatePdfBlob(photoDataUrls)
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -1157,6 +1192,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           style={{ padding: '10px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: sending ? .7 : 1, boxShadow: '0 3px 12px rgba(180,140,40,0.45)' }}>
           {sending === 'preview' ? t("Generowanie…") : t("🧾 Wygeneruj wycenę (podgląd)")}
         </button>
+        <button onClick={handleOpenLayoutEditor} disabled={layoutLoading}
+          style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: layoutLoading ? .6 : 1 }}>
+          {layoutLoading ? t("Wczytywanie…") : t("🎨 Edytuj wygląd wyceny")}
+        </button>
+        {quote.layout_json && <span style={{ fontSize: 9.5, fontWeight: 700, color: C.purple, alignSelf: 'center' }}>{t("● własny wygląd")}</span>}
         {previewPdfUrl && (
           <a href={previewPdfUrl} target="_blank" rel="noreferrer" download={`podglad-${quote.quote_number || 'wycena'}.pdf`}
             style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.bmid}`, background: C.blight, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.blue, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
@@ -1177,6 +1217,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz ostatnio wysłany PDF")}</button>
         )}
       </div>
+
+      {layoutEditorOpen && layoutPhotoDataUrls !== null && (
+        <QuoteLayoutEditor
+          quote={quote} client={client} contact={contact} company={company}
+          rows={totalsCalc.rows} totals={totalsCalc.totals} photoDataUrls={layoutPhotoDataUrls}
+          onSave={handleSaveLayout}
+          onClose={() => setLayoutEditorOpen(false)}
+        />
+      )}
     </div>
   )
 }

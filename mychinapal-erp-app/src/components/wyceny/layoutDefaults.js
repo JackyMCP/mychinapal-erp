@@ -85,8 +85,23 @@ export function buildDefaultLayout() {
         id: uid(), type: 'summary', x: 14, y: 250, w: 182, h: 40, z: 1,
         fontFamily: 'LiberationSans', fontSize: 10, color: '#141414', totalColor: gold, muted: muted,
       },
+      // Objaśnienia (quote.notes) i numer konta pokazują się TYLKO gdy
+      // faktycznie są wypełnione (showIf) — dokładnie jak w starym, sztywnym
+      // szablonie. W edytorze pozostają widoczne/przesuwalne cały czas (żeby
+      // dało się je z góry ustawić), w finalnym PDF-ie znikają całkowicie,
+      // jeśli dana wycena nie ma notatek / firma nie ma ustawionego konta.
       {
-        id: uid(), type: 'text', x: 14, y: 282, w: 182, h: 5, z: 1,
+        id: uid(), type: 'text', x: 14, y: 258, w: 182, h: 20, z: 1, showIf: 'notes',
+        text: 'Explanation / Objaśnienia:\n{{notes}}', fontFamily: 'LiberationSans', fontSize: 8, bold: false,
+        color: '#141414', align: 'left', bg: null,
+      },
+      {
+        id: uid(), type: 'text', x: 14, y: 276, w: 182, h: 6, z: 1, showIf: 'bankAccount',
+        text: 'Bank account / Nr konta: {{bank_account}}', fontFamily: 'LiberationSans', fontSize: 8.5, bold: false,
+        color: '#141414', align: 'left', bg: null,
+      },
+      {
+        id: uid(), type: 'text', x: 14, y: 284, w: 182, h: 5, z: 1,
         text: 'This quotation is issued electronically by MyChinaPal ERP and is valid without signature.',
         fontFamily: 'LiberationSans', fontSize: 7.5, bold: false, color: '#8C8C8C', align: 'left', bg: null,
       },

@@ -1,10 +1,10 @@
 import jsPDF from 'jspdf'
 
-const navy = [10, 22, 40]
-const gold = [180, 140, 40]
-const goldLight = [212, 175, 90]
+export const navy = [10, 22, 40]
+export const gold = [180, 140, 40]
+export const goldLight = [212, 175, 90]
 
-async function fetchAsDataUrl(url) {
+export async function fetchAsDataUrl(url) {
   try {
     const resp = await fetch(url)
     const blob = await resp.blob()
@@ -32,7 +32,7 @@ function arrayBufferToBase64(buf) {
 // wszystkie dotychczasowe obliczenia szerokości/zawijania tekstu zostają
 // bez zmian), która ma pełne pokrycie polskich znaków.
 let fontsLoadedPromise = null
-async function loadCustomFont(doc) {
+export async function loadCustomFont(doc) {
   if (!fontsLoadedPromise) {
     fontsLoadedPromise = (async () => {
       try {
@@ -60,7 +60,7 @@ async function loadCustomFont(doc) {
 // sztywnym prostokącie (np. 40×16mm), co przy nie-kwadratowym logo je
 // rozciąga/ściska. Znając proporcje, dopasowujemy rozmiar tak, żeby logo się
 // nie zniekształcało.
-function loadImageSize(dataUrl) {
+export function loadImageSize(dataUrl) {
   return new Promise((resolve) => {
     if (!dataUrl) { resolve(null); return }
     const img = new Image()
@@ -74,7 +74,7 @@ function loadImageSize(dataUrl) {
 // jako separator dziesiętny) — poprzedni format en-US ("1,780.00") bywał
 // mylony z zapisem "1.780,00" albo odczytywany jako znacznie większa kwota,
 // stąd zgłoszenie że suma "wygląda jak miliony".
-function fmtPln(n) {
+export function fmtPln(n) {
   return Number(n || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 

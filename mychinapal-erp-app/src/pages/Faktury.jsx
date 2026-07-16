@@ -119,7 +119,16 @@ export default function Faktury() {
   }, [flagInvoices])
 
   return (
-    <div>
+    <div style={{
+      minHeight: '100%',
+      backgroundColor: C.bg,
+      // Subtelna kratka "jak w zeszycie do matematyki" w tle modułu Faktur —
+      // dwie nakładające się siatki linii (pion + poziom), bardzo jasne, żeby
+      // nie odciągały uwagi od treści, tylko dawały fakturom charakter
+      // "papieru w kratkę".
+      backgroundImage: `linear-gradient(rgba(10,22,40,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(10,22,40,.05) 1px, transparent 1px)`,
+      backgroundSize: '22px 22px',
+    }}>
       <div style={{ padding: '16px 22px', maxWidth: 1360 }}>
         <div style={{
           position: 'relative', overflow: 'hidden', borderRadius: 20, padding: '26px 30px', color: '#fff',
