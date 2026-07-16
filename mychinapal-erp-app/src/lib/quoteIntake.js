@@ -132,9 +132,14 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
     // 6) Wgraj zdjęcia wyciągnięte z Excela (visible_in_files:false — patrz
     // uzasadnienie w QuoteEditor.jsx: dokument staje się widoczny w Plikach
     // projektu dopiero przy jawnej akcji zespołu PL, nie przy samym imporcie).
-    const itemRows = []
-    for (let i = 0; i < parsedItems.length; i++) {
-      const p = parsedItems[i]
+    // Zdjęcia (per pozycja) i sugestia kodu CN/HS (edge function AI, kilka-
+    // kilkanaście sekund NA POZYCJĘ) są robione RÓWNOLEGLE dla wszystkich
+    // pozycji naraz (Promise.all) — sekwencyjna pętla tutaj wcześniej
+    // potrafiła "zawiesić" import na kilka minut przy wycenie z wieloma
+    // pozycjami (realnie zgłoszony problem: przycisk "Przetwarzanie…" wisiał
+    // bez końca). Ten sam wzorzec równoległości jest już używany w
+    // QuoteEditor.jsx przy ręcznym imporcie z Excela.
+    const itemsWithPhotos = await Promise.all(parsedItems.map(async (p) => {
       const dataUrls = p._photoDataUrls || []
       const photoPaths = []
       for (const dataUrl of dataUrls) {
@@ -153,7 +158,10 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
           photoPaths.push(path)
         } catch { result.uploadFailCount++ }
       }
+      return { p, photoPaths }
+    }))
 
+    const itemRows = await Promise.all(itemsWithPhotos.map(async ({ p, photoPaths }, i) => {
       // Sugestia kodu CN/HS + stawki cła — najlepszy wysiłek, tak jak
       // dotychczas przy ręcznym imporcie. Jeśli Excel już podał realną
       // stawkę cła, nie nadpisujemy jej sugestią AI.
@@ -165,7 +173,7 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
         if (dutyRate === null && data?.duty_rate_percent !== undefined && data?.duty_rate_percent !== null) dutyRate = data.duty_rate_percent
       } catch { /* najlepszy wysiłek */ }
 
-      itemRows.push({
+      return {
         quote_id: quote.id, position: i + 1,
         name: p.name || null, specification: p.specification || null,
         qty: p.qty || 1, unit: p.unit || 'set', unit_price_cny: p.unit_price_cny || 0,
@@ -175,8 +183,8 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
         production_days: p.production_days || null,
         hs_code: hsCode, duty_rate_percent: dutyRate,
         photo_paths: photoPaths, photo_path: photoPaths[0] || null,
-      })
-    }
+      }
+    }))
     const { error: itemsErr } = await supabase.from('quote_items').insert(itemRows)
     if (itemsErr) { result.error = 'Wycena utworzona, ale nie udało się zapisać pozycji: ' + itemsErr.message; return result }
     result.itemCount = itemRows.length
