@@ -1,4 +1,5 @@
 import { fetchAsDataUrl } from './pdf'
+import { toNum } from './calc'
 
 // Dokument wyceny — PODGLĄD jest zawsze renderowany BEZPOŚREDNIO z danych
 // formularza (ta funkcja, czysta i synchroniczna) i wyświetlany przez
@@ -59,6 +60,12 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
     if (r.weight_kg) metaBits.push(`Waga: ${r.weight_kg} kg`)
     if (r.cbm) metaBits.push(`CBM: ${r.cbm} m³`)
     else if (r.container_note) metaBits.push(escapeHtml(r.container_note))
+    // Zawsze pokazujemy DWIE ceny netto przy każdej pozycji, niezależnie od
+    // tego czy to jedna pozycja z importu Excela z ilością 10 szt., czy 10
+    // pozycji po 100 szt.: cenę jednostkową (za 1 szt.) i cenę za całą
+    // pozycję (ilość × cena jednostkowa) — klient musi widzieć obie.
+    const qtyNum = toNum(r.qty)
+    const unitNetto = qtyNum > 0 ? r.finalPrice / qtyNum : r.finalPrice
     return `
       <table style="width:100%; border-collapse:collapse; margin-bottom:14px; border:1px solid #E1E3E7; border-radius:10px;">
         <tr>
@@ -71,8 +78,9 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
             ${r.specification ? `<div style="font-size:11px; color:${MUTED}; margin-top:4px;">${escapeHtml(r.specification)}</div>` : ''}
             <div style="font-size:11px; color:${MUTED}; margin-top:8px;">${metaBits.join(' &nbsp;·&nbsp; ')}</div>
           </td>
-          <td style="width:140px; padding:12px; vertical-align:bottom; text-align:right;">
-            <div style="font-size:16px; font-weight:700; color:${GOLD};">${fmtPlnHtml(r.finalPrice)} PLN</div>
+          <td style="width:160px; padding:12px; vertical-align:bottom; text-align:right;">
+            <div style="font-size:10.5px; color:${MUTED}; margin-bottom:3px;">Cena netto/szt.: ${fmtPlnHtml(unitNetto)} PLN</div>
+            <div style="font-size:16px; font-weight:700; color:${GOLD};">Razem netto: ${fmtPlnHtml(r.finalPrice)} PLN</div>
           </td>
         </tr>
       </table>`
