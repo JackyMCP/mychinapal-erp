@@ -6,6 +6,7 @@ import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
+import { createQuoteFromExcelFile, isExcelFile } from '../../lib/quoteIntake'
 
 export default function ProjectFiles({ project, documents, onChanged }) {
   const { t } = useLang()
@@ -18,9 +19,27 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const fileRef = useRef(null)
 
+  // Excel z kategorią "Wycena" to nowy przepływ: zespół CN wgrywa tu gotową
+  // wycenę zamiast wypełniać ją ręcznie w aplikacji. Plik zostaje sparsowany
+  // (te same reguły co dotychczasowy import w zakładce Wyceny), powstaje
+  // nowa wycena i cały zespół PL przypisany do zamówienia dostaje zadanie —
+  // dokładnie tak samo, jakby ktoś wgrał ten sam plik wprost w Wycenach.
+  const handleQuoteExcelUpload = async (file) => {
+    setUploading(true)
+    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
+    const result = await createQuoteFromExcelFile(file, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+    if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
+    toast.success(t(`Wycena przyjęta ✓ ${result.itemCount} pozycji — powiadomiono ${result.notified} os. z zespołu PL`))
+    if (result.notifyFailed) toast.error(t('Uwaga: część powiadomień do zespołu PL mogła się nie wysłać.'))
+    onChanged && onChanged()
+  }
+
   const handleUpload = async (file) => {
     if (!file) return
     if (isFileTooBig(file)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
+    if (category === 'Wycena' && isExcelFile(file)) { await handleQuoteExcelUpload(file); return }
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
@@ -135,12 +154,18 @@ export default function ProjectFiles({ project, documents, onChanged }) {
               <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => handleUpload(e.target.files?.[0])} />
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
                 style={{ padding: '7px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: uploading ? .6 : 1 }}>
-                {uploading ? t('Wgrywanie…') : t('+ Wgraj plik')}
+                {uploading ? t('Przetwarzanie…') : t(category === 'Wycena' ? '+ Wgraj Excel z wyceną' : '+ Wgraj plik')}
               </button>
             </>
           )}
         </div>
       </div>
+
+      {!selectMode && category === 'Wycena' && (
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, marginTop: -4 }}>
+          {t('Wgranie tu pliku Excel (.xlsx/.xls) automatycznie utworzy wycenę z pozycjami i zdjęciami oraz powiadomi zespół PL.')}
+        </div>
+      )}
 
       {sorted.length === 0 && (
         <EmptyState icon="📁" title={t('Brak plików')} subtitle={t(dragOver ? '↓ Upuść plik tutaj' : 'Pliki wysłane na czacie tego zamówienia pojawią się tutaj automatycznie, albo przeciągnij plik (np. z WeChat) lub wgraj ręcznie powyżej.')} />
