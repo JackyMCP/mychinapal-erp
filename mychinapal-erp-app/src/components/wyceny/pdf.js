@@ -319,7 +319,7 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
   // Blok podsumowania (linia + ew. transport + netto/VAT/brutto) trzymamy
   // razem, na jednej stronie — rezerwujemy z zapasem miejsce na wszystkie
   // jego elementy naraz, żeby suma nigdy nie została "rozcięta" u dołu strony.
-  const summaryBlockH = 4 + 7 + (totals.transportShare > 0 && totals.landedCost > 0 ? 7 : 0) + 6 + 8 + 6
+  const summaryBlockH = 4 + 7 + (totals.transportShare > 0 && totals.landedCost > 0 ? 7 : 0) + (totals.totalCbm > 0 ? 7 : 0) + 6 + 8 + 6
   y = ensureSpace(y, summaryBlockH)
   y += 4
   doc.setDrawColor(...navy)
@@ -340,6 +340,16 @@ export async function generateQuotePdf({ quote, client, contact, company, rows, 
     doc.setTextColor(90, 90, 90)
     doc.text('w tym transport / incl. transport (netto/brutto):', left, y)
     doc.text(`${fmtPln(transportNetto)} / ${fmtPln(transportBrutto)} PLN`, right, y, { align: 'right' })
+    doc.setTextColor(20, 20, 20)
+    y += 7
+  }
+
+  if (totals.totalCbm > 0) {
+    doc.setFont(FONT, 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(90, 90, 90)
+    doc.text('Total volume / Całkowita objętość zamówienia:', left, y)
+    doc.text(`${fmtPln(totals.totalCbm)} m³`, right, y, { align: 'right' })
     doc.setTextColor(20, 20, 20)
     y += 7
   }

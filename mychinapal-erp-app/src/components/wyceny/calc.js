@@ -46,6 +46,11 @@ export function computeQuoteTotals(items, {
     return { ...it, goodsValue, transportShare, customsValue, dutyAmount, landedCost, finalPrice, vatAmount, finalPriceGross }
   })
 
+  // Całkowita objętość zamówienia (suma CBM wszystkich pozycji, które mają
+  // wpisaną liczbową objętość — pozycje bez CBM, np. z samą uwagą o
+  // kontenerze zamiast liczby, są pomijane w sumie, nie liczone jako 0).
+  const totalCbm = rows.reduce((s, r) => s + (r.cbm !== '' && r.cbm !== null && r.cbm !== undefined && !Number.isNaN(Number(r.cbm)) ? Number(r.cbm) : 0), 0)
+
   const totals = rows.reduce((acc, r) => ({
     goodsValue: acc.goodsValue + r.goodsValue,
     transportShare: acc.transportShare + r.transportShare,
@@ -56,6 +61,7 @@ export function computeQuoteTotals(items, {
     vatAmount: acc.vatAmount + r.vatAmount,
     finalPriceGross: acc.finalPriceGross + r.finalPriceGross,
   }), { goodsValue: 0, transportShare: 0, customsValue: 0, dutyAmount: 0, landedCost: 0, finalPrice: 0, vatAmount: 0, finalPriceGross: 0 })
+  totals.totalCbm = totalCbm
 
   return { rows, totals }
 }

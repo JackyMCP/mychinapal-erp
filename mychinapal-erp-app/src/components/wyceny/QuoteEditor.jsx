@@ -1246,6 +1246,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         </div>
         <div style={{ fontSize: 10.5, color: C.muted, marginTop: 10 }}>
           {t("Marża w kwocie:")} <strong>{fmt(totalsCalc.totals.finalPrice - totalsCalc.totals.landedCost, 2)} PLN</strong>
+          {' · '}{t("Całkowita objętość zamówienia:")} <strong>{fmt(totalsCalc.totals.totalCbm, 2)} m³</strong>
           {' · '}{t("Cena bazowa towaru od zespołu chińskiego (pomocniczo):")} <strong>{fmt(totalsCalc.totals.goodsValue && cnyRateEff ? totalsCalc.totals.goodsValue / cnyRateEff : 0, 2)} CNY</strong>
         </div>
       </div>

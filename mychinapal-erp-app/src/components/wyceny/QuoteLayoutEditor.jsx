@@ -274,6 +274,7 @@ function SummaryPreview({ el, ctx }) {
   )
   return (
     <div style={{ width: '100%', height: '100%', borderTop: '1px solid #0A1628', paddingTop: 4, fontFamily: 'Arial,sans-serif' }}>
+      {totals.totalCbm > 0 && row('Całkowita objętość zamówienia:', `${fmt(totals.totalCbm, 2)} m³`)}
       {row('Netto:', `${fmt(totals.finalPrice, 2)} PLN`)}
       {row('VAT (23%):', `${fmt(totals.vatAmount, 2)} PLN`)}
       {row('TOTAL / RAZEM BRUTTO:', `${fmt(totals.finalPriceGross, 2)} PLN`, true)}

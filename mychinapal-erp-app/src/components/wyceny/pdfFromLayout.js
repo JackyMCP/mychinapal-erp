@@ -241,6 +241,14 @@ function drawSummary(doc, el, ctx, FONT, startY) {
     y += 7
   }
 
+  if (totals.totalCbm > 0) {
+    doc.setFont(FONT, 'normal'); doc.setFontSize(el.fontSize || 10); doc.setTextColor(90, 90, 90)
+    doc.text('Total volume / Całkowita objętość zamówienia:', x, y)
+    doc.text(`${fmtPln(totals.totalCbm)} m³`, right, y, { align: 'right' })
+    doc.setTextColor(r, g, b)
+    y += 7
+  }
+
   doc.setFont(FONT, 'normal'); doc.setFontSize(el.fontSize || 10); doc.setTextColor(r, g, b)
   doc.text('Netto:', x, y); doc.text(`${fmtPln(totals.finalPrice)} PLN`, right, y, { align: 'right' }); y += 6
   doc.text('VAT (23%):', x, y); doc.text(`${fmtPln(totals.vatAmount)} PLN`, right, y, { align: 'right' }); y += 8
@@ -308,7 +316,7 @@ export async function generateQuotePdfFromLayout({ layout, quote, client, contac
   for (const el of flowEls) {
     if (!elementShouldRender(el, ctx)) continue
     if (el.type === 'summary') {
-      const summaryH = 4 + 7 + (totals.transportShare > 0 && totals.landedCost > 0 ? 7 : 0) + 6 + 8 + 6
+      const summaryH = 4 + 7 + (totals.transportShare > 0 && totals.landedCost > 0 ? 7 : 0) + (totals.totalCbm > 0 ? 7 : 0) + 6 + 8 + 6
       if (flowY + summaryH > PAGE_BOTTOM) { doc.addPage(); flowY = 20 }
       flowY = drawSummary(doc, el, ctx, FONT, flowY + 4)
     } else if (el.type === 'text') {
