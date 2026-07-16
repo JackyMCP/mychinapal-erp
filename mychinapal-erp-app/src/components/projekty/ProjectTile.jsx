@@ -39,7 +39,7 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
     nextAction = '✓ Wszystkie etapy zakończone'
     nextClass = 'done'
   } else if (currentStage) {
-    nextAction = `⏳ Czeka na: ${currentStage.categories.join(' / ')}`
+    nextAction = `⏳ Czeka na: ${currentStage.categories.length ? currentStage.categories.join(' / ') : currentStage.desc}`
     nextClass = 'waiting'
   } else {
     nextAction = '—'
@@ -91,7 +91,7 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted, marginBottom: 10 }}>
-        <span style={{ fontWeight: 700, color: C.text2 }}>{t(isDone ? `Etap 9/9 — Zakończone` : `Etap ${currentIndex}/9 — ${currentStage?.name || ''}`)}</span>
+        <span style={{ fontWeight: 700, color: C.text2 }}>{t(isDone ? `Etap ${STAGE_DEFS.length}/${STAGE_DEFS.length} — Zakończone` : `Etap ${currentIndex}/${STAGE_DEFS.length} — ${currentStage?.name || ''}`)}</span>
         <span>{progressPct}%</span>
       </div>
       <div style={{

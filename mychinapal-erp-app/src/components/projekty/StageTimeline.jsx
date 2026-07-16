@@ -9,7 +9,7 @@ import { useUI } from '../../lib/ui'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg })
 
-function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHandedOffOrSent, latestQuoteId }) {
+function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteSentToClient, hasAnyQuote, latestQuoteId }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const navigate = useNavigate()
@@ -18,6 +18,11 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHa
   const [category, setCategory] = useState(stage.categories[0])
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef(null)
+  // Etap "Wycena od zespołu CN" nie ma żadnej kategorii dokumentu do wgrania
+  // — jest spełniony automatycznie, jak tylko dla zamówienia w ogóle istnieje
+  // wycena (bo od tej wersji wycena powstaje WYŁĄCZNIE przez wgranie/rozpoznanie
+  // pliku Excel od zespołu CN, nie przez ręczne wpisywanie w formularzu).
+  const isQuoteIntakeStage = stage.categories.length === 0
 
   const handleUpload = async (file) => {
     if (!file) return
@@ -94,54 +99,78 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHa
           </div>
           <div style={{ maxHeight: open ? 2000 : 0, overflow: 'hidden', transition: 'max-height .32s ease', borderTop: open ? `1px solid ${C.border}` : 'none' }}>
             <div style={{ padding: '0 16px 16px' }}>
-              <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', margin: '14px 0 6px' }}>{t("Wymagane dokumenty")}</div>
-              {stage.categories.map(cat => {
-                const docs = docsByCategory[cat] || []
-                // Etap 1 / kategoria "Wycena": zanim finalny PDF trafi do
-                // Dokumentów (dopiero przy wysyłce do klienta), wycena już
-                // "jest w toku" u zespołu PL (status do_marzy_pl/wyslana w
-                // module Wyceny) — to też ma liczyć się jako spełnione, żeby
-                // ta pozycja nie wisiała na czerwono mimo realnego postępu.
-                const satisfiedByQuote = cat === 'Wycena' && !docs.length && quoteHandedOffOrSent
-                const done = docs.length > 0 || satisfiedByQuote
-                // Wiersz "Wycena" ma prowadzić wprost do edycji tej wyceny w
-                // module Wyceny (zamiast zmuszać do szukania jej ręcznie na
-                // liście) — dostępne zawsze, gdy dla tego zamówienia w ogóle
-                // istnieje wycena, niezależnie czy checklista jest już na
-                // zielono, czy dopiero czeka.
-                const quoteClickable = cat === 'Wycena' && !!latestQuoteId
-                return (
-                  <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                    <div onClick={quoteClickable ? () => navigate(`/wyceny?quote=${latestQuoteId}`) : undefined}
-                      title={quoteClickable ? t('Kliknij, żeby otworzyć tę wycenę do edycji') : undefined}
-                      style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, cursor: quoteClickable ? 'pointer' : 'default' }}>
-                      <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: done ? C.glight : C.rlight, color: done ? C.green : C.red }}>{done ? '✓' : '✗'}</div>
-                      <span style={{ textDecoration: quoteClickable ? 'none' : undefined }}>
-                        {t(cat)}
-                        {docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`)
-                          : satisfiedByQuote ? t(" — przekazana do zespołu PL, czeka na doliczenie marży i wysyłkę do klienta")
-                          : t(" — brakuje")}
-                      </span>
-                      {quoteClickable && <span style={{ color: C.blue, fontWeight: 700 }}>✎ {t('edytuj')}</span>}
-                    </div>
-                    {docs.length > 0 && (
-                      <div style={{ marginTop: 6, marginLeft: 28, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {docs.map(doc => (
-                          <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                            <span onClick={() => handleDownload(doc)} style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', color: C.blue }}>{doc.file_name}</span>
-                            <span onClick={() => handleDelete(doc)} title={t('Usuń plik')}
-                              style={{ fontSize: 12, color: C.muted, padding: '2px 5px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}
-                              onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
-                            >🗑</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              {isQuoteIntakeStage ? (
+                // Ten etap nie ma dokumentów do wgrania — jest spełniony
+                // automatycznie, gdy zespół CN dostarczy wycenę (Excel) przez
+                // panel zamówienia, czat zamówienia (z przypisaniem kategorii
+                // "Wycena") albo wprost w zakładce Wyceny.
+                <div style={{ margin: '14px 0 4px' }}>
+                  <div onClick={latestQuoteId ? () => navigate(`/wyceny?quote=${latestQuoteId}`) : undefined}
+                    title={latestQuoteId ? t('Kliknij, żeby otworzyć tę wycenę') : undefined}
+                    style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, cursor: latestQuoteId ? 'pointer' : 'default' }}>
+                    <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: hasAnyQuote ? C.glight : C.rlight, color: hasAnyQuote ? C.green : C.red }}>{hasAnyQuote ? '✓' : '✗'}</div>
+                    <span>
+                      {hasAnyQuote ? t('Wycena od zespołu CN otrzymana') : t('Czeka na wycenę (Excel) od zespołu CN')}
+                    </span>
+                    {latestQuoteId && <span style={{ color: C.blue, fontWeight: 700 }}>✎ {t('otwórz')}</span>}
                   </div>
-                );
-              })}
-              {status !== 'locked' && (
+                  {!hasAnyQuote && (
+                    <div style={{ fontSize: 10.5, color: C.muted, marginTop: 6, marginLeft: 28 }}>
+                      {t('Zespół CN wgrywa gotowy plik Excel z wyceną — w panelu tego zamówienia (Pliki projektu), na czacie zamówienia (z kategorią "Wycena"), albo wprost w zakładce Wyceny.')}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', margin: '14px 0 6px' }}>{t("Wymagane dokumenty")}</div>
+                  {stage.categories.map(cat => {
+                    const docs = docsByCategory[cat] || []
+                    // Kategoria "Wycena" (etap "Wysłanie wyceny do klienta"):
+                    // spełniona też, gdy którakolwiek wycena ma status
+                    // 'wyslana', zanim/niezależnie od tego czy jej PDF/Excel
+                    // trafił jeszcze jako osobny wpis w Dokumentach.
+                    const satisfiedByQuote = cat === 'Wycena' && !docs.length && quoteSentToClient
+                    const done = docs.length > 0 || satisfiedByQuote
+                    // Wiersz "Wycena" ma prowadzić wprost do edycji tej wyceny w
+                    // module Wyceny (zamiast zmuszać do szukania jej ręcznie na
+                    // liście) — dostępne zawsze, gdy dla tego zamówienia w ogóle
+                    // istnieje wycena, niezależnie czy checklista jest już na
+                    // zielono, czy dopiero czeka.
+                    const quoteClickable = cat === 'Wycena' && !!latestQuoteId
+                    return (
+                      <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                        <div onClick={quoteClickable ? () => navigate(`/wyceny?quote=${latestQuoteId}`) : undefined}
+                          title={quoteClickable ? t('Kliknij, żeby otworzyć tę wycenę do edycji') : undefined}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, cursor: quoteClickable ? 'pointer' : 'default' }}>
+                          <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: done ? C.glight : C.rlight, color: done ? C.green : C.red }}>{done ? '✓' : '✗'}</div>
+                          <span style={{ textDecoration: quoteClickable ? 'none' : undefined }}>
+                            {t(cat)}
+                            {docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`)
+                              : satisfiedByQuote ? t(" — wysłana do klienta")
+                              : t(" — brakuje")}
+                          </span>
+                          {quoteClickable && <span style={{ color: C.blue, fontWeight: 700 }}>✎ {t('edytuj')}</span>}
+                        </div>
+                        {docs.length > 0 && (
+                          <div style={{ marginTop: 6, marginLeft: 28, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {docs.map(doc => (
+                              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                                <span onClick={() => handleDownload(doc)} style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', color: C.blue }}>{doc.file_name}</span>
+                                <span onClick={() => handleDelete(doc)} title={t('Usuń plik')}
+                                  style={{ fontSize: 12, color: C.muted, padding: '2px 5px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}
+                                  onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
+                                >🗑</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              {!isQuoteIntakeStage && status !== 'locked' && (
                 <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
                   style={{
                     marginTop: 12, borderRadius: 9, padding: 8,
@@ -192,7 +221,8 @@ export default function StageTimeline({ project, documents, onDocumentsChanged, 
   // "Wycena — brakuje" na czerwono, bo miał własną, niezależną kopię logiki
   // patrzącą WYŁĄCZNIE na tabelę `documents`, bez świadomości wycen).
   const { doneStages, currentIndex } = computeStageProgress(documents, quotes)
-  const quoteHandedOffOrSent = (quotes || []).some(q => q.status === 'do_marzy_pl' || q.status === 'wyslana')
+  const hasAnyQuote = (quotes || []).length > 0
+  const quoteSentToClient = (quotes || []).some(q => q.status === 'wyslana')
   // Do przycisku "edytuj" przy wierszu "Wycena" — najświeższa wycena tego
   // zamówienia (quotes przychodzi posortowane malejąco wg created_at z
   // Projekty.jsx). Zwykle jest tylko jedna, ale gdyby ktoś utworzył kilka,
@@ -203,7 +233,7 @@ export default function StageTimeline({ project, documents, onDocumentsChanged, 
     <div>
       {STAGE_DEFS.map(stage => {
         const status = doneStages.has(stage.key) ? 'done' : (stage.key === currentIndex ? 'current' : (currentIndex !== null && stage.key > currentIndex ? 'locked' : 'done'))
-        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} quoteHandedOffOrSent={quoteHandedOffOrSent} latestQuoteId={latestQuoteId} />
+        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} quoteSentToClient={quoteSentToClient} hasAnyQuote={hasAnyQuote} latestQuoteId={latestQuoteId} />
       })}
     </div>
   )

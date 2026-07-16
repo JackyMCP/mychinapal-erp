@@ -13,7 +13,7 @@ import ProjectTeam from '../components/projekty/ProjectTeam'
 import StageTimeline from '../components/projekty/StageTimeline'
 import ProjectFiles from '../components/projekty/ProjectFiles'
 import ProjectChat from '../components/projekty/ProjectChat'
-import { computeStageProgress } from '../components/projekty/stageDefs'
+import { computeStageProgress, STAGE_DEFS } from '../components/projekty/stageDefs'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
 import NewProjectModal from '../components/projekty/NewProjectModal'
@@ -130,7 +130,7 @@ export default function Projekty() {
           <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ position: 'relative', width: 60, height: 60, flexShrink: 0 }}>
               <svg width="60" height="60"><circle cx="30" cy="30" r="25" fill="none" stroke={C.border} strokeWidth="6" /><circle cx="30" cy="30" r="25" fill="none" stroke={C.blue} strokeWidth="6" strokeDasharray={157} strokeDashoffset={157 - (157 * progress.progressPct / 100)} strokeLinecap="round" transform="rotate(-90 30 30)" /></svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 800 }}>{progress.doneStages.size}/9</div>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 800 }}>{progress.doneStages.size}/{STAGE_DEFS.length}</div>
             </div>
             <div style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', background: avatarColor(clientName) }}>{initials(clientName)}</div>
             <div style={{ flex: 1 }}>
