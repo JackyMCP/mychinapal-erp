@@ -11,6 +11,7 @@ import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
 import { syncQuoteItemsWithCatalog } from '../../lib/productCatalog'
 import { exportQuoteToExcelBlob, loadLogoNavyDataUrl } from './excelExport'
+import ExcelLivePreview from './ExcelLivePreview'
 
 const MAX_PHOTOS_PER_ITEM = 6
 // Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
@@ -1836,6 +1837,19 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           {' · '}{t("Całkowita objętość zamówienia:")} <strong>{fmt(totalsCalc.totals.totalCbm, 2)} m³</strong>
           {' · '}{t("Cena bazowa towaru od zespołu chińskiego (pomocniczo):")} <strong>{fmt(totalsCalc.totals.goodsValue && cnyRateEff ? totalsCalc.totals.goodsValue / cnyRateEff : 0, 2)} CNY</strong>
         </div>
+      </div>
+
+      <div style={card}>
+        <div style={sectionTitle}>👁 {t("Podgląd Excela (dokładnie to trafi do klienta — edytuj bezpośrednio poniżej)")}</div>
+        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12 }}>
+          {t("To jest żywy podgląd tego samego pliku, który wyślesz klientowi — edycja tu (nazwa/specyfikacja pozycji, cena netto/szt., Warunki) zapisuje się wprost do wyceny, tak jak formularz wyżej. Zdjęcia i ilość edytujesz w sekcji „Pozycje towaru” powyżej.")}
+        </div>
+        <ExcelLivePreview
+          quote={quote} client={client} contact={contact} company={company}
+          rows={totalsCalc.rows} totals={totalsCalc.totals}
+          photoUrl={photoUrl} logoDataUrl={logoNavyDataUrl}
+          onChangeItem={setItem} onChangeNotes={(notes) => setQ({ notes })}
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
