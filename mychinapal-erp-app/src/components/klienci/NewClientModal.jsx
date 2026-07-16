@@ -27,6 +27,13 @@ export default function NewClientModal({ onClose, onCreated }) {
     }).select().single()
     setSaving(false)
     if (err) { setError(err.message); return }
+    // Przypisujemy twórcę jako opiekuna od razu — inaczej pracownik (nie-zarząd)
+    // straciłby dostęp do klienta, którego właśnie sam założył (RLS na SELECT
+    // wymaga wpisu w client_assignments albo roli zarząd). Najlepszy wysiłek:
+    // błąd tego zapisu nie blokuje utworzenia klienta (zarząd i tak widzi
+    // wszystko, więc dla zarządu ten krok jest tylko kosmetyczny).
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user?.id) await supabase.from('client_assignments').insert({ client_id: data.id, user_id: user.id })
     onCreated(data)
   }
 

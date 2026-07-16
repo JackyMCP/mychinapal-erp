@@ -29,6 +29,11 @@ export default function NewProjectModal({ clients = [], clientId, clientName, on
     }).select().single()
     setSaving(false)
     if (err) { setError(err.message); return }
+    // Tak samo jak przy nowym kliencie: przypisujemy twórcę jako opiekuna tego
+    // projektu od razu, żeby pracownik (nie-zarząd) nie stracił dostępu do
+    // projektu, który właśnie sam założył. Najlepszy wysiłek — błąd nie blokuje.
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user?.id) await supabase.from('project_assignments').insert({ project_id: data.id, user_id: user.id })
     onCreated(data)
   }
 
