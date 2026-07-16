@@ -38,6 +38,12 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const rafRef = useRef(null)
   const joinedRef = useRef(false)
 
+  // ── dźwięk dołączania/opuszczania kanału (jak w Discordzie) ──
+  // Krótki syntetyczny "dzwonek" (Web Audio API, bez pliku audio) — słyszą go
+  // TYLKO osoby już obecne na kanale, gdy dołącza/wychodzi ktoś inny; sama
+  // osoba wchodząca/wychodząca nie słyszy dźwięku własnej akcji.
+  const chimeCtxRef = useRef(null)
+
   // -- PL -> ZH: bezpośrednie połączenie WebRTC z OpenAI Realtime Translation --
   const translatorPcRef = useRef(null)
 
@@ -86,6 +92,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
 
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
       if (joinedRef.current && key !== currentUserId) {
+        playChime('join')
         // ktoś nowy dołączył podczas gdy my już jesteśmy na kanale — inicjujemy połączenie
         // wg zasady: strona z "mniejszym" id inicjuje ofertę, żeby uniknąć podwójnej oferty
         if (currentUserId < key) createOfferTo(key)
@@ -93,6 +100,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     })
 
     channel.on('presence', { event: 'leave' }, ({ key }) => {
+      if (joinedRef.current && key !== currentUserId) playChime('leave')
       closePeer(key)
     })
 
@@ -106,12 +114,51 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     return () => {
       leaveCall()
       supabase.removeChannel(channel)
+      chimeCtxRef.current?.close?.()
+      chimeCtxRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, currentUserId])
 
   function send(type, to, data) {
     channelRef.current?.send({ type: 'broadcast', event: 'signal', payload: { type, from: currentUserId, to, ...data } })
+  }
+
+  function getChimeCtx() {
+    if (!chimeCtxRef.current) chimeCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    return chimeCtxRef.current
+  }
+
+  function playTone(ctx, freq, startTime, duration, gainPeak = 0.16) {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(0, startTime)
+    gain.gain.linearRampToValueAtTime(gainPeak, startTime + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(startTime)
+    osc.stop(startTime + duration + 0.02)
+  }
+
+  // 'join' -> dwa krótkie, rosnące dźwięki ("ktoś wszedł"); 'leave' -> dwa
+  // opadające ("ktoś wyszedł"). Błędy audio (np. brak wsparcia przeglądarki)
+  // celowo ignorujemy — to tylko sygnał dźwiękowy, nie ma wpływu na połączenie.
+  function playChime(kind) {
+    try {
+      const ctx = getChimeCtx()
+      if (ctx.state === 'suspended') ctx.resume()
+      const now = ctx.currentTime
+      if (kind === 'join') {
+        playTone(ctx, 660, now, 0.12)
+        playTone(ctx, 880, now + 0.11, 0.16)
+      } else {
+        playTone(ctx, 660, now, 0.12)
+        playTone(ctx, 440, now + 0.11, 0.18)
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function attachAnalyser(userId, stream) {
