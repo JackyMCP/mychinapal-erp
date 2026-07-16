@@ -615,6 +615,22 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setItem(key, { photo_paths: (current?.photo_paths || []).filter(p => p !== path) })
   }
 
+  // Zmiana kolejności zdjęć przeciąganiem — pierwsze zdjęcie w tablicy
+  // zawsze jest okładką pozycji (patrz etykieta "okładka" niżej), więc samo
+  // przesunięcie zdjęcia na początek listy wystarczy, żeby zmienić okładkę.
+  const draggedPhoto = useRef(null)
+  const reorderPhotos = (key, fromPath, toPath) => {
+    if (!fromPath || !toPath || fromPath === toPath) return
+    const current = items.find(i => i._key === key)
+    const paths = [...(current?.photo_paths || [])]
+    const fromIdx = paths.indexOf(fromPath)
+    const toIdx = paths.indexOf(toPath)
+    if (fromIdx === -1 || toIdx === -1) return
+    paths.splice(fromIdx, 1)
+    paths.splice(toIdx, 0, fromPath)
+    setItem(key, { photo_paths: paths })
+  }
+
   const photoUrl = (path) => path ? photoUrls[path] : null
 
   // Wklejanie zrzutu ekranu ze schowka (Ctrl+V / Cmd+V) — alternatywa dla
@@ -1294,11 +1310,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <div key={it._key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10, background: C.bg }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ width: 168, flexShrink: 0 }}>
-                <label style={label}>{t(`Zdjęcia (do ${MAX_PHOTOS_PER_ITEM}, pierwsze = okładka na wycenie)`)}</label>
+                <label style={label}>{t(`Zdjęcia (do ${MAX_PHOTOS_PER_ITEM}, przeciągnij żeby zmienić kolejność — pierwsze = okładka)`)}</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {(it.photo_paths || []).map((p, pi) => (
-                    <div key={p} style={{ width: 78, height: 78, borderRadius: 9, overflow: 'hidden', position: 'relative', border: `1px solid ${C.border}`, background: C.white }}>
-                      <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div key={p}
+                      draggable
+                      onDragStart={() => { draggedPhoto.current = p }}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); reorderPhotos(it._key, draggedPhoto.current, p); draggedPhoto.current = null }}
+                      onDragEnd={() => { draggedPhoto.current = null }}
+                      title={t('Przeciągnij, żeby zmienić kolejność')}
+                      style={{ width: 78, height: 78, borderRadius: 9, overflow: 'hidden', position: 'relative', border: `1px solid ${C.border}`, background: C.white, cursor: 'grab' }}>
+                      <img src={photoUrl(p)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
                       {pi === 0 && <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 8, fontWeight: 700, background: 'rgba(10,22,40,.75)', color: '#fff', borderRadius: 4, padding: '1px 4px' }}>{t("okładka")}</span>}
                       <span onClick={() => removePhoto(it._key, p)} title={t('Usuń zdjęcie')}
                         style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,.6)', color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', lineHeight: 1 }}>✕</span>

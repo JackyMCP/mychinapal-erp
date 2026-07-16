@@ -2,6 +2,28 @@ import { supabase } from './supabaseClient'
 import { isFileTooBig } from './files'
 import { parseQuoteExcel } from '../components/wyceny/excelImport'
 import { nextQuoteNumber } from '../components/wyceny/calc'
+import { createProductsFromQuoteItems } from './productCatalog'
+
+// Odpytuje AI (edge function) dla wielu pozycji naraz, ale w OGRANICZONYCH
+// partiach równoległych zamiast: (a) całkiem sekwencyjnie — za wolne przy
+// wielu pozycjach (każde zapytanie to kilka-kilkanaście sekund), albo
+// (b) bez żadnego limitu naraz — realnie zaobserwowane: przy większej
+// wycenie odpalenie WSZYSTKICH zapytań w jednej chwili powodowało serię
+// błędów 500 (przeciążenie edge function / modelu AI). `limit` równoległych
+// zapytań naraz to rozsądny kompromis między szybkością a stabilnością.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length)
+  let nextIndex = 0
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++
+      results[current] = await fn(items[current], current)
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  await Promise.all(workers)
+  return results
+}
 
 // Nowa koncepcja wycen: zespół CN nie wypełnia już ręcznie formularza w
 // aplikacji — dostarcza gotowy plik Excel z wyceną (pozycje towaru, ceny,
@@ -119,14 +141,30 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
     await translateItemsToPolish(parsedItems)
 
     // 5) Utwórz wycenę — status od razu 'do_marzy_pl', bo zespół CN swoją część już zrobił.
-    const quote_number = nextQuoteNumber(existingQuoteNumbers)
-    const { data: quote, error: qErr } = await supabase.from('quotes').insert({
-      quote_number, client_id: client.id, project_id: project.id,
-      status: 'do_marzy_pl', currency: 'CNY', created_by: user?.id,
-      source_excel_path: excelPath, source_excel_name: file.name,
-      notes: '1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.',
-    }).select().single()
-    if (qErr) { result.error = 'Nie udało się utworzyć wyceny: ' + qErr.message; return result }
+    // Numer wyceny liczony jest z migawki `existingQuoteNumbers` przekazanej
+    // przez wywołującego — przy dwóch prawie równoczesnych próbach (np.
+    // użytkownik klika drugi raz, bo pierwsza się jeszcze przetwarza) obie
+    // mogą policzyć ten sam "kolejny" numer. Baza ma teraz unique constraint
+    // na quote_number (patrz migracja quotes_quote_number_unique) — więc
+    // druga próba dostanie tu jawny błąd 23505 zamiast po cichu utworzyć
+    // duplikat; łapiemy to i próbujemy ponownie z ŚWIEŻO pobraną listą
+    // numerów z bazy (nie z tej samej, potencjalnie już nieaktualnej migawki).
+    let quote = null
+    let quote_number = nextQuoteNumber(existingQuoteNumbers)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data, error } = await supabase.from('quotes').insert({
+        quote_number, client_id: client.id, project_id: project.id,
+        status: 'do_marzy_pl', currency: 'CNY', created_by: user?.id,
+        source_excel_path: excelPath, source_excel_name: file.name,
+        notes: '1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.',
+      }).select().single()
+      if (!error) { quote = data; break }
+      const isDuplicateNumber = error.code === '23505' || /quote_number/.test(error.message || '')
+      if (!isDuplicateNumber) { result.error = 'Nie udało się utworzyć wyceny: ' + error.message; return result }
+      const { data: freshRows } = await supabase.from('quotes').select('quote_number')
+      quote_number = nextQuoteNumber((freshRows || []).map(r => r.quote_number))
+    }
+    if (!quote) { result.error = 'Nie udało się utworzyć wyceny: numer wyceny wciąż zajęty po kilku próbach — spróbuj ponownie.'; return result }
     result.quoteId = quote.id
 
     // 6) Wgraj zdjęcia wyciągnięte z Excela (visible_in_files:false — patrz
@@ -161,7 +199,7 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
       return { p, photoPaths }
     }))
 
-    const itemRows = await Promise.all(itemsWithPhotos.map(async ({ p, photoPaths }, i) => {
+    const itemRows = await mapWithConcurrency(itemsWithPhotos, 3, async ({ p, photoPaths }, i) => {
       // Sugestia kodu CN/HS + stawki cła — najlepszy wysiłek, tak jak
       // dotychczas przy ręcznym imporcie. Jeśli Excel już podał realną
       // stawkę cła, nie nadpisujemy jej sugestią AI.
@@ -184,10 +222,18 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
         hs_code: hsCode, duty_rate_percent: dutyRate,
         photo_paths: photoPaths, photo_path: photoPaths[0] || null,
       }
-    }))
+    })
     const { error: itemsErr } = await supabase.from('quote_items').insert(itemRows)
     if (itemsErr) { result.error = 'Wycena utworzona, ale nie udało się zapisać pozycji: ' + itemsErr.message; return result }
     result.itemCount = itemRows.length
+
+    // 6b) Karty w Bazie produktów (Magazyn) mają istnieć OD RAZU po tym, jak
+    // zespół CN dostarczy wycenę — nie dopiero po wysłaniu do klienta (to
+    // mogło być tygodnie później). Pomija nazwy już istniejące w katalogu
+    // (patrz productCatalog.js) — najlepszy wysiłek, błąd nie blokuje reszty.
+    try {
+      await createProductsFromQuoteItems(itemRows, { quoteNumber: quote_number, company: 'PL', userId: user?.id || null })
+    } catch { /* najlepszy wysiłek */ }
 
     // 7) Powiadom cały zespół PL (zadanie w Centrum zadań).
     try {
