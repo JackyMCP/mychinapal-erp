@@ -269,51 +269,123 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   }
   const removeAiFile = (idx) => setAiFilesList(prev => prev.filter((_, i) => i !== idx))
 
+  const isExcelFile = (f) => /\.(xlsx|xls)$/i.test(f.name || '') ||
+    f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || f.type === 'application/vnd.ms-excel'
+
+  // Pliki Excel wgrane w "Stwórz z plików (AI)" NIE trafiają do modelu AI jako
+  // obrazek/tekst (i tak by ich nie odczytał) — zamiast tego przechodzą przez
+  // DOKŁADNIE ten sam, sprawdzony parser co przycisk "Importuj z Excela"
+  // (parseQuoteExcel: właściwe nazwy/ilości/ceny/zdjęcia z komórek), żeby
+  // wgranie Excela razem z innymi plikami dawało identyczny efekt co osobny
+  // import. Pozostałe pliki (zdjęcia, PDF, notatki) idą do edge function AI
+  // jak dotychczas. Obie listy pozycji łączą się w jedną wycenę.
   const handleGenerateFromFiles = async () => {
     if (!aiFilesList.length) { toast.error(t('Wgraj przynajmniej jeden plik.')); return }
     setAiFilesBusy(true)
     try {
-      const filesPayload = await Promise.all(aiFilesList.map(async (f) => ({
-        name: f.name, mimeType: f.type || 'application/octet-stream', base64: await fileToBase64(f),
-      })))
-      const { data, error } = await supabase.functions.invoke('generate-quote-from-files', {
-        body: { files: filesPayload, instruction: aiFilesInstruction },
-      })
-      if (error) throw error
-      if (!data?.items?.length) { toast.error(t('AI nie rozpoznało żadnych pozycji w przesłanych plikach.')); setAiFilesBusy(false); return }
-
+      const excelFiles = aiFilesList.filter(isExcelFile)
+      const otherFiles = aiFilesList.filter(f => !isExcelFile(f))
       const { data: { user } } = await supabase.auth.getUser()
       const readyItems = []
       let photoFailCount = 0
-      for (const it of data.items) {
-        const photoIdxs = Array.isArray(it.photo_file_indexes) ? it.photo_file_indexes : []
-        const photoPaths = []
-        for (const idx of photoIdxs) {
-          const srcFile = aiFilesList[idx]
-          if (!srcFile || !srcFile.type?.startsWith('image/')) continue
-          try {
-            photoPaths.push(await uploadAiPhotoBlob(srcFile, srcFile.name, user?.id))
-          } catch { photoFailCount++ }
+      let excelParsedCount = 0
+      let aiParsedCount = 0
+
+      // --- Pliki Excel: ten sam parser i to samo wgrywanie zdjęć co
+      // handleImportExcel powyżej. ---
+      for (const file of excelFiles) {
+        try {
+          const parsed = await parseQuoteExcel(file)
+          for (const p of parsed) {
+            const dataUrls = p._photoDataUrls || []
+            delete p._photoDataUrls
+            const photoPaths = []
+            for (const dataUrl of dataUrls) {
+              try {
+                const blob = await (await fetch(dataUrl)).blob()
+                if (isFileTooBig(blob)) { photoFailCount++; continue }
+                const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+                const path = `${quote.client_id}/wycena-${quoteId}-${crypto.randomUUID()}-excel-import.${ext}`
+                const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, blob, { contentType: blob.type || 'image/jpeg' })
+                if (upErr) throw upErr
+                await supabase.from('documents').insert({
+                  client_id: quote.client_id, project_id: quote.project_id,
+                  category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: `excel-${p.name || 'produkt'}.${ext}`,
+                  uploaded_by: user?.id, source: 'excel_import',
+                })
+                photoPaths.push(path)
+              } catch { photoFailCount++ }
+            }
+            readyItems.push({ ...blankItem(), ...p, photo_paths: photoPaths })
+            excelParsedCount++
+          }
+        } catch (e) {
+          toast.error(t(`Nie udało się odczytać pliku Excel "${file.name}": `) + (e.message || e))
         }
-        readyItems.push({
-          ...blankItem(),
-          name: it.name || '', specification: it.specification || '',
-          qty: it.qty !== null && it.qty !== undefined && it.qty !== '' ? (toNum(it.qty) || 1) : 1,
-          unit: it.unit || 'szt.',
-          unit_price_cny: it.unit_price_cny !== null && it.unit_price_cny !== undefined ? toNum(it.unit_price_cny) : 0,
-          weight_kg: it.weight_kg !== null && it.weight_kg !== undefined ? it.weight_kg : '',
-          cbm: it.cbm !== null && it.cbm !== undefined ? it.cbm : '',
-          photo_paths: photoPaths,
-        })
       }
+
+      // --- Pozostałe pliki (zdjęcia/PDF/tekst) — jak dotychczas, przez AI. ---
+      if (otherFiles.length) {
+        const filesPayload = await Promise.all(otherFiles.map(async (f) => ({
+          name: f.name, mimeType: f.type || 'application/octet-stream', base64: await fileToBase64(f),
+        })))
+        const { data, error } = await supabase.functions.invoke('generate-quote-from-files', {
+          body: { files: filesPayload, instruction: aiFilesInstruction },
+        })
+        if (error) throw error
+        for (const it of (data?.items || [])) {
+          const photoIdxs = Array.isArray(it.photo_file_indexes) ? it.photo_file_indexes : []
+          const photoPaths = []
+          for (const idx of photoIdxs) {
+            const srcFile = otherFiles[idx] // indeksy AI odnoszą się do plików przesłanych DO NIEGO (otherFiles), nie do pełnej listy
+            if (!srcFile || !srcFile.type?.startsWith('image/')) continue
+            try {
+              photoPaths.push(await uploadAiPhotoBlob(srcFile, srcFile.name, user?.id))
+            } catch { photoFailCount++ }
+          }
+          readyItems.push({
+            ...blankItem(),
+            name: it.name || '', specification: it.specification || '',
+            qty: it.qty !== null && it.qty !== undefined && it.qty !== '' ? (toNum(it.qty) || 1) : 1,
+            unit: it.unit || 'szt.',
+            unit_price_cny: it.unit_price_cny !== null && it.unit_price_cny !== undefined ? toNum(it.unit_price_cny) : 0,
+            weight_kg: it.weight_kg !== null && it.weight_kg !== undefined ? it.weight_kg : '',
+            cbm: it.cbm !== null && it.cbm !== undefined ? it.cbm : '',
+            photo_paths: photoPaths,
+          })
+          aiParsedCount++
+        }
+        if (data?.warnings?.length) toast.error(data.warnings.join(' '))
+        if (otherFiles.length && data && !data.items?.length) toast.error(t('AI nie rozpoznało żadnych pozycji w przesłanych zdjęciach/PDF-ach.'))
+      }
+
+      if (!readyItems.length) { toast.error(t('Nie udało się rozpoznać żadnych pozycji w przesłanych plikach.')); setAiFilesBusy(false); return }
+
+      // Sugestia kodu CN/HS + stawki cła OD RAZU dla wszystkich nowych
+      // pozycji naraz (i z Excela, i z AI) — spójnie z importem z Excela.
+      let aiFailCount = 0
+      await Promise.all(readyItems.map(async (it) => {
+        if (!it.name && !it.photo_paths.length) return
+        try {
+          const sug = await fetchCustomsSuggestion(it.name, it.specification, it.photo_paths[0])
+          if (sug?.hs_code) it.hs_code = sug.hs_code
+          const hasRealDuty = it.duty_rate_percent !== '' && it.duty_rate_percent !== null && it.duty_rate_percent !== undefined
+          if (!hasRealDuty && sug?.duty_rate_percent !== undefined && sug?.duty_rate_percent !== null) it.duty_rate_percent = sug.duty_rate_percent
+          if (!it.name && sug?.name) it.name = sug.name
+          if (!it.specification && sug?.specification) it.specification = sug.specification
+          it.ai_suggestion = sug
+        } catch { aiFailCount++ }
+      }))
+
       const onlyBlank = items.length === 1 && !items[0].name && !items[0].id
       setItems(prev => [...(onlyBlank ? [] : prev), ...readyItems])
       setAiFilesOpen(false); setAiFilesList([]); setAiFilesInstruction('')
-      let msg = t(`AI utworzyło ${readyItems.length} pozycji z przesłanych plików — sprawdź i uzupełnij dane przed zapisaniem.`)
-      if (data.notes) msg += ' ' + data.notes
-      toast.success(msg)
-      if (data.warnings?.length) toast.error(data.warnings.join(' '))
-      if (photoFailCount) toast.error(t(`Nie udało się wgrać ${photoFailCount} zdjęć wskazanych przez AI — dodaj je ręcznie.`))
+      const parts = []
+      if (excelParsedCount) parts.push(t(`${excelParsedCount} z Excela`))
+      if (aiParsedCount) parts.push(t(`${aiParsedCount} z AI`))
+      toast.success(t(`Utworzono ${readyItems.length} pozycji`) + (parts.length ? ` (${parts.join(', ')})` : '') + t(' — sugestie CN/HS i cła uzupełnione automatycznie, sprawdź je i uzupełnij ceny.'))
+      if (photoFailCount) toast.error(t(`Nie udało się wgrać ${photoFailCount} zdjęć — dodaj je ręcznie.`))
+      if (aiFailCount) toast.error(t(`Nie udało się pobrać sugestii AI dla ${aiFailCount} pozycji — uzupełnij je ręcznie przyciskiem "Sugeruj AI".`))
     } catch (e) {
       let detail = e?.message || String(e)
       try {
@@ -870,11 +942,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 520, maxWidth: '94vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 6 }}>🤖 {t("Stwórz pozycje z plików (AI)")}</div>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>
-              {t("Wgraj zdjęcia produktów, PDF ze specyfikacją/cennikiem albo notatki tekstowe — AI utworzy z nich pozycje towaru (nazwa, specyfikacja, ilość) i podepnie rozpoznane zdjęcia do właściwych pozycji.")}
+              {t("Wgraj zdjęcia produktów, PDF ze specyfikacją/cennikiem, pliki Excel z wyceną albo notatki tekstowe — możesz mieszać różne typy naraz. Pliki Excel są odczytywane tym samym mechanizmem co \"Importuj z Excela\" (nazwa/ilość/cena/zdjęcia z komórek), reszta plików trafia do AI. Rozpoznane pozycje i zdjęcia łączą się w jedną listę.")}
             </div>
             <label style={{ display: 'block', padding: '10px 14px', borderRadius: 9, border: `1.5px dashed ${C.purple}`, background: C.plight, color: C.purple, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', textAlign: 'center', marginBottom: 10 }}>
               + {t("Wybierz pliki")} ({aiFilesList.length}/{MAX_AI_FILES})
-              <input type="file" multiple accept="image/*,.pdf,.txt,.csv" style={{ display: 'none' }} disabled={aiFilesBusy}
+              <input type="file" multiple accept="image/*,.pdf,.txt,.csv,.xlsx,.xls" style={{ display: 'none' }} disabled={aiFilesBusy}
                 onChange={e => { handleAiFilesSelected(e.target.files); e.target.value = '' }} />
             </label>
             {aiFilesList.length > 0 && (
