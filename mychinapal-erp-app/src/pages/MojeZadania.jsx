@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader'
 import { C } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import EmptyState from '../components/ui/EmptyState'
+import AllTasksPanel from '../components/dashboard/AllTasksPanel'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -16,7 +17,7 @@ function daysUntil(due) {
 
 export default function MojeZadania() {
   const { t } = useLang()
-  const { profile } = useAuth()
+  const { profile, isZarzad } = useAuth()
   const { toast } = useUI()
   const navigate = useNavigate()
 
@@ -24,6 +25,7 @@ export default function MojeZadania() {
   const [tasks, setTasks] = useState([])
   const [profiles, setProfiles] = useState([])
   const [showAdd, setShowAdd] = useState(false)
+  const [showAllTasks, setShowAllTasks] = useState(false)
   const [title, setTitle] = useState('')
   const [assignee, setAssignee] = useState(null)
   const [dueDate, setDueDate] = useState('')
@@ -98,9 +100,13 @@ export default function MojeZadania() {
   return (
     <div>
       <PageHeader title={t("✅ Moje zadania")} subtitle={t("Wszystkie Twoje zadania, pogrupowane wg terminu")} />
+      {showAllTasks && <AllTasksPanel onClose={() => setShowAllTasks(false)} profiles={profiles} currentUserId={profile?.id} />}
       <div style={{ padding: '16px 22px', maxWidth: 800 }}>
-        <div onClick={() => navigate('/')} style={{ fontSize: 11, fontWeight: 700, color: C.muted, cursor: 'pointer', marginBottom: 14, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          ← {t("Powrót do Dashboardu")}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div onClick={() => navigate('/')} style={{ fontSize: 11, fontWeight: 700, color: C.muted, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            ← {t("Powrót do Dashboardu")}
+          </div>
+          {isZarzad && <span onClick={() => setShowAllTasks(true)} style={{ fontSize: 11.5, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{t("📋 Wszystkie zadania (zarząd)")}</span>}
         </div>
 
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 18 }}>

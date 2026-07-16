@@ -110,7 +110,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <MyProjects projects={myProjects} clientNameById={clientNameById} stageByProject={stageByProject} />
-          <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
+          <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} isZarzad={isZarzad} />
         </div>
 
         <div style={{ marginBottom: 14 }}>

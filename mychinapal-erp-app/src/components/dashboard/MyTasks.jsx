@@ -5,6 +5,7 @@ import { C } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
 import { useNavigate } from 'react-router-dom'
+import AllTasksPanel from './AllTasksPanel'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: bg, color: fg })
 
@@ -16,7 +17,7 @@ function dueLabel(due) {
   return { text: `termin: ${new Date(due).toLocaleDateString('pl-PL')}`, cls: 'ok' }
 }
 
-export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
+export default function MyTasks({ tasks, profiles, currentUserId, onChanged, isZarzad }) {
   const {
     t
   } = useLang();
@@ -24,6 +25,7 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
   const navigate = useNavigate()
 
   const [showAdd, setShowAdd] = useState(false)
+  const [showAllTasks, setShowAllTasks] = useState(false)
   const [title, setTitle] = useState('')
   const [assignee, setAssignee] = useState(currentUserId)
   const [dueDate, setDueDate] = useState('')
@@ -57,8 +59,12 @@ export default function MyTasks({ tasks, profiles, currentUserId, onChanged }) {
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>{t("Moje zadania (")}{active.length})</div>
-        <span onClick={() => setShowAdd(s => !s)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{showAdd ? t("✕ Anuluj") : t("+ Nowe")}</span>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {isZarzad && <span onClick={() => setShowAllTasks(true)} style={{ fontSize: 11, fontWeight: 700, color: C.muted, cursor: 'pointer' }}>{t("📋 Wszystkie zadania")}</span>}
+          <span onClick={() => setShowAdd(s => !s)} style={{ fontSize: 11, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{showAdd ? t("✕ Anuluj") : t("+ Nowe")}</span>
+        </div>
       </div>
+      {showAllTasks && <AllTasksPanel onClose={() => setShowAllTasks(false)} profiles={profiles} currentUserId={currentUserId} />}
       {showAdd && (
         <div style={{ background: C.bg, borderRadius: 9, padding: 10, marginBottom: 12 }}>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t("Treść zadania…")}
