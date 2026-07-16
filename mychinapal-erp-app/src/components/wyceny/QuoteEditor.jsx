@@ -11,6 +11,7 @@ import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
 import { syncQuoteItemsWithCatalog } from '../../lib/productCatalog'
 import { renderQuoteDocHtml, loadLogoDataUrl } from './docTemplate'
+import { exportQuoteToExcelBlob, loadLogoNavyDataUrl } from './excelExport'
 import QuoteDocEditor from './QuoteDocEditor'
 import { exportHtmlToPdfBlob } from './docExport'
 
@@ -90,6 +91,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [docDirty, setDocDirty] = useState(false)
   const [logoDataUrl, setLogoDataUrl] = useState(null)
   useEffect(() => { loadLogoDataUrl().then(setLogoDataUrl) }, [])
+  // Logo w wersji granatowej — dokument Excela ma białe tło arkusza, więc
+  // biały wariant logo (używany w PDF na granatowym nagłówku) byłby na nim
+  // niewidoczny.
+  const [logoNavyDataUrl, setLogoNavyDataUrl] = useState(null)
+  useEffect(() => { loadLogoNavyDataUrl().then(setLogoNavyDataUrl) }, [])
   // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
   // zatwierdzenia (albo anulowania) przez użytkownika, zanim cokolwiek z
   // nich trafi do wyceny (zdjęcia jeszcze NIE są wgrane do Storage na tym
@@ -1264,24 +1270,39 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }
     if (!docHtml) { toast.error(t('Dokument jeszcze się generuje — spróbuj ponownie za chwilę.')); return }
     const confirmMsg = quote.status === 'wyslana'
-      ? t('Wysłać poprawioną wersję tej wyceny do klienta? Nadpisze poprzedni PDF (ten sam numer wyceny) nowymi danymi.')
-      : t('Wysłać tę wycenę do klienta? Wygeneruje się PDF z ceną końcową netto/VAT/brutto w PLN i automatycznie odblokuje 2. etap zamówienia.')
+      ? t('Wysłać poprawioną wersję tej wyceny do klienta? Nadpisze poprzedni plik Excel (ten sam numer wyceny) nowymi danymi.')
+      : t('Wysłać tę wycenę do klienta? Wygeneruje się plik Excel z ceną końcową netto/VAT/brutto w PLN i automatycznie odblokuje 2. etap zamówienia.')
     if (!await confirm(confirmMsg)) return
     const ok = await handleSave(true)
     if (!ok) return
     setSending(true)
     try {
-      const blob = await exportHtmlToPdfBlob(docHtml, { continuationLabel: `${company?.company_name || 'MyChinaPal'} — ${quote?.quote_number || ''}` })
-      const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
-      const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
+      // Klient dostaje wycenę jako plik EXCEL (nie PDF) — decyzja z zadania
+      // #219: klasyczna tabela pozycji ze zdjęciami, które klient może sam
+      // ręcznie powiększyć w Excelu. Stary PDF zostaje na razie tylko jako
+      // wewnętrzny podgląd (przycisk "Podgląd PDF" wyżej) — jego pełne
+      // usunięcie to osobne zadanie #220.
+      const photoDataUrls = await buildPhotoDataUrls()
+      const blob = await exportQuoteToExcelBlob({
+        quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
+        photoDataUrls, logoDataUrl: logoNavyDataUrl, notes: quote?.notes || '',
+      })
+      const excelPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.xlsx`
+      const { error: upErr } = await supabase.storage.from('dokumenty').upload(excelPath, blob, { upsert: true, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       if (upErr) throw upErr
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('documents').insert({
-        client_id: quote.client_id, project_id: quote.project_id,
-        category: 'Wycena', file_path: pdfPath, file_name: `${quote.quote_number || 'wycena'}.pdf`,
-        uploaded_by: user?.id, source: 'manual',
-      })
-      const { error: sendErr } = await supabase.from('quotes').update({ status: 'wyslana', sent_at: new Date().toISOString(), pdf_path: pdfPath }).eq('id', quoteId)
+      const excelFileName = `${quote.quote_number || 'wycena'}.xlsx`
+      const { data: existingDoc } = await supabase.from('documents').select('id').eq('file_path', excelPath).maybeSingle()
+      if (existingDoc?.id) {
+        await supabase.from('documents').update({ uploaded_by: user?.id, created_at: new Date().toISOString() }).eq('id', existingDoc.id)
+      } else {
+        await supabase.from('documents').insert({
+          client_id: quote.client_id, project_id: quote.project_id,
+          category: 'Wycena', file_path: excelPath, file_name: excelFileName,
+          uploaded_by: user?.id, source: 'manual',
+        })
+      }
+      const { error: sendErr } = await supabase.from('quotes').update({ status: 'wyslana', sent_at: new Date().toISOString(), client_excel_path: excelPath }).eq('id', quoteId)
       if (sendErr) throw sendErr
       await markPhotosVisibleInFiles()
       await syncProductCatalogLinksFor(items)
@@ -1298,6 +1319,19 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     const win = window.open('', '_blank')
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(quote.pdf_path, 300)
     if (error) { if (win) win.close(); toast.error(t('Nie udało się pobrać PDF: ') + error.message); return }
+    if (win) win.location.href = data.signedUrl
+    else window.open(data.signedUrl, '_blank')
+  }
+
+  // Pobranie ostatnio wysłanego pliku EXCEL (to, co faktycznie poszło do
+  // klienta od momentu wdrożenia zadania #219). Starsze wyceny, wysłane
+  // jeszcze przed tą zmianą, mają tylko quote.pdf_path — dla nich pokazujemy
+  // legacy przycisk PDF (handleDownloadPdf) zamiast tego.
+  const handleDownloadExcel = async () => {
+    if (!quote.client_excel_path) { toast.error(t('Brak wygenerowanego pliku Excel.')); return }
+    const win = window.open('', '_blank')
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(quote.client_excel_path, 300)
+    if (error) { if (win) win.close(); toast.error(t('Nie udało się pobrać pliku Excel: ') + error.message); return }
     if (win) win.location.href = data.signedUrl
     else window.open(data.signedUrl, '_blank')
   }
@@ -1900,7 +1934,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         </button>
         <button onClick={handlePreviewPdf} disabled={!!sending}
           style={{ padding: '10px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: sending ? .7 : 1, boxShadow: '0 3px 12px rgba(180,140,40,0.45)' }}>
-          {sending === 'preview' ? t("Generowanie…") : t("👁 Podgląd PDF")}
+          {sending === 'preview' ? t("Generowanie…") : t("👁 Podgląd PDF (wewnętrzny)")}
         </button>
         {previewPdfUrl && (
           <a href={previewPdfUrl} target="_blank" rel="noreferrer" download={`podglad-${quote.quote_number || 'wycena'}.pdf`}
@@ -1918,8 +1952,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             {sending ? t("Wysyłanie…") : quote.status === 'wyslana' ? t("📤 Wyślij poprawioną wycenę do klienta") : t("📤 Wyślij do klienta")}
           </button>
         )}
-        {quote.status === 'wyslana' && (
-          <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz ostatnio wysłany PDF")}</button>
+        {quote.status === 'wyslana' && quote.client_excel_path && (
+          <button onClick={handleDownloadExcel} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("📥 Pobierz ostatnio wysłany Excel")}</button>
+        )}
+        {quote.status === 'wyslana' && !quote.client_excel_path && quote.pdf_path && (
+          <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz ostatnio wysłany PDF (starsza wycena)")}</button>
         )}
       </div>
     </div>
