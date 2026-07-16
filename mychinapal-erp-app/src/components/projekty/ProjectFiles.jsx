@@ -6,7 +6,8 @@ import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
-import { createQuoteFromExcelFile, isExcelFile } from '../../lib/quoteIntake'
+import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
+import ExcelImportPreview from '../wyceny/ExcelImportPreview'
 
 export default function ProjectFiles({ project, documents, onChanged }) {
   const { t } = useLang()
@@ -17,19 +18,44 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [previewItems, setPreviewItems] = useState(null)
+  const [pendingExcelFile, setPendingExcelFile] = useState(null)
   const fileRef = useRef(null)
 
   // Excel z kategorią "Wycena" to nowy przepływ: zespół CN wgrywa tu gotową
-  // wycenę zamiast wypełniać ją ręcznie w aplikacji. Plik zostaje sparsowany
-  // (te same reguły co dotychczasowy import w zakładce Wyceny), powstaje
-  // nowa wycena i cały zespół PL przypisany do zamówienia dostaje zadanie —
-  // dokładnie tak samo, jakby ktoś wgrał ten sam plik wprost w Wycenach.
+  // wycenę zamiast wypełniać ją ręcznie w aplikacji. Zanim jednak cokolwiek
+  // trafi do bazy, plik jest parsowany i pokazany na ekranie szybkiego
+  // podglądu (ten sam, co w zakładce Wyceny) — tam da się poprawić
+  // nazwę/ilość/cenę i przeciągnąć zdjęcie na inną pozycję, jeśli parser
+  // dopasował je do złego wiersza. Dopiero zatwierdzenie tworzy wycenę i
+  // powiadamia cały zespół PL — dokładnie tak samo, jakby ktoś wgrał ten
+  // sam plik wprost w Wycenach.
   const handleQuoteExcelUpload = async (file) => {
     setUploading(true)
-    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
-    const result = await createQuoteFromExcelFile(file, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+    const plCheck = await checkPlTeamAssigned(project)
+    if (!plCheck.ok) { setUploading(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); if (fileRef.current) fileRef.current.value = ''; return }
+    let parsedItems
+    try {
+      parsedItems = await parseQuoteExcel(file)
+    } catch (e) {
+      setUploading(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); if (fileRef.current) fileRef.current.value = ''; return
+    }
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
+    if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
+    setPendingExcelFile(file)
+    setPreviewItems(parsedItems)
+  }
+
+  const handleCancelPreview = () => { setPreviewItems(null); setPendingExcelFile(null) }
+
+  const handleConfirmPreview = async (editedItems) => {
+    setPreviewItems(null)
+    setUploading(true)
+    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
+    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+    setUploading(false)
+    setPendingExcelFile(null)
     if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
     const actionLabel = result.overwritten ? t('Wycena nadpisana nowymi danymi ✓') : t('Wycena przyjęta ✓')
     toast.success(t(`${actionLabel} ${result.itemCount} pozycji — powiadomiono ${result.notified} os. z zespołu PL`))
@@ -189,6 +215,15 @@ export default function ProjectFiles({ project, documents, onChanged }) {
           >🗑</span>}
         </div>
       ))}
+
+      {previewItems && (
+        <ExcelImportPreview
+          rows={previewItems}
+          fileName={pendingExcelFile?.name}
+          onConfirm={handleConfirmPreview}
+          onCancel={handleCancelPreview}
+        />
+      )}
     </div>
   )
 }

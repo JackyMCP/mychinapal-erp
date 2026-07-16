@@ -10,7 +10,8 @@ import AttachCategoryModal from '../ui/AttachCategoryModal'
 import MentionInput from '../czat/MentionInput'
 import MentionText from '../czat/MentionText'
 import { extractMentions } from '../../lib/mentions'
-import { createQuoteFromExcelFile, isExcelFile } from '../../lib/quoteIntake'
+import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
+import ExcelImportPreview from '../wyceny/ExcelImportPreview'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -37,6 +38,9 @@ export default function ProjectChat({ project }) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
   const [profiles, setProfiles] = useState([])
+  const [previewItems, setPreviewItems] = useState(null)
+  const [pendingExcelFile, setPendingExcelFile] = useState(null)
+  const [pendingExcelText, setPendingExcelText] = useState('')
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -134,27 +138,56 @@ export default function ProjectChat({ project }) {
     setMessages(prev => [...older, ...prev])
   }
 
+  // Wysyła gotową wiadomość czatu (treść + ewentualny załącznik-dokument już
+  // zapisany) — wspólne dla zwykłego wysyłania i dla zakończenia przepływu
+  // podglądu Excela poniżej.
+  const sendChatMessage = async (content, attachmentDocId, srcText) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const mentionIds = extractMentions(srcText, profiles)
+    const { data: inserted, error } = await supabase.from('chat_messages').insert({
+      channel_id: channelId, sender_id: user.id, content,
+      attachment_document_id: attachmentDocId,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
+    }).select(MSG_SELECT).single()
+    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
+    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
+  }
+
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !channelId) return
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
+
+    // Excel skategoryzowany jako "Wycena" na czacie zamówienia to jeden z
+    // trzech niezależnych sposobów, w jaki zespół CN dostarcza wycenę — plik
+    // NIE trafia jako zwykły załącznik/dokument. Zanim jednak cokolwiek
+    // trafi do bazy, pokazujemy szybki podgląd (ten sam co w Wycenach i
+    // Plikach projektu) z możliwością poprawy pozycji i przeciągnięcia
+    // zdjęcia na inną pozycję, jeśli parser się pomylił.
+    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
+      setSending(true)
+      const plCheck = await checkPlTeamAssigned(project)
+      if (!plCheck.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); return }
+      let parsedItems
+      try {
+        parsedItems = await parseQuoteExcel(attachFile)
+      } catch (e) {
+        setSending(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
+      }
+      setSending(false)
+      if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
+      setPendingExcelFile(attachFile)
+      setPendingExcelText(text.trim())
+      setPreviewItems(parsedItems)
+      return
+    }
+
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
     let content = text.trim() || `📎 ${attachFile?.name || ''}`
 
-    // Excel skategoryzowany jako "Wycena" na czacie zamówienia to jeden z
-    // trzech niezależnych sposobów, w jaki zespół CN dostarcza wycenę — plik
-    // NIE trafia jako zwykły załącznik/dokument, tylko od razu uruchamia
-    // wspólne przyjęcie wyceny (parsowanie, utworzenie wyceny, powiadomienie
-    // całego zespołu PL), dokładnie jak w zakładce Wyceny / Plikach projektu.
-    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
-      const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
-      const result = await createQuoteFromExcelFile(attachFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
-      if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
-      const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
-      const infoNote = `📊 ${actionLabel}: ${attachFile.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
-      content = text.trim() ? `${text.trim()}\n\n${infoNote}` : infoNote
-    } else if (attachFile) {
+    if (attachFile) {
       const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); toast.error('Nie udało się wysłać pliku: ' + upErr.message); return }
@@ -165,16 +198,26 @@ export default function ProjectChat({ project }) {
       if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
-    const mentionIds = extractMentions(text, profiles)
-    const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: channelId, sender_id: user.id, content,
-      attachment_document_id: attachmentDocId,
-      mentioned_user_ids: mentionIds.length ? mentionIds : null,
-    }).select(MSG_SELECT).single()
+    await sendChatMessage(content, attachmentDocId, text)
     setSending(false)
-    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
-    if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
-    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
+    setText(''); setAttachFile(null)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  const handleCancelExcelPreview = () => { setPreviewItems(null); setPendingExcelFile(null); setPendingExcelText('') }
+
+  const handleConfirmExcelPreview = async (editedItems) => {
+    setPreviewItems(null)
+    setSending(true)
+    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
+    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+    if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); setPendingExcelFile(null); setPendingExcelText(''); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
+    const infoNote = `📊 ${actionLabel}: ${pendingExcelFile?.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
+    const content = pendingExcelText ? `${pendingExcelText}\n\n${infoNote}` : infoNote
+    await sendChatMessage(content, null, pendingExcelText)
+    setSending(false)
+    setPendingExcelFile(null); setPendingExcelText('')
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -272,6 +315,14 @@ export default function ProjectChat({ project }) {
         <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
           onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
           onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
+      )}
+      {previewItems && (
+        <ExcelImportPreview
+          rows={previewItems}
+          fileName={pendingExcelFile?.name}
+          onConfirm={handleConfirmExcelPreview}
+          onCancel={handleCancelExcelPreview}
+        />
       )}
     </div>
   );
