@@ -49,6 +49,47 @@ function pill({ icon, label, tone = 'light' }) {
   </div>`
 }
 
+// Blok zdjęć pozycji — rozmiar i układ kafelków dopasowuje się do LICZBY
+// zdjęć, zamiast (jak wcześniej) jednego dużego zdjęcia okładki + drugiego
+// upchniętego jako 19×19 px miniaturka ledwo widoczna obok. Teraz: 1 zdjęcie
+// = jeden duży kwadrat; 2 zdjęcia = DWA równe, wyraźne kwadraty obok siebie
+// (oba w pełni widoczne, tej samej wielkości); 3-4 zdjęcia = równa siatka
+// 2×2 tej samej wielkości kafelków; więcej niż 4 = siatka 2×2 + odznaka
+// "+N" na czwartym kafelku. Zawsze te same proporcje (1:1, object-fit:cover),
+// więc układ nigdy nie wygląda przypadkowo/chaotycznie.
+function photoBlock(photos) {
+  const list = (photos || []).filter(Boolean)
+  const tile = (src, size, extra = '') => src
+    ? `<img src="${src}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:9px;border:1px solid ${BORDER};display:block;${extra}" />`
+    : `<div style="width:${size}px;height:${size}px;border-radius:9px;background:${BG_SOFT};border:1px solid ${BORDER};${extra}"></div>`
+
+  if (list.length === 0) return tile(null, 88)
+  if (list.length === 1) return tile(list[0], 96)
+
+  if (list.length === 2) {
+    return `<div style="display:flex; gap:6px;">${list.map(p => tile(p, 74)).join('')}</div>`
+  }
+
+  // 3+ zdjęć: siatka 2×2 (max 4 widoczne kafelki), taki sam rozmiar każdego.
+  const shown = list.slice(0, 4)
+  const overflow = list.length - shown.length
+  const tileSize = 54
+  const cells = shown.map((p, i) => {
+    const isLastVisible = i === shown.length - 1
+    if (isLastVisible && overflow > 0) {
+      return `<div style="position:relative; width:${tileSize}px; height:${tileSize}px;">
+        ${tile(p, tileSize)}
+        <div style="position:absolute; inset:0; border-radius:9px; background:rgba(10,22,40,.62); display:flex; align-items:center; justify-content:center; font-family:${SANS}; font-size:12px; font-weight:700; color:#fff;">+${overflow}</div>
+      </div>`
+    }
+    return tile(p, tileSize)
+  })
+  // Jeśli tylko 3 zdjęcia, czwarta komórka to pusty placeholder — żeby
+  // siatka zawsze była regularnym prostokątem 2×2, nigdy nie "kuternogą".
+  while (cells.length < 4) cells.push(tile(null, tileSize))
+  return `<div style="display:flex; flex-wrap:wrap; gap:5px; width:${tileSize * 2 + 5}px;">${cells.join('')}</div>`
+}
+
 // Czysta, synchroniczna funkcja renderująca — używana zarówno przez żywy
 // podgląd na ekranie (useMemo, przeliczany przy każdej zmianie formularza)
 // jak i przez eksport do PDF (te same dane, tylko zdjęcia/logo jako base64
@@ -78,8 +119,6 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
   // z ilością 30 szt. i dla 20 osobnych pozycji z importu Excela.
   const itemRows = (rows || []).map((r, idx) => {
     const photos = photoDataUrls[r._key] || []
-    const cover = photos[0]
-    const extra = photos.slice(1, 4)
     const metaBits = []
     if (r.production_days) metaBits.push(`🕓 Produkcja: ${r.production_days} dni`)
     if (r.weight_kg) metaBits.push(`⚖️ Waga: ${r.weight_kg} kg`)
@@ -97,10 +136,7 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
         <td style="padding:16px 14px; vertical-align:top; border-bottom:${isLast ? 'none' : `1px solid ${BORDER}`};">
           <div style="display:flex; gap:14px; align-items:flex-start;">
             <div style="flex-shrink:0;">
-              ${cover
-                ? `<img src="${cover}" style="width:88px;height:88px;object-fit:cover;border-radius:10px;border:1px solid ${BORDER};display:block;" />`
-                : `<div style="width:88px;height:88px;border-radius:10px;background:${BG_SOFT};border:1px solid ${BORDER};"></div>`}
-              ${extra.length ? `<div style="margin-top:6px; display:flex; gap:4px;">${extra.map(p => `<img src="${p}" style="width:19px;height:19px;object-fit:cover;border-radius:4px;border:1px solid ${BORDER};" />`).join('')}</div>` : ''}
+              ${photoBlock(photos)}
             </div>
             <div style="min-width:0; padding-top:2px;">
               <div style="font-family:${SANS}; font-size:13.5px; font-weight:700; color:${TEXT}; line-height:1.4;">${escapeHtml(r.name || '—')}</div>
