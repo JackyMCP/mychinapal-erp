@@ -104,6 +104,25 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return { signedUrl: null, error: lastError }
   }
 
+  // Wspólny rdzeń wywołania edge function suggest-customs-code (kod CN/HS +
+  // stawka cła) — używany zarówno przez ręczny przycisk "Sugeruj AI" na
+  // pojedynczej pozycji, jak i przez automatyczną sugestię dla WSZYSTKICH
+  // pozycji od razu po imporcie z Excela. Rzuca wyjątkiem przy błędzie —
+  // każdy wywołujący sam decyduje jak to zakomunikować (pojedynczy toast vs.
+  // zbiorcze podsumowanie po imporcie wielu pozycji).
+  const fetchCustomsSuggestion = async (name, specification, photoPath) => {
+    let photo_url = null
+    if (photoPath) {
+      const { signedUrl } = await createSignedUrlWithRetry(photoPath, 4, 600)
+      photo_url = signedUrl
+    }
+    const { data, error } = await supabase.functions.invoke('suggest-customs-code', {
+      body: { name: name || '', specification: specification || '', photo_url },
+    })
+    if (error) throw error
+    return data
+  }
+
   useEffect(() => {
     const paths = [...new Set(items.flatMap(it => it.photo_paths || []).filter(Boolean))]
     if (!paths.length) return
@@ -176,11 +195,34 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         }
         readyItems.push({ ...blankItem(), ...p, photo_paths: photoPaths })
       }
+
+      // Sugerowany kod CN/HS + stawka cła mają być widoczne OD RAZU po
+      // imporcie, razem z resztą informacji — nie dopiero po ręcznym
+      // kliknięciu "Sugeruj AI" na każdej pozycji z osobna. Odpalamy sugestię
+      // dla wszystkich zaimportowanych pozycji naraz (równolegle), zanim
+      // w ogóle trafią do stanu formularza. Jeśli Excel już podał realną
+      // stawkę cła (kolumna "Cło (%)"), NIE nadpisujemy jej sugestią AI —
+      // prawdziwe dane z arkusza mają pierwszeństwo przed zgadywaniem.
+      let aiFailCount = 0
+      await Promise.all(readyItems.map(async (it) => {
+        if (!it.name && !it.photo_paths.length) return
+        try {
+          const data = await fetchCustomsSuggestion(it.name, it.specification, it.photo_paths[0])
+          if (data?.hs_code) it.hs_code = data.hs_code
+          const hasRealDuty = it.duty_rate_percent !== '' && it.duty_rate_percent !== null && it.duty_rate_percent !== undefined
+          if (!hasRealDuty && data?.duty_rate_percent !== undefined && data?.duty_rate_percent !== null) it.duty_rate_percent = data.duty_rate_percent
+          if (!it.name && data?.name) it.name = data.name
+          if (!it.specification && data?.specification) it.specification = data.specification
+          it.ai_suggestion = data
+        } catch { aiFailCount++ }
+      }))
+
       const onlyBlank = items.length === 1 && !items[0].name && !items[0].id
       setItems(prev => [...(onlyBlank ? [] : prev), ...readyItems])
       const photoMsg = withPhotos ? t(` (zdjęcia rozpoznane dla ${withPhotos} z nich)`) : ''
-      toast.success(t(`Zaimportowano ${parsed.length} pozycji`) + photoMsg + t(' — sprawdź i uzupełnij dane (kod celny, cena itd.) przed zapisaniem.'))
+      toast.success(t(`Zaimportowano ${parsed.length} pozycji`) + photoMsg + t(' — sugestie kodu CN/HS i cła uzupełnione automatycznie, sprawdź je (zwłaszcza w ISZTAR) i uzupełnij ceny przed zapisaniem.'))
       if (uploadFailCount) toast.error(t(`Nie udało się wgrać ${uploadFailCount} zdjęć z Excela — dodaj je ręcznie.`))
+      if (aiFailCount) toast.error(t(`Nie udało się pobrać sugestii AI dla ${aiFailCount} pozycji — uzupełnij je ręcznie przyciskiem "Sugeruj AI".`))
     } catch (e) {
       toast.error(t('Nie udało się odczytać pliku Excel: ') + (e.message || e))
     }
@@ -427,18 +469,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!it?.name && !photoPath) { toast.error(t('Dodaj zdjęcie albo wpisz nazwę towaru, żeby AI mogło coś zasugerować.')); return }
     setBusyAi(key)
     try {
-      // Świeży podpisany URL zamiast korzystania z ewentualnie jeszcze
-      // niegotowego cache'u photoUrls (zdjęcie mogło dopiero co się wgrać) —
-      // z retry, bo odczyt tuż po zapisie czasem chwilę nie widzi obiektu.
-      let photo_url = null
-      if (photoPath) {
-        const { signedUrl } = await createSignedUrlWithRetry(photoPath, 4, 600)
-        photo_url = signedUrl
-      }
-      const { data, error } = await supabase.functions.invoke('suggest-customs-code', {
-        body: { name: it?.name || '', specification: it?.specification || '', photo_url },
-      })
-      if (error) throw error
+      const data = await fetchCustomsSuggestion(it?.name, it?.specification, photoPath)
       const patch = {}
       if (data?.hs_code) patch.hs_code = data.hs_code
       if (data?.duty_rate_percent !== undefined && data?.duty_rate_percent !== null) patch.duty_rate_percent = data.duty_rate_percent

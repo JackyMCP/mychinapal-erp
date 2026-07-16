@@ -1,26 +1,56 @@
 import * as XLSX from 'xlsx'
 import { toNum } from './calc'
 
-// Import "najlepszego wysiłku" z wyceny fabrycznej w Excelu (format widziany
-// w praktyce: Nr. / Picture / Name / Specification / QTY（set）/ EXW Unit
-// Price（CNY/set）/ EXW Total Price（CNY）/ Volume（CBM）/ EXW Add.). Fabryki
-// różnią się formatem, więc dopasowujemy nagłówki "na wyczucie" (małe litery,
-// bez nawiasów/spacji) zamiast wymagać identycznych kolumn — a i tak zawsze
-// wynik trzeba ręcznie sprawdzić/uzupełnić przed wysłaniem.
+// Import "najlepszego wysiłku" z wyceny fabrycznej w Excelu. Widziane w
+// praktyce formaty różnią się bardzo: albo angielskie nagłówki fabryczne
+// (Nr. / Picture / Name / Specification / QTY（set）/ EXW Unit Price（CNY/set）
+// / EXW Total Price（CNY）/ Volume（CBM）/ EXW Add.), albo już przetłumaczone
+// przez zespół PL polskie nagłówki (Nr / Zdjęcie / Nazwa produktu / Opis /
+// Ilość（szt.）/ Cena jednostkowa FCA / Cło (%) / Objętość (m³) / Waga
+// całkowita (kg) / Informacje o pakowaniu...). Dopasowujemy nagłówki "na
+// wyczucie" (małe litery, bez polskich znaków/nawiasów/spacji) zamiast
+// wymagać identycznych kolumn — a i tak zawsze wynik trzeba ręcznie
+// sprawdzić/uzupełnić przed wysłaniem.
+const DIACRITICS_MAP = { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' }
+function foldDiacritics(s) {
+  return s.replace(/[ąćęłńóśźż]/g, (ch) => DIACRITICS_MAP[ch] || ch)
+}
 function normalizeHeader(h) {
-  return String(h || '').toLowerCase().replace(/[（(].*?[）)]/g, '').replace(/[^a-z]/g, '')
+  return foldDiacritics(String(h || '').toLowerCase()).replace(/[（(].*?[）)]/g, '').replace(/[^a-z]/g, '')
 }
 
+// Kolumny, które mapujemy wprost na pola pozycji wyceny. CELOWO NIE MA tu
+// żadnej kolumny cenowej po polsku (np. "Cena jednostkowa FCA") — ceny mają
+// być zawsze wpisywane/potwierdzane ręcznie przez zespół PL, tylko opisowe
+// dane (nazwa, specyfikacja, ilość, waga, objętość, cło) mają się importować
+// automatycznie.
 const HEADER_MAP = {
-  name: 'name', productname: 'name', 品名: 'name',
-  specification: 'specification', spec: 'specification', description: 'specification', desc: 'specification',
-  qty: 'qty', quantity: 'qty',
+  name: 'name', productname: 'name', 品名: 'name', nazwaproduktu: 'name', nazwatowaru: 'name',
+  specification: 'specification', spec: 'specification', description: 'specification', desc: 'specification', opis: 'specification',
+  qty: 'qty', quantity: 'qty', ilosc: 'qty',
   exwunitprice: 'unit_price_cny', unitprice: 'unit_price_cny', price: 'unit_price_cny',
-  volume: 'cbm', cbm: 'cbm',
+  volume: 'cbm', cbm: 'cbm', objetosc: 'cbm',
   exwadd: 'container_note', address: 'container_note',
+  weightkg: 'weight_kg', wagacalkowita: 'weight_kg', wagacalkowitakg: 'weight_kg',
+  clo: 'duty_rate_percent', clostawka: 'duty_rate_percent', dutyrate: 'duty_rate_percent',
 }
 
-// Zdjęcia osadzone w Excelu (kolumna "Picture" itp.) nie są zwykłymi
+// Kolumny opisowe, które NIE mają swojego pola w formularzu (szczegóły
+// pakowania — rozmiar kartonu, sztuk/karton itd.) — zamiast je gubić,
+// doklejamy je jako czytelne, podpisane linijki do specyfikacji, żeby
+// wszystko z Excela było widoczne i edytowalne w jednym miejscu.
+const APPEND_MAP = {
+  informacjeopakowaniu: 'Pakowanie',
+  rozmiarkartonu: 'Rozmiar kartonu',
+  waga: 'Waga/karton (kg)',
+  ilosc: 'Szt./karton', // uwaga: ten sam znormalizowany klucz co główne "Ilość" —
+  // w praktyce nieszkodliwe, bo kolumna główna zostaje "zużyta" przez HEADER_MAP
+  // (pierwsze dopasowanie wygrywa — patrz pętla niżej) i tylko DRUGIE wystąpienie
+  // (np. "Ilość (szt./karton)") trafia tutaj.
+  liczbakartonow: 'Liczba kartonów',
+}
+
+// Zdjęcia osadzone w Excelu (kolumna "Zdjęcie"/"Picture" itp.) nie są zwykłymi
 // wartościami komórek — to osobne obiekty graficzne "przyklejone" do
 // konkretnego wiersza/kolumny (anchor). Pakiet `xlsx` (SheetJS, wersja OSS)
 // używany do odczytu wartości komórek NIE potrafi ich wyciągnąć. Używamy
@@ -73,6 +103,16 @@ function arrayBufferToBase64(buf) {
   return btoa(binary)
 }
 
+// Niektóre pliki mają dwuwierszowy nagłówek (np. "Informacje o pakowaniu"
+// rozbite w drugim wierszu na Rozmiar kartonu / Waga / Ilość/karton / Liczba
+// kartonów) — to poniżej wyciąga z Opisu ewentualny "Czas produkcji: N dni",
+// żeby dedykowane pole "Czas produkcji" też się uzupełniło, a nie tylko sam
+// tekst opisu.
+function extractProductionDays(text) {
+  const m = String(text || '').match(/czas produkcji\s*[:\-]?\s*(?:ok\.?\s*)?(\d+)/i)
+  return m ? m[1] : ''
+}
+
 export async function parseQuoteExcel(file) {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
@@ -85,21 +125,71 @@ export async function parseQuoteExcel(file) {
   // go niezależnie od SheetJS) — dopasowywane do wierszy przez pozycję kotwicy.
   const imagesByRowIdx = await extractRowImages(buf.slice(0), sheetStartRow0)
 
-  // Znajdź wiersz nagłówka — pierwszy, który ma komórkę pasującą do "name"/"品名".
-  let headerRowIdx = rows.findIndex(r => r.some(c => normalizeHeader(c) === 'name' || normalizeHeader(c).includes('品名')))
+  // Znajdź wiersz nagłówka — pierwszy, który ma JAKĄKOLWIEK komórkę pasującą
+  // do znanego nagłówka (nie tylko "name"/"品名" — inaczej plik z samymi
+  // polskimi nagłówkami nigdy by go nie znalazł i ucichła by cała reszta
+  // dopasowania kolumn).
+  let headerRowIdx = rows.findIndex(r => r.some(c => HEADER_MAP[normalizeHeader(c)]))
   if (headerRowIdx === -1) headerRowIdx = 0
-  const headerRow = rows[headerRowIdx]
-  const colMap = {} // colIndex -> our field key
-  headerRow.forEach((h, i) => {
-    const norm = normalizeHeader(h)
-    if (HEADER_MAP[norm]) colMap[i] = HEADER_MAP[norm]
-  })
+  let headerRow = [...rows[headerRowIdx]]
+  let dataStartIdx = headerRowIdx + 1
+
+  const buildColMaps = (hRow) => {
+    const cMap = {} // colIndex -> nasze pole
+    const usedFields = new Set()
+    hRow.forEach((h, i) => {
+      const norm = normalizeHeader(h)
+      const fld = HEADER_MAP[norm]
+      // Pierwsze dopasowanie danego pola wygrywa — niektóre pliki mają DWIE
+      // kolumny normalizujące się do tego samego klucza (np. "Ilość（szt.）"
+      // ogólna ilość i "Ilość (szt./karton)" w sekcji pakowania — obie tracą
+      // nawiasy i wyglądają identycznie). Bez tej reguły druga kolumna po
+      // cichu nadpisywałaby poprawną ilość błędną wartością.
+      if (fld && !usedFields.has(fld)) { cMap[i] = fld; usedFields.add(fld) }
+    })
+    // Drugi przebieg — kolumny NIEUŻYTE przez colMap, ale rozpoznane jako
+    // szczegóły pakowania/opisowe bez własnego pola — dokleimy je do specyfikacji.
+    const aMap = {} // colIndex -> etykieta
+    hRow.forEach((h, i) => {
+      if (cMap[i]) return
+      const norm = normalizeHeader(h)
+      if (APPEND_MAP[norm]) aMap[i] = APPEND_MAP[norm]
+    })
+    return { cMap, aMap }
+  }
+
+  let { cMap: colMap, aMap: appendColMap } = buildColMaps(headerRow)
+
+  // Niektóre pliki (np. z sekcją "Informacje o pakowaniu" rozbitą na kilka
+  // pod-kolumn) mają DWUWIERSZOWY nagłówek: pierwszy wiersz to główne
+  // etykiety, drugi — doprecyzowanie dla kolumn, które w pierwszym wierszu
+  // są scalone/puste. Wykrywamy to tak: jeśli mamy rozpoznaną kolumnę "name",
+  // a KOLEJNY wiersz ma tam pustą wartość, ale za to ma gdzie indziej tekstowe
+  // (nie liczbowe) etykiety — to prawie na pewno kontynuacja nagłówka, a nie
+  // dane produktu. Scalamy oba wiersze (brakujące etykiety z wiersza 1
+  // uzupełniamy etykietami z wiersza 2) i dopiero wtedy realne dane zaczynają
+  // się o wiersz niżej — bez tego cała sekcja pakowania (rozmiar kartonu,
+  // sztuk/karton, liczba kartonów) po cichu by zniknęła.
+  const nameColIdx = Object.entries(colMap).find(([, f]) => f === 'name')?.[0]
+  if (nameColIdx !== undefined) {
+    const nextRow = rows[headerRowIdx + 1]
+    const nameEmpty = !nextRow?.[Number(nameColIdx)]
+    const hasTextLabel = nextRow?.some(c => typeof c === 'string' && c.trim() && Number.isNaN(Number(c.replace(',', '.'))))
+    if (nameEmpty && hasTextLabel) {
+      const merged = headerRow.map((h, i) => (h ? h : (nextRow[i] ?? '')))
+      const rebuilt = buildColMaps(merged)
+      headerRow = merged
+      colMap = rebuilt.cMap
+      appendColMap = rebuilt.aMap
+      dataStartIdx = headerRowIdx + 2
+    }
+  }
 
   const items = []
-  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+  for (let r = dataStartIdx; r < rows.length; r++) {
     const row = rows[r]
     if (!row || row.every(c => c === '' || c === null || c === undefined)) continue
-    const item = { name: '', specification: '', qty: 1, unit: 'set', unit_price_cny: 0, cbm: '', container_note: '' }
+    const item = { name: '', specification: '', qty: 1, unit: 'set', unit_price_cny: 0, cbm: '', container_note: '', weight_kg: '', duty_rate_percent: '' }
     let hasName = false
     for (const [colIdx, field] of Object.entries(colMap)) {
       const val = row[Number(colIdx)]
@@ -111,14 +201,31 @@ export async function parseQuoteExcel(file) {
         const s = String(v ?? '').trim().replace(',', '.')
         return s === '' ? NaN : Number(s)
       }
-      if (field === 'qty' || field === 'unit_price_cny') item[field] = toNum(val)
+      if (field === 'qty' || field === 'unit_price_cny' || field === 'weight_kg' || field === 'duty_rate_percent') item[field] = toNum(val)
       else if (field === 'cbm') { const n = asNumber(val); item.cbm = Number.isNaN(n) ? '' : n; if (Number.isNaN(n)) item.container_note = String(val) }
       else item[field] = String(val)
       if (field === 'name' && item.name) hasName = true
     }
-    // Wiersze bez nazwy to zwykle podsumowania/stopki — pomijamy je, chyba że
-    // wiersz ma za to zdjęcie (produkt bez opisanej nazwy w Excelu, ale z
-    // fotką — i tak warto go zaimportować, nazwę można dopisać/dogenerować AI).
+
+    // Doklej rozpoznane, ale "bezdomne" kolumny (pakowanie itp.) do specyfikacji
+    // jako czytelne, podpisane linijki — nic z Excela nie ma zniknąć po cichu.
+    const extraLines = []
+    for (const [colIdx, labelText] of Object.entries(appendColMap)) {
+      const val = row[Number(colIdx)]
+      if (val === '' || val === null || val === undefined) continue
+      extraLines.push(`${labelText}: ${val}`)
+    }
+    if (extraLines.length) {
+      item.specification = item.specification ? `${item.specification}\n${extraLines.join(', ')}` : extraLines.join(', ')
+    }
+
+    const prodDays = extractProductionDays(item.specification)
+    if (prodDays) item.production_days = prodDays
+
+    // Wiersze bez nazwy to zwykle podsumowania/stopki albo (przy dwuwierszowym
+    // nagłówku) kontynuacja nagłówka — pomijamy je, chyba że wiersz ma za to
+    // zdjęcie (produkt bez opisanej nazwy w Excelu, ale z fotką — i tak warto
+    // go zaimportować, nazwę można dopisać/dogenerować AI).
     const rowImages = imagesByRowIdx[r] || []
     if (hasName || rowImages.length) {
       if (rowImages.length) item._photoDataUrls = rowImages
