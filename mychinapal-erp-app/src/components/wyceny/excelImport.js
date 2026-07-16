@@ -19,11 +19,11 @@ function normalizeHeader(h) {
   return foldDiacritics(String(h || '').toLowerCase()).replace(/[（(].*?[）)]/g, '').replace(/[^a-z]/g, '')
 }
 
-// Kolumny, które mapujemy wprost na pola pozycji wyceny. CELOWO NIE MA tu
-// żadnej kolumny cenowej po polsku (np. "Cena jednostkowa FCA") — ceny mają
-// być zawsze wpisywane/potwierdzane ręcznie przez zespół PL, tylko opisowe
-// dane (nazwa, specyfikacja, ilość, waga, objętość, cło) mają się importować
-// automatycznie.
+// Kolumny, które mapujemy wprost na pola pozycji wyceny — WŁĄCZNIE z ceną
+// jednostkową (cena EXW/FCA/FOB towaru od zespołu chińskiego). Wcześniej cena
+// celowo nie była importowana (miała być zawsze wpisywana ręcznie) — na
+// wyraźną prośbę teraz importuje się automatycznie tak jak reszta pól, wciąż
+// w pełni edytowalna przed zapisaniem/wysłaniem wyceny.
 const HEADER_MAP = {
   name: 'name', productname: 'name', 品名: 'name', nazwaproduktu: 'name', nazwatowaru: 'name',
   specification: 'specification', spec: 'specification', description: 'specification', desc: 'specification', opis: 'specification',
@@ -33,6 +33,19 @@ const HEADER_MAP = {
   exwadd: 'container_note', address: 'container_note',
   weightkg: 'weight_kg', wagacalkowita: 'weight_kg', wagacalkowitakg: 'weight_kg',
   clo: 'duty_rate_percent', clostawka: 'duty_rate_percent', dutyrate: 'duty_rate_percent',
+}
+
+// Nagłówki cenowe różnią się dopiskiem Incoterms ("Cena jednostkowa FCA",
+// "Cena jednostkowa EXW", "EXW Unit Price（CNY/set）"...) — zamiast wypisywać
+// każdy wariant z osobna w HEADER_MAP, każdy nagłówek zawierający "cena" +
+// "jednostkowa" (albo samo "unitprice"/"exw..price") jest traktowany jako
+// cena jednostkowa. Nagłówki oznaczające SUMĘ/wartość całkowitą (np. "Cena
+// całkowita", "EXW Total Price") są celowo WYKLUCZONE — zaimportowanie sumy
+// jako ceny jednostkowej przemnożyłoby się przez ilość i dało cenę
+// wielokrotnie zawyżoną, więc to rozróżnienie jest krytyczne.
+function looksLikeUnitPriceHeader(norm) {
+  if (/calkowit|total|suma|razem/.test(norm)) return false
+  return /cenajednostkowa|unitprice|exw.*price|price.*exw/.test(norm)
 }
 
 // Kolumny opisowe, które NIE mają swojego pola w formularzu (szczegóły
@@ -139,7 +152,8 @@ export async function parseQuoteExcel(file) {
     const usedFields = new Set()
     hRow.forEach((h, i) => {
       const norm = normalizeHeader(h)
-      const fld = HEADER_MAP[norm]
+      let fld = HEADER_MAP[norm]
+      if (!fld && looksLikeUnitPriceHeader(norm)) fld = 'unit_price_cny'
       // Pierwsze dopasowanie danego pola wygrywa — niektóre pliki mają DWIE
       // kolumny normalizujące się do tego samego klucza (np. "Ilość（szt.）"
       // ogólna ilość i "Ilość (szt./karton)" w sekcji pakowania — obie tracą

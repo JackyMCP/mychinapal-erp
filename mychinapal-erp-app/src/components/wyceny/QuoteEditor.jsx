@@ -1,5 +1,5 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
@@ -46,6 +46,13 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [items, setItems] = useState([])
   const [deletedIds, setDeletedIds] = useState([])
   const [loading, setLoading] = useState(true)
+  // Autozapis — cokolwiek zostanie wpisane w polu albo wgrane (zdjęcie,
+  // import z Excela/AI) ma zostać zapisane samo, bez konieczności pamiętania
+  // o kliknięciu "Zapisz". Debounce 1.2s od ostatniej zmiany, żeby nie walić
+  // zapytaniem do bazy przy każdym pojedynczym znaku wpisywanym w polu.
+  const [autosaveStatus, setAutosaveStatus] = useState('idle') // idle | pending | saving | saved | error
+  const autosaveTimer = useRef(null)
+  const skipNextAutosave = useRef(true)
   const [saving, setSaving] = useState(false)
   const [busyPhoto, setBusyPhoto] = useState(null)
   const [busyAi, setBusyAi] = useState(null)
@@ -89,6 +96,10 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }
     setDeletedIds([])
     setLoading(false)
+    // Świeżo wczytane dane NIE mają wywoływać autozapisu (to nie jest
+    // zmiana wprowadzona przez użytkownika) — dopiero KOLEJNA zmiana stanu
+    // (po tym wczytaniu) ma go uzbroić.
+    skipNextAutosave.current = true
   }
   useEffect(() => { load() }, [quoteId])
 
@@ -115,6 +126,30 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // pozycji od razu po imporcie z Excela. Rzuca wyjątkiem przy błędzie —
   // każdy wywołujący sam decyduje jak to zakomunikować (pojedynczy toast vs.
   // zbiorcze podsumowanie po imporcie wielu pozycji).
+  // Pozycje z Excela/plików AI często mają nazwę/specyfikację po chińsku albo
+  // angielsku (oryginalne dane fabryczne) — wycena dla polskiego klienta ma
+  // być w całości po polsku. Tłumaczymy WSZYSTKIE zaimportowane pozycje naraz
+  // (jedno zapytanie zamiast jednego na pozycję) zanim trafią do formularza;
+  // tekst już po polsku model ma zwrócić bez zmian, więc to bezpieczne do
+  // uruchamiania zawsze, niezależnie od źródłowego języka.
+  const translateItemsToPolish = async (readyItems) => {
+    const toTranslate = readyItems.map((it, i) => ({ i, name: it.name || '', specification: it.specification || '' })).filter(x => x.name || x.specification)
+    if (!toTranslate.length) return
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-quote-item', { body: { items: toTranslate } })
+      if (error) throw error
+      for (const t of (data?.items || [])) {
+        const it = readyItems[t.i]
+        if (!it) continue
+        if (t.name) it.name = t.name
+        if (t.specification) it.specification = t.specification
+      }
+    } catch {
+      // Najlepszy wysiłek — jeśli tłumaczenie się nie uda, pozycje zostają w
+      // oryginalnym języku (nadal w pełni edytowalne ręcznie).
+    }
+  }
+
   const fetchCustomsSuggestion = async (name, specification, photoPath) => {
     let photo_url = null
     if (photoPath) {
@@ -201,6 +236,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         readyItems.push({ ...blankItem(), ...p, photo_paths: photoPaths })
       }
 
+      // Wycena ma być w całości po polsku — tłumaczymy nazwy/specyfikacje
+      // (często chińskie/angielskie w plikach fabrycznych) PRZED sugestią
+      // CN/HS, żeby ta sugestia też pracowała na polskim tekście.
+      await translateItemsToPolish(readyItems)
+
       // Sugerowany kod CN/HS + stawka cła mają być widoczne OD RAZU po
       // imporcie, razem z resztą informacji — nie dopiero po ręcznym
       // kliknięciu "Sugeruj AI" na każdej pozycji z osobna. Odpalamy sugestię
@@ -225,7 +265,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       const onlyBlank = items.length === 1 && !items[0].name && !items[0].id
       setItems(prev => [...(onlyBlank ? [] : prev), ...readyItems])
       const photoMsg = withPhotos ? t(` (zdjęcia rozpoznane dla ${withPhotos} z nich)`) : ''
-      toast.success(t(`Zaimportowano ${parsed.length} pozycji`) + photoMsg + t(' — sugestie kodu CN/HS i cła uzupełnione automatycznie, sprawdź je (zwłaszcza w ISZTAR) i uzupełnij ceny przed zapisaniem.'))
+      toast.success(t(`Zaimportowano ${parsed.length} pozycji`) + photoMsg + t(' — nazwy/opisy przetłumaczone na polski, sugestie kodu CN/HS i cła uzupełnione automatycznie, sprawdź je (zwłaszcza w ISZTAR) i zweryfikuj ceny przed zapisaniem.'))
       if (uploadFailCount) toast.error(t(`Nie udało się wgrać ${uploadFailCount} zdjęć z Excela — dodaj je ręcznie.`))
       if (aiFailCount) toast.error(t(`Nie udało się pobrać sugestii AI dla ${aiFailCount} pozycji — uzupełnij je ręcznie przyciskiem "Sugeruj AI".`))
     } catch (e) {
@@ -366,6 +406,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
       if (!readyItems.length) { toast.error(t('Nie udało się rozpoznać żadnych pozycji w przesłanych plikach.')); setAiFilesBusy(false); return }
 
+      await translateItemsToPolish(readyItems)
+
       // Sugestia kodu CN/HS + stawki cła OD RAZU dla wszystkich nowych
       // pozycji naraz (i z Excela, i z AI) — spójnie z importem z Excela.
       let aiFailCount = 0
@@ -388,7 +430,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       const parts = []
       if (excelParsedCount) parts.push(t(`${excelParsedCount} z Excela`))
       if (aiParsedCount) parts.push(t(`${aiParsedCount} z AI`))
-      toast.success(t(`Utworzono ${readyItems.length} pozycji`) + (parts.length ? ` (${parts.join(', ')})` : '') + t(' — sugestie CN/HS i cła uzupełnione automatycznie, sprawdź je i uzupełnij ceny.'))
+      toast.success(t(`Utworzono ${readyItems.length} pozycji`) + (parts.length ? ` (${parts.join(', ')})` : '') + t(' — nazwy/opisy przetłumaczone na polski, sugestie CN/HS i cła uzupełnione automatycznie, sprawdź je i zweryfikuj ceny.'))
       if (photoFailCount) toast.error(t(`Nie udało się wgrać ${photoFailCount} zdjęć — dodaj je ręcznie.`))
       if (aiFailCount) toast.error(t(`Nie udało się pobrać sugestii AI dla ${aiFailCount} pozycji — uzupełnij je ręcznie przyciskiem "Sugeruj AI".`))
     } catch (e) {
@@ -646,13 +688,35 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         await supabase.from('quote_items').update(payload).eq('id', it.id)
       } else {
         const { data } = await supabase.from('quote_items').insert(payload).select().single()
-        if (data) setItems(prev => prev.map(p => p._key === it._key ? { ...p, id: data.id } : p))
+        // To setItems tylko "dopisuje" id nowo utworzonej pozycji po zapisie —
+        // to NIE jest zmiana wprowadzona przez użytkownika, więc nie ma
+        // odpalać kolejnego autozapisu (spowodowałoby to zapisywanie w kółko).
+        if (data) { skipNextAutosave.current = true; setItems(prev => prev.map(p => p._key === it._key ? { ...p, id: data.id } : p)) }
       }
     }
     setSaving(false)
     if (!silent) toast.success(t('Wycena zapisana ✓'))
     return true
   }
+
+  // Autozapis: cokolwiek zostanie wpisane w polu (nazwa, ilość, notatki...)
+  // albo wgrane (zdjęcie, import) ma zostać zapisane samo, bez klikania
+  // "Zapisz" — inaczej odświeżenie strony/zamknięcie karty przed ręcznym
+  // zapisem gubiło wpisane dane. Debounce 1.2s od ostatniej zmiany.
+  useEffect(() => {
+    if (loading || !quote) return
+    if (skipNextAutosave.current) { skipNextAutosave.current = false; return }
+    setAutosaveStatus('pending')
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(async () => {
+      setAutosaveStatus('saving')
+      const ok = await handleSave(true)
+      setAutosaveStatus(ok ? 'saved' : 'error')
+      if (ok) setTimeout(() => setAutosaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2500)
+    }, 1200)
+    return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote, items])
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
@@ -853,6 +917,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: quote.status === 'wyslana' ? C.glight : quote.status === 'do_marzy_pl' ? C.olight : C.blight, color: quote.status === 'wyslana' ? C.green : quote.status === 'do_marzy_pl' ? C.orange : C.blue }}>
           {t(STATUS_LABELS[quote.status] || quote.status)}
         </span>
+        {autosaveStatus !== 'idle' && (
+          <span style={{ fontSize: 10.5, color: autosaveStatus === 'error' ? C.red : C.muted, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {autosaveStatus === 'pending' && t('Wpisywanie…')}
+            {autosaveStatus === 'saving' && t('Zapisywanie…')}
+            {autosaveStatus === 'saved' && t('✓ Zapisano automatycznie')}
+            {autosaveStatus === 'error' && t('⚠ Nie udało się zapisać automatycznie')}
+          </span>
+        )}
         <div style={{ marginLeft: 'auto', fontSize: 11.5, color: C.muted }}>{client?.name} · {project?.order_label}</div>
       </div>
 
