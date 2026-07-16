@@ -237,6 +237,22 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const setQ = (patch) => setQuote(prev => ({ ...prev, ...patch }))
   const setItem = (key, patch) => setItems(prev => prev.map(it => it._key === key ? { ...it, ...patch } : it))
+  // Ręczna cena "PLN/szt." na pozycji (patrz calc.js hasManualPln) całkowicie
+  // ZASTĘPUJE globalną marżę dla TEJ pozycji — dopóki jest ustawiona, zmiana
+  // pola "Marża (%)" nie ma na nią żadnego wpływu (to był realnie zgłoszony
+  // błąd: użytkownik zmieniał marżę, a cena/wykres "krok po kroku" się nie
+  // ruszał, bo pozycja miała już wcześniej wpisaną/zasugerowaną własną cenę
+  // PLN). Żeby marża globalna zawsze realnie działała, wpisanie jej czyści
+  // wszystkie ręczne ceny PLN pozycji — jedno źródło prawdy zamiast dwóch
+  // cichо konkurujących mechanizmów.
+  const handleMarginChange = (val) => {
+    const hadManual = items.some(it => it.unit_price_pln !== null && it.unit_price_pln !== undefined && it.unit_price_pln !== '')
+    setQ({ margin_percent: val })
+    if (hadManual) {
+      setItems(prev => prev.map(it => ({ ...it, unit_price_pln: null })))
+      toast.success(t('Marża globalna zastosowana — ręcznie ustawione ceny PLN/szt. na pozycjach zostały wyczyszczone.'))
+    }
+  }
   const addItem = () => setItems(prev => [...prev, blankItem()])
   const [importing, setImporting] = useState(false)
   // Krok 1: tylko parsowanie — pokazujemy podgląd, NIC jeszcze nie jest
@@ -1456,7 +1472,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </div>
           <div>
             <label style={label}>{t("Marża (%)")}</label>
-            <input type="text" inputMode="decimal" style={field} value={quote.margin_percent ?? ''} onChange={e => setQ({ margin_percent: e.target.value })} placeholder="np. 30" />
+            <input type="text" inputMode="decimal" style={field} value={quote.margin_percent ?? ''} onChange={e => handleMarginChange(e.target.value)} placeholder="np. 30" />
           </div>
           <div><label style={label}>{t("Ważna do")}</label><input type="date" style={field} value={quote.valid_until || ''} onChange={e => setQ({ valid_until: e.target.value })} /></div>
         </div>
