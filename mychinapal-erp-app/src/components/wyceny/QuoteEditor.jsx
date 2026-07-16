@@ -596,7 +596,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       if (!it?.specification && data?.specification) patch.specification = data.specification
       if (Object.keys(patch).length) {
         setItem(key, { ...patch, ai_suggestion: data })
-        toast.success(t('Sugestia AI wstawiona — sprawdź i potwierdź (kod celny w ISZTAR) przed wysyłką.'))
+        if (data?.verified) {
+          toast.success(t('Sugestia AI wstawiona i zweryfikowana w prawdziwym rejestrze ISZTAR — mimo to warto rzucić okiem przed wysyłką.'))
+        } else {
+          toast.error(t('Sugestia AI wstawiona, ale kodu NIE udało się potwierdzić w ISZTAR — koniecznie sprawdź ręcznie i uzupełnij stawkę cła.'))
+        }
       } else {
         toast.error(t('AI nie zwróciło żadnej sugestii — uzupełnij dane ręcznie.'))
       }
@@ -1010,7 +1014,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
               <div><label style={label}>{t("Czas produkcji (dni)")}</label><input type="text" inputMode="decimal" style={field} value={it.production_days} onChange={e => setItem(it._key, { production_days: e.target.value })} /></div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr auto auto', gap: 8, marginTop: 10, alignItems: 'end' }}>
-              <div><label style={label}>{t("Kod CN/HS")}</label><input style={field} value={it.hs_code} onChange={e => setItem(it._key, { hs_code: e.target.value })} placeholder="9406.10" /></div>
+              <div><label style={label}>{t("Kod CN (10 cyfr)")}</label><input style={field} value={it.hs_code} onChange={e => setItem(it._key, { hs_code: e.target.value })} placeholder="9403300090" /></div>
               <div><label style={label}>{t("Stawka cła (%)")}</label><input type="text" inputMode="decimal" style={field} value={it.duty_rate_percent} onChange={e => setItem(it._key, { duty_rate_percent: e.target.value })} /></div>
               <button onClick={() => handleAiSuggest(it._key)} disabled={busyAi === it._key}
                 style={{ padding: '7px 11px', borderRadius: 7, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -1022,6 +1026,40 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
               )}
               <span onClick={() => removeItem(it._key)} style={{ fontSize: 11, color: C.red, cursor: 'pointer', whiteSpace: 'nowrap', justifySelf: 'end' }}>🗑 {t("Usuń pozycję")}</span>
             </div>
+
+            {/* Status weryfikacji w prawdziwym rejestrze ISZTAR4 — pochodzi z
+                edge function suggest-customs-code (v3), która po wytypowaniu
+                kodu przez AI sprawdza go w prawdziwym API rządowym. To TYLKO
+                informacja pomocnicza — link "Zweryfikuj w ISZTAR ↗" wyżej
+                zawsze zostaje do ręcznego podwójnego sprawdzenia. */}
+            {it.ai_suggestion?.verified === true && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: C.glight, color: C.green }}>
+                  {t("✓ Zweryfikowano w ISZTAR")}
+                </span>
+                {it.ai_suggestion?.regulation_link && (
+                  <a href={it.ai_suggestion.regulation_link} target="_blank" rel="noreferrer" style={{ fontSize: 9.5, color: C.blue, textDecoration: 'underline' }}>{t("Regulacja celna ↗")}</a>
+                )}
+                {it.ai_suggestion?.vat_rate_percent !== undefined && it.ai_suggestion?.vat_rate_percent !== null && (
+                  <span style={{ fontSize: 9.5, color: C.muted }}>{t("VAT wg ISZTAR:")} {it.ai_suggestion.vat_rate_percent}%</span>
+                )}
+              </div>
+            )}
+            {it.ai_suggestion && it.ai_suggestion.verified === false && (
+              <div style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: C.olight, color: C.orange, display: 'inline-block', marginTop: 6 }}>
+                {t("⚠ Kod niezweryfikowany w ISZTAR — sprawdź ręcznie i potwierdź stawkę cła przed wysyłką")}
+              </div>
+            )}
+            {it.ai_suggestion?.china_specific_note && (
+              <div style={{ fontSize: 10, color: C.red, marginTop: 4, fontWeight: 600 }}>
+                ⚠ {it.ai_suggestion.china_specific_note}
+              </div>
+            )}
+            {Array.isArray(it.ai_suggestion?.nontariff_warnings) && it.ai_suggestion.nontariff_warnings.length > 0 && (
+              <div style={{ fontSize: 9.5, color: C.orange, marginTop: 2 }}>
+                {t("Ograniczenia pozataryfowe:")} {it.ai_suggestion.nontariff_warnings.join('; ')}
+              </div>
+            )}
             {it.hs_code && describeHsCode(it.hs_code) && (
               <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
                 {t("Dział")} {String(it.hs_code).replace(/\D/g, '').slice(0, 2)}: <strong>{t(describeHsCode(it.hs_code))}</strong> {t("(orientacyjnie, wg pierwszych cyfr kodu — zawsze zweryfikuj dokładny kod w ISZTAR)")}
