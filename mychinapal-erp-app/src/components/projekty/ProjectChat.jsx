@@ -10,6 +10,7 @@ import AttachCategoryModal from '../ui/AttachCategoryModal'
 import MentionInput from '../czat/MentionInput'
 import MentionText from '../czat/MentionText'
 import { extractMentions } from '../../lib/mentions'
+import { createQuoteFromExcelFile, isExcelFile } from '../../lib/quoteIntake'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -139,7 +140,20 @@ export default function ProjectChat({ project }) {
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
-    if (attachFile) {
+    let content = text.trim() || `📎 ${attachFile?.name || ''}`
+
+    // Excel skategoryzowany jako "Wycena" na czacie zamówienia to jeden z
+    // trzech niezależnych sposobów, w jaki zespół CN dostarcza wycenę — plik
+    // NIE trafia jako zwykły załącznik/dokument, tylko od razu uruchamia
+    // wspólne przyjęcie wyceny (parsowanie, utworzenie wyceny, powiadomienie
+    // całego zespołu PL), dokładnie jak w zakładce Wyceny / Plikach projektu.
+    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
+      const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
+      const result = await createQuoteFromExcelFile(attachFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+      if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
+      const infoNote = `📊 ${t('Wycena przyjęta z Excela')}: ${attachFile.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
+      content = text.trim() ? `${text.trim()}\n\n${infoNote}` : infoNote
+    } else if (attachFile) {
       const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); toast.error('Nie udało się wysłać pliku: ' + upErr.message); return }
@@ -152,7 +166,7 @@ export default function ProjectChat({ project }) {
     }
     const mentionIds = extractMentions(text, profiles)
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: channelId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
+      channel_id: channelId, sender_id: user.id, content,
       attachment_document_id: attachmentDocId,
       mentioned_user_ids: mentionIds.length ? mentionIds : null,
     }).select(MSG_SELECT).single()
