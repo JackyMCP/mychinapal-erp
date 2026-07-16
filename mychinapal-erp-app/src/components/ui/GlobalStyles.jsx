@@ -17,6 +17,16 @@ export default function GlobalStyles() {
          przewijanie z bezwładnością na iOS wewnątrz przewijanych paneli. */
       html, body, #root { max-width: 100%; overflow-x: hidden; }
       * { -webkit-tap-highlight-color: transparent; }
+
+      /* Typografia firmowa (Ustawienia -> Wygląd) — zmienne ustawiane globalnie
+         przy starcie apki (patrz src/lib/typography.js, wywołane w App.jsx).
+         Nagłówki ze stylem inline fontFamily: 'Syne' NIE są tym dotknięte —
+         styl inline zawsze wygrywa z dziedziczoną wartością z body. */
+      body {
+        font-family: var(--app-font-family, 'Inter', system-ui, sans-serif);
+        letter-spacing: var(--app-letter-spacing, 0px);
+        line-height: calc(1.5 * var(--app-line-height-scale, 1));
+      }
       @media (max-width: 768px) {
         body { font-size: 14px; }
         .scroll-x-mobile { overflow-x: auto; -webkit-overflow-scrolling: touch; }

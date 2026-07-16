@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider } from './lib/i18n/LanguageContext'
@@ -17,9 +18,11 @@ import KasaBank from './pages/KasaBank'
 import Czat from './pages/Czat'
 import Wyceny from './pages/Wyceny'
 import ComingSoon from './pages/ComingSoon'
+import Ustawienia from './pages/Ustawienia'
 import MojeProjekty from './pages/MojeProjekty'
 import MojeZadania from './pages/MojeZadania'
 import { C } from './lib/theme'
+import { loadTypography, applyTypography } from './lib/typography'
 
 function Protected({ children }) {
   const { session, loading } = useAuth()
@@ -50,7 +53,7 @@ function Shell() {
           <Route path="/czat" element={<Czat />} />
           <Route path="/wyceny" element={<Wyceny />} />
           <Route path="/raporty" element={<ComingSoon title="Raporty & Analizy" />} />
-          <Route path="/ustawienia" element={<ComingSoon title="Ustawienia" />} />
+          <Route path="/ustawienia" element={<Ustawienia />} />
         </Routes>
       </div>
     </div>
@@ -58,6 +61,15 @@ function Shell() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Typografia firmowa (Ustawienia -> Wygląd) — wczytujemy raz przy starcie
+    // i ustawiamy jako zmienne CSS na <html>, żeby cała apka (poza logowaniem,
+    // gdzie nie ma jeszcze sesji do odczytu z bazy) od razu użyła zapisanej
+    // czcionki/odstępów. Najlepszy wysiłek — błąd/brak sesji = zostają
+    // wartości domyślne (patrz src/lib/typography.js).
+    loadTypography().then(applyTypography)
+  }, [])
+
   return (
     <LanguageProvider>
       <GlobalStyles />
