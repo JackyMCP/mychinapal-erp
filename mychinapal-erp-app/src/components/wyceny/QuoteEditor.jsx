@@ -75,6 +75,20 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // etapie — dopiero po zatwierdzeniu, żeby nie wgrywać zdjęć odrzuconych wierszy).
   const [excelPreviewRows, setExcelPreviewRows] = useState(null)
   const [excelPreviewFileName, setExcelPreviewFileName] = useState('')
+  // Asystent AI wyceny — czat korekcyjny: polecenia w naturalnym języku
+  // stosowane od razu do CAŁEJ listy pozycji (nie tylko jednej), np. "zwiększ
+  // ilość wszystkich o 10%" albo "usuń pozycje z fotelami". Osobna edge
+  // function (quote-ai-assistant) od "Poproś AI o zmianę" per-pozycja.
+  const [aiChatOpen, setAiChatOpen] = useState(false)
+  const [aiChatMessages, setAiChatMessages] = useState([])
+  const [aiChatInput, setAiChatInput] = useState('')
+  const [aiChatBusy, setAiChatBusy] = useState(false)
+  // Podwójna weryfikacja — niezależny, drugi przebieg AI (osobny od
+  // suggest-customs-code) patrzący na zdjęcie każdej pozycji i sprawdzający,
+  // czy realnie pasuje do nazwy/specyfikacji/kodu CN — łapie pomyłki po
+  // imporcie z Excela (złe zdjęcie podpięte pod złą pozycję itp.).
+  const [verifyBusy, setVerifyBusy] = useState(false)
+  const [verifyResults, setVerifyResults] = useState({})
 
   const load = async () => {
     setLoading(true)
@@ -690,6 +704,89 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setBusyAiRefine(null)
   }
 
+  // Czat korekcyjny — jedno polecenie, zastosowane do WSZYSTKICH pasujących
+  // pozycji naraz (edge function sama decyduje, których pozycji dotyczy).
+  const handleAiChatSend = async () => {
+    const instruction = aiChatInput.trim()
+    if (!instruction || aiChatBusy) return
+    setAiChatBusy(true)
+    const history = aiChatMessages
+    setAiChatMessages(prev => [...prev, { role: 'user', text: instruction }])
+    setAiChatInput('')
+    try {
+      const itemsForApi = items.map(it => ({
+        key: it._key, name: it.name, specification: it.specification, qty: it.qty, unit: it.unit,
+        unit_price_cny: it.unit_price_cny, cbm: it.cbm, weight_kg: it.weight_kg,
+        hs_code: it.hs_code, duty_rate_percent: it.duty_rate_percent,
+      }))
+      const { data, error } = await supabase.functions.invoke('quote-ai-assistant', {
+        body: { items: itemsForApi, instruction, history },
+      })
+      if (error) throw error
+      const changes = Array.isArray(data?.changes) ? data.changes : []
+      const deleteKeys = new Set(changes.filter(c => c.delete).map(c => c.key))
+      if (deleteKeys.size) {
+        const idsToDelete = items.filter(it => deleteKeys.has(it._key) && it.id).map(it => it.id)
+        if (idsToDelete.length) setDeletedIds(prev => [...prev, ...idsToDelete])
+      }
+      const patchByKey = Object.fromEntries(
+        changes.filter(c => !c.delete && c.key).map(({ key, ...rest }) => [key, rest])
+      )
+      setItems(prev => prev
+        .filter(it => !deleteKeys.has(it._key))
+        .map(it => (patchByKey[it._key] ? { ...it, ...patchByKey[it._key] } : it)))
+      setAiChatMessages(prev => [...prev, { role: 'assistant', text: data?.reply || t('Gotowe.') }])
+    } catch (e) {
+      let detail = e?.message || String(e)
+      try {
+        if (e?.context && typeof e.context.json === 'function') {
+          const body = await e.context.json()
+          if (body?.error) detail = body.error
+        }
+      } catch { /* zostaje e.message */ }
+      setAiChatMessages(prev => [...prev, { role: 'assistant', text: t('Błąd: ') + detail }])
+    }
+    setAiChatBusy(false)
+  }
+
+  // Podwójna weryfikacja — wysyła zdjęcie + nazwę + kod CN każdej pozycji do
+  // NIEZALEŻNEGO przebiegu AI (osobna edge function), które ocenia czy
+  // rzeczywiście do siebie pasują (łapie np. źle dopasowane zdjęcie po
+  // imporcie z Excela).
+  const handleVerifyAll = async () => {
+    const withPhotos = items.filter(it => it.photo_paths?.length)
+    if (!withPhotos.length) { toast.error(t('Żadna pozycja nie ma zdjęcia do zweryfikowania.')); return }
+    setVerifyBusy(true)
+    try {
+      const itemsForApi = []
+      for (const it of withPhotos) {
+        const urls = []
+        for (const p of it.photo_paths.slice(0, 2)) {
+          const { signedUrl } = await createSignedUrlWithRetry(p, 3, 500)
+          if (signedUrl) urls.push(signedUrl)
+        }
+        if (urls.length) itemsForApi.push({ key: it._key, name: it.name, specification: it.specification, hs_code: it.hs_code, photo_urls: urls })
+      }
+      const { data, error } = await supabase.functions.invoke('verify-quote-items', { body: { items: itemsForApi } })
+      if (error) throw error
+      const results = Array.isArray(data?.results) ? data.results : []
+      setVerifyResults(Object.fromEntries(results.map(r => [r.key, r])))
+      const problems = results.filter(r => r.ok === false).length
+      if (problems > 0) toast.error(t('Znaleziono niespójności w ') + problems + t(' pozycji(ach) — zobacz oznaczenia niżej.'))
+      else if (results.length) toast.success(t('Zgodność potwierdzona — zdjęcia pasują do nazw i kodów CN.'))
+    } catch (e) {
+      let detail = e?.message || String(e)
+      try {
+        if (e?.context && typeof e.context.json === 'function') {
+          const body = await e.context.json()
+          if (body?.error) detail = body.error
+        }
+      } catch { /* zostaje e.message */ }
+      toast.error(t('Błąd weryfikacji: ') + detail)
+    }
+    setVerifyBusy(false)
+  }
+
   const handleSave = async (silent = false) => {
     setSaving(true)
     const { error: qErr } = await supabase.from('quotes').update({
@@ -1141,6 +1238,20 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                 {t("Dział")} {String(it.hs_code).replace(/\D/g, '').slice(0, 2)}: <strong>{t(describeHsCode(it.hs_code))}</strong> {t("(orientacyjnie, wg pierwszych cyfr kodu — zawsze zweryfikuj dokładny kod w ISZTAR)")}
               </div>
             )}
+
+            {/* Wynik podwójnej weryfikacji (edge function verify-quote-items)
+                — czy zdjęcie realnie pasuje do nazwy/specyfikacji/kodu CN.
+                Niezależny przebieg AI od suggest-customs-code powyżej. */}
+            {verifyResults[it._key]?.ok === true && (
+              <div style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: C.glight, color: C.green, display: 'inline-block', marginTop: 6 }}>
+                {t("✓ Zdjęcie zgodne z nazwą i kodem CN")}
+              </div>
+            )}
+            {verifyResults[it._key]?.ok === false && (
+              <div style={{ fontSize: 10, color: C.red, marginTop: 6, fontWeight: 600 }}>
+                ⚠ {t("Niespójność zdjęcia/nazwy/kodu:")} {(verifyResults[it._key].issues || []).join('; ')}
+              </div>
+            )}
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1152,6 +1263,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <button onClick={() => setAiFilesOpen(true)}
             style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
             🤖 {t("Stwórz z plików (AI)")}
+          </button>
+          <button onClick={() => setAiChatOpen(true)}
+            style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            🧠 {t("Asystent AI (edytuj poleceniem)")}
+          </button>
+          <button onClick={handleVerifyAll} disabled={verifyBusy}
+            style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.green}`, background: C.glight, color: C.green, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: verifyBusy ? .6 : 1 }}>
+            {verifyBusy ? t('Weryfikuję…') : `🔍 ${t("Zweryfikuj zdjęcia/kody (podwójna kontrola)")}`}
           </button>
           <div style={{ fontSize: 9.5, color: C.muted, alignSelf: 'center' }}>{t("Rozpozna kolumny typu Name/Specification/QTY/EXW Unit Price/Volume — resztę uzupełnisz ręcznie.")}</div>
         </div>
@@ -1201,6 +1320,48 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.purple, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (aiFilesBusy || !aiFilesList.length) ? .6 : 1 }}>
                 {aiFilesBusy ? t("Analizuję pliki…") : t("🤖 Generuj pozycje")}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Asystent AI wyceny — czat korekcyjny: dowolne polecenie stosowane od
+          razu do całej listy pozycji (edge function quote-ai-assistant),
+          np. "zwiększ ilość wszystkich o 10%" albo "usuń pozycje z fotelami". */}
+      {aiChatOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => !aiChatBusy && setAiChatOpen(false)}>
+          <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 520, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 6 }}>🧠 {t("Asystent AI wyceny")}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
+              {t("Napisz polecenie po polsku dotyczące całej wyceny naraz — np. \"zwiększ ilość wszystkich pozycji o 10%\", \"zmień jednostkę drugiej pozycji na kg\", \"usuń pozycje z fotelami\". Możesz też po prostu o coś zapytać.")}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 120, maxHeight: 320, marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {aiChatMessages.length === 0 && (
+                <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>{t("Brak wiadomości — napisz pierwsze polecenie poniżej.")}</div>
+              )}
+              {aiChatMessages.map((m, i) => (
+                <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                  <div style={{
+                    background: m.role === 'user' ? C.purple : C.bg, color: m.role === 'user' ? '#fff' : C.text,
+                    borderRadius: 10, padding: '8px 12px', fontSize: 12, lineHeight: 1.4, whiteSpace: 'pre-wrap',
+                  }}>{m.text}</div>
+                </div>
+              ))}
+              {aiChatBusy && <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>{t("Analizuję…")}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={aiChatInput} onChange={e => setAiChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiChatSend() } }}
+                placeholder={t("np. zwiększ ilość wszystkich pozycji o 10%")} disabled={aiChatBusy}
+                style={{ ...field, flex: 1 }} />
+              <button onClick={handleAiChatSend} disabled={aiChatBusy || !aiChatInput.trim()}
+                style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: C.purple, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (aiChatBusy || !aiChatInput.trim()) ? .6 : 1 }}>
+                {t("Wyślij")}
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+              <button onClick={() => setAiChatOpen(false)} style={{ padding: '7px 13px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', color: C.text2, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{t("Zamknij")}</button>
             </div>
           </div>
         </div>
