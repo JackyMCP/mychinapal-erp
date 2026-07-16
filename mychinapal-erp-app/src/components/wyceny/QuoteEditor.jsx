@@ -244,6 +244,17 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     cnyRate: cnyRateEff, transportRate: transportRateEff, vatPercent: VAT_PERCENT,
   }), [items, quote?.transport_cost, quote?.include_duty, quote?.margin_percent, cnyRateEff, transportRateEff])
 
+  // Gdy CHOĆ JEDNA pozycja ma ręcznie ustawioną cenę PLN/szt., różnica
+  // netto-koszt nie wynika już wyłącznie z globalnego pola "Marża (%)" —
+  // pokazywanie tamtej wartości % obok kwoty, która z niej nie pochodzi,
+  // wyglądało jak sprzeczność ("Marża (0%)" obok -243,66 PLN). Dlatego
+  // wszędzie w podsumowaniu pokazujemy efektywny % wyliczony z realnych
+  // kwot — zawsze spójny z wartością PLN wyświetloną obok.
+  const hasAnyManualPln = useMemo(() => items.some(it => it.unit_price_pln !== null && it.unit_price_pln !== undefined && it.unit_price_pln !== ''), [items])
+  const effectiveMarginPct = totalsCalc.totals.landedCost > 0
+    ? ((totalsCalc.totals.finalPrice - totalsCalc.totals.landedCost) / totalsCalc.totals.landedCost) * 100
+    : 0
+
   const setQ = (patch) => setQuote(prev => ({ ...prev, ...patch }))
   const setItem = (key, patch) => setItems(prev => prev.map(it => it._key === key ? { ...it, ...patch } : it))
   // Ręczna cena "PLN/szt." na pozycji (patrz calc.js hasManualPln) całkowicie
@@ -1607,7 +1618,13 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           { label: t('Wartość celna (towar + transport)'), calc: t('wartość towaru + transport'), value: `${fmt(totalsCalc.totals.customsValue, 2)} PLN` },
           { label: t('Cło'), calc: t('wartość celna × stawka cła każdej pozycji'), value: `${fmt(totalsCalc.totals.dutyAmount, 2)} PLN` },
           { label: t('Koszt razem (bez marży)'), calc: t('wartość celna + cło'), value: `${fmt(totalsCalc.totals.landedCost, 2)} PLN` },
-          { label: t(`Marża (${quote.margin_percent || 0}%)`), calc: t('koszt razem × marża%'), value: `${fmt(marginAmount, 2)} PLN`, highlight: true },
+          {
+            label: t(`Marża (${fmt(effectiveMarginPct, 1)}% efektywnie)`),
+            calc: hasAnyManualPln
+              ? t('część pozycji ma ręczną cenę PLN/szt. (nie liczoną z marży globalnej) — to efektywna różnica dla całej wyceny')
+              : t('koszt razem × marża%'),
+            value: `${fmt(marginAmount, 2)} PLN`, highlight: true,
+          },
           { label: t('Netto (cena dla klienta bez VAT)'), calc: t('koszt razem + marża'), value: `${fmt(totalsCalc.totals.finalPrice, 2)} PLN`, highlight: true },
           { label: t('VAT (23%)'), calc: t('netto × 23%'), value: `${fmt(totalsCalc.totals.vatAmount, 2)} PLN` },
           { label: t('Brutto (cena końcowa z VAT)'), calc: t('netto + VAT'), value: `${fmt(totalsCalc.totals.finalPriceGross, 2)} PLN`, highlight: true },
@@ -1639,7 +1656,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fmt(totalsCalc.totals.landedCost, 2)} PLN</div>
           </div>
           <div style={{ padding: '12px 14px', borderRadius: 9, background: C.olight, border: `1px solid ${C.orange}` }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, color: C.orange, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t(`Netto (z marżą ${quote.margin_percent || 0}%)`)}</div>
+            <div style={{ fontSize: 9.5, fontWeight: 700, color: C.orange, textTransform: 'uppercase', letterSpacing: '.03em' }}>{t(`Netto (z marżą ${fmt(effectiveMarginPct, 1)}% efektywnie)`)}</div>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 800, marginTop: 4, color: C.orange }}>{fmt(totalsCalc.totals.finalPrice, 2)} PLN</div>
           </div>
           <div style={{ padding: '12px 14px', borderRadius: 9, background: C.bg, border: `1px solid ${C.border}` }}>
