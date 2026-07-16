@@ -7,12 +7,12 @@ import useIsMobile from '../../lib/useIsMobile'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { computeQuoteTotals, toNum, STATUS_LABELS } from './calc'
 import { describeHsCode } from './hsChapters'
-import { generateQuotePdf } from './pdf'
-import { generateQuotePdfFromLayout } from './pdfFromLayout'
-import QuoteLayoutEditor from './QuoteLayoutEditor'
 import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
 import { createProductsFromQuoteItems } from '../../lib/productCatalog'
+import { buildQuoteDocHtml } from './docTemplate'
+import QuoteWordEditor from './QuoteWordEditor'
+import { exportHtmlToPdfBlob, exportHtmlToDocxBlob } from './docExport'
 
 const MAX_PHOTOS_PER_ITEM = 6
 // Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
@@ -68,9 +68,16 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [aiFilesList, setAiFilesList] = useState([])
   const [aiFilesInstruction, setAiFilesInstruction] = useState('')
   const [aiFilesBusy, setAiFilesBusy] = useState(false)
-  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false)
-  const [layoutPhotoDataUrls, setLayoutPhotoDataUrls] = useState(null)
-  const [layoutLoading, setLayoutLoading] = useState(false)
+  // Dokument wyceny — od teraz KOŃCOWY dokument dla klienta to ten HTML,
+  // edytowalny prawdziwym edytorem tekstu (QuoteWordEditor, jak Word Online),
+  // a nie sztywny generator PDF ani dawny wizualny edytor "jak Canva".
+  // "Wygeneruj z formularza" tworzy startową treść z pozycji/cen/warunków;
+  // od tego momentu to TA treść (nie formularz) jest źródłem prawdy, dopóki
+  // ktoś nie wygeneruje ponownie (z potwierdzeniem nadpisania).
+  const [docHtml, setDocHtml] = useState('')
+  const [docKey, setDocKey] = useState(0)
+  const [docGenerating, setDocGenerating] = useState(false)
+  const [exportingDocx, setExportingDocx] = useState(false)
   // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
   // zatwierdzenia (albo anulowania) przez użytkownika, zanim cokolwiek z
   // nich trafi do wyceny (zdjęcia jeszcze NIE są wgrane do Storage na tym
@@ -118,6 +125,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       setQuote(prev => ({ ...prev, bank_commission_percent: Number(companySettings.bank_commission_percent) }))
     }
     setDeletedIds([])
+    setDocHtml(q.doc_html || '')
+    setDocKey(k => k + 1)
     setLoading(false)
     // Świeżo wczytane dane NIE mają wywoływać autozapisu (to nie jest
     // zmiana wprowadzona przez użytkownika) — dopiero KOLEJNA zmiana stanu
@@ -800,6 +809,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       bank_commission_percent: quote.bank_commission_percent === '' || quote.bank_commission_percent === null || quote.bank_commission_percent === undefined ? null : toNum(quote.bank_commission_percent),
       transport_currency: quote.transport_currency || 'CNY',
       transport_rate: quote.transport_rate || null, transport_rate_date: quote.transport_rate_date || null,
+      doc_html: docHtml || null,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
 
@@ -854,45 +864,53 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }, 1200)
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quote, items])
+  }, [quote, items, docHtml])
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
-    // Zadanie (widoczne w Dashboard/Moje zadania) dla głównego opiekuna PL
-    // tego zamówienia — pełni rolę "powiadomienia", że wycena czeka na
-    // doliczenie transportu/marży i wysłanie do klienta. Brak generycznej
-    // tabeli powiadomień w aplikacji, więc to jest jedyny sensowny sposób —
+    // Zadanie (widoczne w Dashboard/Moje zadania) dla CAŁEGO zespołu PL
+    // przypisanego do tego zamówienia — nie tylko dla jednego "głównego PL".
+    // Bierzemy wszystkie przypisania oprócz roli 'glowny_cn' (to jest
+    // wyraźnie oznaczona strona chińska — nie ma sensu jej powiadamiać, że
+    // sama właśnie przekazała wycenę dalej). Brak generycznej tabeli
+    // powiadomień w aplikacji, więc zadanie w centrum zadań pełni tę rolę —
     // sprawdzamy to PRZED zmianą statusu: jeśli nie ma komu przypisać
     // zadania, przekazanie ma się nie udać z czytelnym błędem, a nie po
     // cichu "zniknąć" bez żadnego powiadomienia (tak było wcześniej).
-    const { data: assignment, error: assignErr } = await supabase.from('project_assignments')
-      .select('user_id').eq('project_id', quote.project_id).eq('role', 'glowny_pl').maybeSingle()
-    if (assignErr) { toast.error(t('Nie udało się sprawdzić opiekuna PL zamówienia: ') + assignErr.message); return }
-    if (!assignment?.user_id) {
-      toast.error(t('To zamówienie nie ma jeszcze przypisanego głównego opiekuna PL — przypisz go w panelu Projekty & Zamówienia, dopiero potem przekaż wycenę do zespołu PL.'))
+    const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
+      .select('user_id, role').eq('project_id', quote.project_id).neq('role', 'glowny_cn')
+    if (assignErr) { toast.error(t('Nie udało się sprawdzić zespołu PL zamówienia: ') + assignErr.message); return }
+    const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
+    if (!plUserIds.length) {
+      toast.error(t('To zamówienie nie ma jeszcze przypisanego nikogo z zespołu PL — przypisz opiekuna w panelu Projekty & Zamówienia, dopiero potem przekaż wycenę do zespołu PL.'))
       return
     }
     const ok = await handleSave(true)
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
     if (error) { toast.error(t('Nie udało się przesłać: ') + error.message); return }
+    let taskFailCount = 0
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('tasks').insert({
+      const results = await Promise.all(plUserIds.map(uid => supabase.from('tasks').insert({
         title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
         description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
         project_id: quote.project_id, client_id: quote.client_id,
-        assigned_to: assignment.user_id, assigned_by: user?.id,
+        assigned_to: uid, assigned_by: user?.id,
         due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
-      })
+      })))
+      taskFailCount = results.filter(r => r.error).length
     } catch {
+      taskFailCount = plUserIds.length
+    }
+    if (taskFailCount) {
       // Status wyceny już zmieniony (nie chcemy tego cofać) — ale zgłaszamy
-      // wyraźnie, że samo zadanie się nie utworzyło, zamiast milczeć.
-      toast.error(t('Wycena przekazana, ale nie udało się utworzyć zadania dla zespołu PL — poinformuj go ręcznie.'))
+      // wyraźnie, że część/wszystkie zadania się nie utworzyły, zamiast milczeć.
+      toast.error(t(`Wycena przekazana, ale nie udało się utworzyć zadania dla ${taskFailCount} z ${plUserIds.length} osób zespołu PL — poinformuj ich ręcznie.`))
       load(); onChanged && onChanged()
       return
     }
-    toast.success(t('Przesłano do zespołu PL — teraz można doliczyć transport, cło i marżę.'))
+    toast.success(t(`Przesłano do zespołu PL (${plUserIds.length} ${plUserIds.length === 1 ? 'osoba' : 'osoby/osób'}) — teraz można doliczyć transport, cło i marżę.`))
     load(); onChanged && onChanged()
   }
 
@@ -930,34 +948,58 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return photoDataUrls
   }
 
-  // Jeśli wycena ma zapisany własny wygląd (quote.layout_json — z edytora
-  // "jak Canva"), PDF generuje się z NIEGO, a nie ze starego, sztywnego
-  // szablonu — nowe wyceny domyślnie nie mają layout_json (NULL), więc
-  // zachowują dotychczasowy wygląd bez żadnej zmiany, dopóki użytkownik sam
-  // nie otworzy i nie zapisze edytora wyglądu.
-  const generatePdfBlob = async (photoDataUrls) => {
-    if (quote.layout_json) {
-      return generateQuotePdfFromLayout({ layout: quote.layout_json, quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+  // Buduje startową treść dokumentu wyceny z bieżącego formularza (pozycje,
+  // zdjęcia, ceny w PLN, warunki) — od tego momentu to TA treść (edytowalna
+  // dalej ręcznie w QuoteWordEditor poniżej) jest źródłem prawdy dla
+  // dokumentu, dopóki ktoś nie wygeneruje ponownie. Jeśli dokument już ma
+  // jakąś treść, pytamy o potwierdzenie (nadpisze ręczne zmiany).
+  const handleGenerateDoc = async () => {
+    const hasContent = docHtml && docHtml.trim() && docHtml !== '<p></p>'
+    if (hasContent) {
+      if (!await confirm(t('Wygenerować dokument od nowa z formularza? Nadpisze wszystkie ręczne zmiany wprowadzone w edytorze tekstu poniżej.'))) return
     }
-    return generateQuotePdf({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
-  }
-
-  const handleOpenLayoutEditor = async () => {
-    setLayoutLoading(true)
+    setDocGenerating(true)
     try {
-      const urls = await buildPhotoDataUrls()
-      setLayoutPhotoDataUrls(urls)
-      setLayoutEditorOpen(true)
+      const photoDataUrls = await buildPhotoDataUrls()
+      const html = await buildQuoteDocHtml({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+      setDocHtml(html)
+      setDocKey(k => k + 1)
+      await supabase.from('quotes').update({ doc_html: html, doc_generated_at: new Date().toISOString() }).eq('id', quoteId)
+      toast.success(t('Dokument wygenerowany z formularza ✓ Możesz go teraz dowolnie edytować poniżej.'))
     } catch (e) {
-      toast.error(t('Nie udało się przygotować podglądu do edytora: ') + (e.message || e))
+      toast.error(t('Nie udało się wygenerować dokumentu: ') + (e.message || e))
     }
-    setLayoutLoading(false)
+    setDocGenerating(false)
   }
 
-  const handleSaveLayout = async (layoutJson) => {
-    const { error } = await supabase.from('quotes').update({ layout_json: layoutJson }).eq('id', quoteId)
-    if (error) throw error
-    setQ({ layout_json: layoutJson })
+  const handleDownloadDocx = async () => {
+    if (!docHtml || !docHtml.trim() || docHtml === '<p></p>') { toast.error(t('Najpierw wygeneruj dokument z formularza.')); return }
+    setExportingDocx(true)
+    try {
+      const blob = await exportHtmlToDocxBlob(docHtml)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `${quote.quote_number || 'wycena'}.docx`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 4000)
+    } catch (e) {
+      toast.error(t('Nie udało się wygenerować pliku Word: ') + (e.message || e))
+    }
+    setExportingDocx(false)
+  }
+
+  // Jeśli dokument jeszcze nie istnieje (nikt nie kliknął "Wygeneruj z
+  // formularza"), generujemy go automatycznie w locie — żeby "Podgląd PDF"
+  // i "Wyślij do klienta" zawsze miały z czego zrobić plik, nawet jeśli
+  // użytkownik pominął ten krok.
+  const ensureDocHtml = async () => {
+    if (docHtml && docHtml.trim() && docHtml !== '<p></p>') return docHtml
+    const photoDataUrls = await buildPhotoDataUrls()
+    const html = await buildQuoteDocHtml({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
+    setDocHtml(html)
+    setDocKey(k => k + 1)
+    await supabase.from('quotes').update({ doc_html: html, doc_generated_at: new Date().toISOString() }).eq('id', quoteId)
+    return html
   }
 
   const handlePreviewPdf = async () => {
@@ -971,8 +1013,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     const win = window.open('', '_blank')
     setSending('preview')
     try {
-      const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generatePdfBlob(photoDataUrls)
+      const html = await ensureDocHtml()
+      const blob = await exportHtmlToPdfBlob(html)
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
@@ -1045,8 +1087,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     setSending(true)
     try {
-      const photoDataUrls = await buildPhotoDataUrls()
-      const blob = await generatePdfBlob(photoDataUrls)
+      const html = await ensureDocHtml()
+      const blob = await exportHtmlToPdfBlob(html)
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -1573,19 +1615,32 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           style={{ ...field, resize: 'vertical', fontFamily: 'inherit' }} />
       </div>
 
+      <div style={card}>
+        <div style={sectionTitle}>📝 {t("Dokument wyceny (edytowalny, jak Word)")}</div>
+        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12 }}>
+          {t("Wygeneruj startową treść z formularza (pozycje, zdjęcia, ceny PLN, warunki), a potem dowolnie dopisz/przeformatuj tekst poniżej — to ta treść trafia do PDF wysyłanego klientowi i do pliku Word.")}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <button onClick={handleGenerateDoc} disabled={docGenerating}
+            style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', opacity: docGenerating ? .7 : 1 }}>
+            {docGenerating ? t('Generowanie…') : (docHtml && docHtml !== '<p></p>' ? t('🧾 Wygeneruj ponownie z formularza') : t('🧾 Wygeneruj z formularza'))}
+          </button>
+          <button onClick={handleDownloadDocx} disabled={exportingDocx}
+            style={{ padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, color: C.text2, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: exportingDocx ? .6 : 1 }}>
+            {exportingDocx ? t('Przygotowywanie…') : t('⬇ Pobierz jako Word (.docx)')}
+          </button>
+        </div>
+        <QuoteWordEditor key={docKey} html={docHtml} onChange={setDocHtml} />
+      </div>
+
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
         <button onClick={() => handleSave(false)} disabled={saving} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2, opacity: saving ? .6 : 1 }}>
           {saving ? t("Zapisywanie…") : t("💾 Zapisz")}
         </button>
         <button onClick={handlePreviewPdf} disabled={!!sending}
           style={{ padding: '10px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: sending ? .7 : 1, boxShadow: '0 3px 12px rgba(180,140,40,0.45)' }}>
-          {sending === 'preview' ? t("Generowanie…") : t("🧾 Wygeneruj wycenę (podgląd)")}
+          {sending === 'preview' ? t("Generowanie…") : t("👁 Podgląd PDF")}
         </button>
-        <button onClick={handleOpenLayoutEditor} disabled={layoutLoading}
-          style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: layoutLoading ? .6 : 1 }}>
-          {layoutLoading ? t("Wczytywanie…") : t("🎨 Edytuj wygląd wyceny")}
-        </button>
-        {quote.layout_json && <span style={{ fontSize: 9.5, fontWeight: 700, color: C.purple, alignSelf: 'center' }}>{t("● własny wygląd")}</span>}
         {previewPdfUrl && (
           <a href={previewPdfUrl} target="_blank" rel="noreferrer" download={`podglad-${quote.quote_number || 'wycena'}.pdf`}
             style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.bmid}`, background: C.blight, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.blue, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
@@ -1606,15 +1661,6 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <button onClick={handleDownloadPdf} style={{ padding: '10px 18px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: C.text2 }}>{t("Pobierz ostatnio wysłany PDF")}</button>
         )}
       </div>
-
-      {layoutEditorOpen && layoutPhotoDataUrls !== null && (
-        <QuoteLayoutEditor
-          quote={quote} client={client} contact={contact} company={company}
-          rows={totalsCalc.rows} totals={totalsCalc.totals} photoDataUrls={layoutPhotoDataUrls}
-          onSave={handleSaveLayout}
-          onClose={() => setLayoutEditorOpen(false)}
-        />
-      )}
     </div>
   )
 }
