@@ -11,7 +11,7 @@ import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
 import { createProductsFromQuoteItems } from '../../lib/productCatalog'
 import { renderQuoteDocHtml, loadLogoDataUrl } from './docTemplate'
-import QuoteWordEditor from './QuoteWordEditor'
+import QuoteDocEditor from './QuoteDocEditor'
 import { exportHtmlToPdfBlob } from './docExport'
 
 const MAX_PHOTOS_PER_ITEM = 6
@@ -32,8 +32,6 @@ const blankItem = () => ({
 
 const CURRENCIES = ['PLN', 'CNY', 'USD', 'EUR']
 const UNIT_OPTIONS = ['szt.', 'zestaw', 'kpl.', 'para', 'opak.', 'm²', 'm³', 'kg', 'mb']
-
-const escapeHtmlLocal = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
 const field = { border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 9px', fontSize: 11.5, width: '100%', outline: 'none', boxSizing: 'border-box' }
 const label = { fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em', display: 'block', marginBottom: 4 }
@@ -70,16 +68,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [aiFilesList, setAiFilesList] = useState([])
   const [aiFilesInstruction, setAiFilesInstruction] = useState('')
   const [aiFilesBusy, setAiFilesBusy] = useState(false)
-  // Dokument wyceny — ŻYWY PODGLĄD (patrz previewHtml niżej) renderuje się
-  // ZAWSZE bezpośrednio z formularza (pozycje, ceny, zdjęcia) i NIGDY nie
-  // przechodzi przez edytor tekstu — dzięki temu nigdy się nie może
-  // "połamać" (wcześniejsza wersja ładowała cały ten HTML do edytora
-  // rich-text, którego schemat nie obsługuje tabel/dowolnych stylów, i psuł
-  // układ). Edytowalna jest TYLKO sekcja "Warunki" (notesHtml) — prosty
-  // tekst sformatowany w QuoteWordEditor, wstawiany do szablonu w
-  // wyznaczonym miejscu. To ta sama treść trafia do PDF wysyłanego klientowi.
-  const [notesHtml, setNotesHtml] = useState('')
-  const [notesKey, setNotesKey] = useState(0)
+  // Dokument wyceny — teraz to SAMODZIELNY, ZMATERIALIZOWANY HTML (zdjęcia
+  // jako base64, ta sama stylistyka granat/logo/poświata co wcześniej),
+  // generowany RAZ (przy pierwszym otwarciu wyceny bez jeszcze zapisanego
+  // dokumentu — patrz regenerateDoc/autoGenQuoteId niżej) i od tego momentu
+  // edytowalny BEZPOŚREDNIO w miejscu (contentEditable, patrz
+  // QuoteDocEditor) — bez żadnego edytora rich-text/schematu (TipTap wcześniej
+  // psuł tabele/gradienty). `docVersion` wymusza pełny reset zawartości (nowy
+  // `key`) tylko przy wczytaniu innej wyceny albo świadomej regeneracji — w
+  // międzyczasie div NIE jest nadpisywany przy każdym wpisywanym znaku.
+  const [docHtml, setDocHtml] = useState('')
+  const [docVersion, setDocVersion] = useState(0)
+  const [docLoading, setDocLoading] = useState(false)
   const [logoDataUrl, setLogoDataUrl] = useState(null)
   useEffect(() => { loadLogoDataUrl().then(setLogoDataUrl) }, [])
   // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
@@ -129,12 +129,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       setQuote(prev => ({ ...prev, bank_commission_percent: Number(companySettings.bank_commission_percent) }))
     }
     setDeletedIds([])
-    // doc_html przechowuje treść edytora "Warunki" (nie cały dokument — patrz
-    // komentarz przy stanie notesHtml). Stare wyceny mają tylko zwykły tekst
-    // w quote.notes (sprzed tej zmiany) — jeśli nie ma jeszcze doc_html,
-    // startujemy edytor od tamtej treści, żeby nic nie zniknęło.
-    setNotesHtml(q.doc_html || (q.notes ? `<p>${escapeHtmlLocal(q.notes)}</p>` : ''))
-    setNotesKey(k => k + 1)
+    // doc_html to teraz CAŁY zmaterializowany dokument (samodzielny HTML,
+    // zdjęcia base64). Jeśli go jeszcze nie ma (nowa wycena / pierwsza wizyta
+    // po tej zmianie), zostaje puste — wygeneruje się automatycznie zaraz po
+    // wczytaniu (patrz efekt przy autoGenQuoteId niżej).
+    setDocHtml(q.doc_html || '')
+    setDocVersion(v => v + 1)
     setLoading(false)
     // Świeżo wczytane dane NIE mają wywoływać autozapisu (to nie jest
     // zmiana wprowadzona przez użytkownika) — dopiero KOLEJNA zmiana stanu
@@ -817,7 +817,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       bank_commission_percent: quote.bank_commission_percent === '' || quote.bank_commission_percent === null || quote.bank_commission_percent === undefined ? null : toNum(quote.bank_commission_percent),
       transport_currency: quote.transport_currency || 'CNY',
       transport_rate: quote.transport_rate || null, transport_rate_date: quote.transport_rate_date || null,
-      doc_html: notesHtml || null,
+      doc_html: docHtml || null,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
 
@@ -872,7 +872,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }, 1200)
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quote, items, notesHtml])
+  }, [quote, items, docHtml])
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
@@ -956,40 +956,50 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return photoDataUrls
   }
 
-  // Zdjęcia do ŻYWEGO podglądu na ekranie — reużywamy już wczytane podpisane
-  // URL-e (photoUrls, keyowane po ścieżce pliku) zamiast ściągać/kodować je
-  // ponownie do base64 — podgląd ma się przeliczać natychmiast przy każdej
-  // zmianie formularza, bez czekania na sieć.
-  const previewPhotoUrls = useMemo(() => {
-    const map = {}
-    for (const it of items) {
-      const urls = (it.photo_paths || []).map(p => photoUrls[p]).filter(Boolean)
-      if (urls.length) map[it._key] = urls
+  // Generuje/PRZEBUDOWUJE cały dokument wyceny (branded HTML, zdjęcia jako
+  // base64 — samodzielny, bez zależności od podpisanych URL-i, które
+  // wygasają) na podstawie AKTUALNEGO stanu formularza (pozycje, ceny, marża).
+  // Wywoływane automatycznie RAZ przy pierwszym wejściu w wycenę bez jeszcze
+  // wygenerowanego dokumentu (patrz efekt niżej), oraz ręcznie przyciskiem
+  // "Wygeneruj ponownie z formularza" (z potwierdzeniem nadpisania — wtedy
+  // askConfirm=true). Od momentu wygenerowania dokument jest edytowany
+  // BEZPOŚREDNIO w miejscu (contentEditable, patrz QuoteDocEditor) — ta
+  // funkcja go nie dotyka, dopóki ktoś świadomie nie poprosi o regenerację.
+  const regenerateDoc = async (askConfirm = true) => {
+    if (askConfirm) {
+      const ok = await confirm(t('Wygenerować dokument ponownie z formularza? Nadpisze wszystkie ręczne zmiany wprowadzone bezpośrednio w dokumencie (tekst, formatowanie).'))
+      if (!ok) return
     }
-    return map
-  }, [items, photoUrls])
-
-  // Żywy podgląd całego dokumentu — renderowany BEZPOŚREDNIO z formularza
-  // (pozycje, ceny PLN, zdjęcia) przy każdej zmianie, i wyświetlany przez
-  // dangerouslySetInnerHTML (patrz render niżej). Nigdy nie przechodzi przez
-  // edytor tekstu, więc nigdy się nie "psuje" — to właśnie to, co zobaczy
-  // klient (1:1, po wyeksportowaniu do PDF).
-  const previewHtml = useMemo(() => renderQuoteDocHtml({
-    quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
-    photoDataUrls: previewPhotoUrls, logoDataUrl, notesHtml,
-  }), [quote, client, contact, company, totalsCalc, previewPhotoUrls, logoDataUrl, notesHtml])
-
-  // Do PDF (podgląd/wysyłka do klienta) potrzebujemy samodzielnego HTML-a —
-  // zdjęcia jako base64 (nie podpisane URL-e, które wygasają) — dlatego tu
-  // budujemy osobną wersję z buildPhotoDataUrls, ale tym samym rendererem
-  // (renderQuoteDocHtml), więc wygląd jest identyczny jak w żywym podglądzie.
-  const buildExportHtml = async () => {
-    const photoDataUrls = await buildPhotoDataUrls()
-    return renderQuoteDocHtml({
-      quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
-      photoDataUrls, logoDataUrl, notesHtml,
-    })
+    setDocLoading(true)
+    try {
+      const photoDataUrls = await buildPhotoDataUrls()
+      const html = renderQuoteDocHtml({
+        quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
+        photoDataUrls, logoDataUrl, notes: quote?.notes || '',
+      })
+      setDocHtml(html)
+      setDocVersion(v => v + 1)
+      await supabase.from('quotes').update({ doc_html: html }).eq('id', quoteId)
+    } catch (e) {
+      toast.error(t('Nie udało się wygenerować dokumentu: ') + (e.message || e))
+    }
+    setDocLoading(false)
   }
+
+  // Wygenerowanie od razu przy pierwszym wejściu w wycenę, jeśli jeszcze nie
+  // ma zapisanego dokumentu — żeby zespół widział gotowy, edytowalny dokument
+  // bez klikania niczego samemu. Ref pilnuje, żeby zrobić to tylko RAZ na
+  // wczytanie danej wyceny (nie przy każdej zmianie formularza — od tego jest
+  // przycisk "Wygeneruj ponownie").
+  const autoGenQuoteId = useRef(null)
+  useEffect(() => {
+    if (loading || !quote) return
+    if (quote.doc_html) return
+    if (autoGenQuoteId.current === quote.id) return
+    autoGenQuoteId.current = quote.id
+    regenerateDoc(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, quote?.id, quote?.doc_html])
 
   const handlePreviewPdf = async () => {
     // Okno musi się otworzyć SYNCHRONICZNIE w reakcji na kliknięcie — jeśli
@@ -999,11 +1009,11 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     // pustą kartę od razu, a docelowy adres wstawiamy do niej, gdy PDF będzie
     // gotowy. Dodatkowo trzymamy link w stanie jako trwały fallback do
     // pobrania, na wypadek gdyby przeglądarka i to zablokowała.
+    if (!docHtml) { toast.error(t('Dokument jeszcze się generuje — spróbuj ponownie za chwilę.')); return }
     const win = window.open('', '_blank')
     setSending('preview')
     try {
-      const html = await buildExportHtml()
-      const blob = await exportHtmlToPdfBlob(html)
+      const blob = await exportHtmlToPdfBlob(docHtml)
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
       if (win) win.location.href = url
@@ -1068,6 +1078,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if ((quote.transport_currency || 'CNY') !== 'PLN' && Number(quote.transport_cost) > 0 && !quote.transport_rate) {
       toast.error(t('Pobierz kurs NBP dla waluty transportu przed wysłaniem do klienta.')); return
     }
+    if (!docHtml) { toast.error(t('Dokument jeszcze się generuje — spróbuj ponownie za chwilę.')); return }
     const confirmMsg = quote.status === 'wyslana'
       ? t('Wysłać poprawioną wersję tej wyceny do klienta? Nadpisze poprzedni PDF (ten sam numer wyceny) nowymi danymi.')
       : t('Wysłać tę wycenę do klienta? Wygeneruje się PDF z ceną końcową netto/VAT/brutto w PLN i automatycznie odblokuje 2. etap zamówienia.')
@@ -1076,8 +1087,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     setSending(true)
     try {
-      const html = await buildExportHtml()
-      const blob = await exportHtmlToPdfBlob(html)
+      const blob = await exportHtmlToPdfBlob(docHtml)
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
       if (upErr) throw upErr
@@ -1599,19 +1609,21 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       </div>
 
       <div style={card}>
-        <div style={sectionTitle}>📄 {t("Warunki / dodatkowa treść (widoczne na wycenie, edytowalne)")}</div>
-        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10 }}>
-          {t("To jedyna ręcznie edytowalna część dokumentu — reszta (pozycje, zdjęcia, ceny, podsumowanie) układa się automatycznie z formularza powyżej, żeby nic się nigdy nie \"połamało\". Tutaj możesz dopisać/sformatować warunki, terminy płatności, dodatkowe uwagi itp.")}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+          <div style={sectionTitle}>👁 {t("Dokument wyceny (dokładnie to trafi do klienta — edytuj bezpośrednio poniżej)")}</div>
+          <button onClick={() => regenerateDoc(true)} disabled={docLoading}
+            style={{ padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`, background: C.white, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', color: C.text2, opacity: docLoading ? .6 : 1 }}>
+            {docLoading ? t('Generowanie…') : t('🔄 Wygeneruj ponownie z formularza')}
+          </button>
         </div>
-        <QuoteWordEditor key={notesKey} html={notesHtml} onChange={setNotesHtml} />
-      </div>
-
-      <div style={card}>
-        <div style={sectionTitle}>👁 {t("Podgląd dokumentu (dokładnie to trafi do klienta)")}</div>
-        <div style={{
-          border: `1px solid ${C.border}`, borderRadius: 10, padding: 24, background: '#fff',
-          maxHeight: 640, overflowY: 'auto',
-        }} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10 }}>
+          {t("Kliknij bezpośrednio w dokument, żeby zmienić tekst, dopisać warunki, pogrubić itp. — zapisuje się automatycznie. \"Wygeneruj ponownie\" nadpisze ręczne zmiany aktualnymi danymi z formularza (pozycje, ceny, zdjęcia).")}
+        </div>
+        {docHtml ? (
+          <QuoteDocEditor html={docHtml} version={docVersion} onChange={setDocHtml} />
+        ) : (
+          <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 12 }}>{t('Generowanie dokumentu…')}</div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>

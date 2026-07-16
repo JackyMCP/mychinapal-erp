@@ -33,7 +33,7 @@ function escapeHtml(s) {
 // podgląd na ekranie (useMemo, przeliczany przy każdej zmianie formularza)
 // jak i przez eksport do PDF (te same dane, tylko zdjęcia/logo jako base64
 // zamiast podpisanych URL-i, żeby PDF był samodzielny).
-export function renderQuoteDocHtml({ quote, client, contact, company, rows, totals, photoDataUrls = {}, logoDataUrl, notesHtml }) {
+export function renderQuoteDocHtml({ quote, client, contact, company, rows, totals, photoDataUrls = {}, logoDataUrl, notes }) {
   const sellerLines = [
     company?.company_name || 'MyChinaPal Sp. z o.o.',
     company?.company_address || '',
@@ -131,9 +131,9 @@ export function renderQuoteDocHtml({ quote, client, contact, company, rows, tota
       <div style="display:flex; justify-content:space-between; font-size:15px; font-weight:800;"><span>RAZEM BRUTTO:</span><span style="color:${GOLD};">${fmtPlnHtml(totals.finalPriceGross)} PLN</span></div>
     </div>
 
-    ${notesHtml && notesHtml !== '<p></p>' ? `<div style="margin-top:22px;">
+    ${notes ? `<div style="margin-top:22px;">
       <div style="font-size:11px; font-weight:700; color:${NAVY}; margin-bottom:6px;">Warunki</div>
-      <div style="font-size:10.5px; color:${TEXT};">${notesHtml}</div>
+      <div style="font-size:10.5px; color:${TEXT}; white-space:pre-line;">${escapeHtml(notes)}</div>
     </div>` : ''}
 
     ${company?.company_bank_account ? `<div style="margin-top:14px; font-size:10.5px; color:${MUTED};">Nr konta: ${escapeHtml(company.company_bank_account)}</div>` : ''}

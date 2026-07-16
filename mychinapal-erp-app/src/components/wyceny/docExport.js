@@ -1,12 +1,13 @@
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
-// Renderuje podaną treść HTML (dokument wyceny z QuoteWordEditor) do PDF —
-// zastępuje dawny generator pdf.js/pdfFromLayout.js, który rysował PDF
-// ręcznie element-po-elemencie. Teraz PDF to po prostu "zdjęcie" aktualnej
-// treści dokumentu (tego co widać w edytorze), pocięte na strony A4 — dzięki
-// temu klient zawsze dostaje DOKŁADNIE to, co zespół ułożył w edytorze,
-// łącznie z ręcznymi poprawkami tekstu/formatowania.
+// Renderuje podaną treść HTML (zmaterializowany dokument wyceny, edytowany
+// bezpośrednio w QuoteDocEditor przez contentEditable) do PDF — zastępuje
+// dawny generator pdf.js/pdfFromLayout.js, który rysował PDF ręcznie
+// element-po-elemencie. Teraz PDF to po prostu "zdjęcie" aktualnej treści
+// dokumentu (tego co widać w edytorze), pocięte na strony A4 — dzięki temu
+// klient zawsze dostaje DOKŁADNIE to, co zespół ułożył w dokumencie, łącznie
+// z ręcznymi poprawkami tekstu/formatowania.
 export async function exportHtmlToPdfBlob(html) {
   const container = document.createElement('div')
   container.style.position = 'fixed'
