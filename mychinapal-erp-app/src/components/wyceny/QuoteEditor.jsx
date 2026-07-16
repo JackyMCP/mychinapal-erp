@@ -896,6 +896,47 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setSending(false)
   }
 
+  // Kartoteka produktów (Magazyn) — każda WYSŁANA wycena automatycznie
+  // "odkłada" swoje pozycje jako karty produktów, żeby przy kolejnej podobnej
+  // wycenie/fakturze można było je znaleźć w Magazynie bez przepisywania od
+  // zera. Dopisujemy TYLKO pozycje, których nazwa jeszcze nie istnieje w
+  // katalogu (dopasowanie po nazwie, bez rozróżniania wielkości liter) — nie
+  // nadpisujemy istniejących, ręcznie skompletowanych kart (stany, ceny
+  // sprzedaży itd. mogą być tam już starannie ustawione). Najlepszy wysiłek:
+  // błąd synchronizacji katalogu nigdy nie blokuje wysłania wyceny do klienta.
+  const syncQuoteItemsToProductCatalog = async () => {
+    try {
+      const names = [...new Set(items.map(it => (it.name || '').trim()).filter(Boolean))]
+      if (!names.length) return
+      const { data: existing } = await supabase.from('products').select('name').eq('company', 'PL').in('name', names)
+      const existingLower = new Set((existing || []).map(p => (p.name || '').trim().toLowerCase()))
+      const { data: { user } } = await supabase.auth.getUser()
+      const seenThisBatch = new Set()
+      const toInsert = []
+      items.forEach((it, idx) => {
+        const name = (it.name || '').trim()
+        if (!name) return
+        const key = name.toLowerCase()
+        if (existingLower.has(key) || seenThisBatch.has(key)) return
+        seenThisBatch.add(key)
+        toInsert.push({
+          code: `WYC-${(quote.quote_number || quoteId).toString().slice(0, 24)}-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          unit: it.unit || 'szt.',
+          is_service: false,
+          photo_path: it.photo_paths?.[0] || null,
+          source: 'wycena',
+          created_by: user?.id || null,
+          company: 'PL',
+        })
+      })
+      if (toInsert.length) await supabase.from('products').insert(toInsert)
+    } catch {
+      // Katalog produktów to funkcja pomocnicza — jej błąd nie ma prawa
+      // przerwać wysyłki wyceny do klienta.
+    }
+  }
+
   const handleSendToClient = async () => {
     if (quote.margin_percent === null || quote.margin_percent === undefined || quote.margin_percent === '') {
       toast.error(t('Wpisz marżę przed wysłaniem do klienta.')); return
@@ -925,6 +966,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       })
       const { error: sendErr } = await supabase.from('quotes').update({ status: 'wyslana', sent_at: new Date().toISOString(), pdf_path: pdfPath }).eq('id', quoteId)
       if (sendErr) throw sendErr
+      await syncQuoteItemsToProductCatalog()
       toast.success(t('Wycena wysłana ✓ Etap „Wpłata klienta na towar” został odblokowany.'))
       load(); onChanged && onChanged()
     } catch (e) {
