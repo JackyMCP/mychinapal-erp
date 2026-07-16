@@ -237,12 +237,25 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const transportRateEff = (quote?.transport_currency || 'CNY') === 'PLN'
     ? 1
     : toNum(quote?.transport_rate) * (1 + toNum(quote?.bank_commission_percent) / 100)
+  // Odprawa celna w Chinach i dostawa do klienta w Polsce — dwa nowe koszty
+  // globalne doliczane przez zespół PL, każdy z własną walutą/kursem NBP,
+  // dokładnie jak transport (patrz calc.js: rozkładane na pozycje
+  // proporcjonalnie do wartości towaru, wliczane w koszt PRZED marżą).
+  const chinaCustomsClearanceRateEff = (quote?.china_customs_clearance_currency || 'PLN') === 'PLN'
+    ? 1
+    : toNum(quote?.china_customs_clearance_rate) * (1 + toNum(quote?.bank_commission_percent) / 100)
+  const plDeliveryRateEff = (quote?.pl_delivery_currency || 'PLN') === 'PLN'
+    ? 1
+    : toNum(quote?.pl_delivery_rate) * (1 + toNum(quote?.bank_commission_percent) / 100)
   const VAT_PERCENT = 23
 
   const totalsCalc = useMemo(() => computeQuoteTotals(items, {
     transportCost: quote?.transport_cost || 0, includeDuty: quote?.include_duty ?? true, marginPercent: quote?.margin_percent || 0,
     cnyRate: cnyRateEff, transportRate: transportRateEff, vatPercent: VAT_PERCENT,
-  }), [items, quote?.transport_cost, quote?.include_duty, quote?.margin_percent, cnyRateEff, transportRateEff])
+    chinaCustomsClearanceCost: quote?.china_customs_clearance_cost || 0, chinaCustomsClearanceRate: chinaCustomsClearanceRateEff,
+    plDeliveryToClientCost: quote?.pl_delivery_to_client_cost || 0, plDeliveryRate: plDeliveryRateEff,
+  }), [items, quote?.transport_cost, quote?.include_duty, quote?.margin_percent, cnyRateEff, transportRateEff,
+      quote?.china_customs_clearance_cost, chinaCustomsClearanceRateEff, quote?.pl_delivery_to_client_cost, plDeliveryRateEff])
 
   // Gdy CHOĆ JEDNA pozycja ma ręcznie ustawioną cenę PLN/szt., różnica
   // netto-koszt nie wynika już wyłącznie z globalnego pola "Marża (%)" —
@@ -675,6 +688,47 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (newCurrency !== 'PLN') handleFetchTransportRate(newCurrency)
   }
 
+  // Te same wzorce (osobny kurs NBP na walutę, kasowanie starego kursu przy
+  // zmianie waluty) powtórzone dla dwóch nowych kosztów globalnych: odprawa
+  // celna w Chinach i dostawa do klienta w Polsce.
+  const [fetchingChinaCustomsRate, setFetchingChinaCustomsRate] = useState(false)
+  const handleFetchChinaCustomsRate = async (currencyOverride = null) => {
+    const cur = currencyOverride || quote.china_customs_clearance_currency || 'PLN'
+    if (cur === 'PLN') { toast.error(t('Odprawa w PLN nie wymaga przeliczenia kursu.')); return }
+    setFetchingChinaCustomsRate(true)
+    try {
+      const { mid, effectiveDate } = await fetchNbpRate(cur)
+      setQ({ china_customs_clearance_rate: mid, china_customs_clearance_rate_date: effectiveDate })
+      toast.success(t(`Pobrano kurs NBP: 1 ${cur} = ${mid} PLN (${effectiveDate})`))
+    } catch (e) {
+      toast.error(t('Nie udało się pobrać kursu z NBP: ') + (e.message || e))
+    }
+    setFetchingChinaCustomsRate(false)
+  }
+  const handleChinaCustomsCurrencyChange = (newCurrency) => {
+    setQ({ china_customs_clearance_currency: newCurrency, china_customs_clearance_rate: null, china_customs_clearance_rate_date: null })
+    if (newCurrency !== 'PLN') handleFetchChinaCustomsRate(newCurrency)
+  }
+
+  const [fetchingPlDeliveryRate, setFetchingPlDeliveryRate] = useState(false)
+  const handleFetchPlDeliveryRate = async (currencyOverride = null) => {
+    const cur = currencyOverride || quote.pl_delivery_currency || 'PLN'
+    if (cur === 'PLN') { toast.error(t('Dostawa w PLN nie wymaga przeliczenia kursu.')); return }
+    setFetchingPlDeliveryRate(true)
+    try {
+      const { mid, effectiveDate } = await fetchNbpRate(cur)
+      setQ({ pl_delivery_rate: mid, pl_delivery_rate_date: effectiveDate })
+      toast.success(t(`Pobrano kurs NBP: 1 ${cur} = ${mid} PLN (${effectiveDate})`))
+    } catch (e) {
+      toast.error(t('Nie udało się pobrać kursu z NBP: ') + (e.message || e))
+    }
+    setFetchingPlDeliveryRate(false)
+  }
+  const handlePlDeliveryCurrencyChange = (newCurrency) => {
+    setQ({ pl_delivery_currency: newCurrency, pl_delivery_rate: null, pl_delivery_rate_date: null })
+    if (newCurrency !== 'PLN') handleFetchPlDeliveryRate(newCurrency)
+  }
+
   // Automatyczne pobranie kursów NBP przy otwarciu wyceny, jeśli jeszcze nie
   // są ustawione — dzięki temu cena dla klienta liczy się i wyświetla "od
   // razu" (na żywo), bez konieczności ręcznego klikania "Odśwież kurs" przy
@@ -683,6 +737,8 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!quote?.id) return
     if (!quote.nbp_rate) handleFetchNbpRate()
     if ((quote.transport_currency || 'CNY') !== 'PLN' && !quote.transport_rate) handleFetchTransportRate()
+    if ((quote.china_customs_clearance_currency || 'PLN') !== 'PLN' && !quote.china_customs_clearance_rate) handleFetchChinaCustomsRate()
+    if ((quote.pl_delivery_currency || 'PLN') !== 'PLN' && !quote.pl_delivery_rate) handleFetchPlDeliveryRate()
   }, [quote?.id])
 
   const handleAiSuggest = async (key, photoPathOverride = null) => {
@@ -866,6 +922,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       bank_commission_percent: quote.bank_commission_percent === '' || quote.bank_commission_percent === null || quote.bank_commission_percent === undefined ? null : toNum(quote.bank_commission_percent),
       transport_currency: quote.transport_currency || 'CNY',
       transport_rate: quote.transport_rate || null, transport_rate_date: quote.transport_rate_date || null,
+      china_customs_clearance_cost: quote.china_customs_clearance_cost === '' || quote.china_customs_clearance_cost === null || quote.china_customs_clearance_cost === undefined ? null : toNum(quote.china_customs_clearance_cost),
+      china_customs_clearance_currency: quote.china_customs_clearance_currency || 'PLN',
+      china_customs_clearance_rate: quote.china_customs_clearance_rate || null, china_customs_clearance_rate_date: quote.china_customs_clearance_rate_date || null,
+      pl_delivery_to_client_cost: quote.pl_delivery_to_client_cost === '' || quote.pl_delivery_to_client_cost === null || quote.pl_delivery_to_client_cost === undefined ? null : toNum(quote.pl_delivery_to_client_cost),
+      pl_delivery_currency: quote.pl_delivery_currency || 'PLN',
+      pl_delivery_rate: quote.pl_delivery_rate || null, pl_delivery_rate_date: quote.pl_delivery_rate_date || null,
       doc_html: docHtml || null,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
@@ -1155,6 +1217,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!quote.nbp_rate) { toast.error(t('Pobierz kurs NBP dla towaru (CNY) przed wysłaniem do klienta.')); return }
     if ((quote.transport_currency || 'CNY') !== 'PLN' && Number(quote.transport_cost) > 0 && !quote.transport_rate) {
       toast.error(t('Pobierz kurs NBP dla waluty transportu przed wysłaniem do klienta.')); return
+    }
+    if ((quote.china_customs_clearance_currency || 'PLN') !== 'PLN' && Number(quote.china_customs_clearance_cost) > 0 && !quote.china_customs_clearance_rate) {
+      toast.error(t('Pobierz kurs NBP dla waluty odprawy celnej (Chiny) przed wysłaniem do klienta.')); return
+    }
+    if ((quote.pl_delivery_currency || 'PLN') !== 'PLN' && Number(quote.pl_delivery_to_client_cost) > 0 && !quote.pl_delivery_rate) {
+      toast.error(t('Pobierz kurs NBP dla waluty dostawy do klienta przed wysłaniem do klienta.')); return
     }
     if (!docHtml) { toast.error(t('Dokument jeszcze się generuje — spróbuj ponownie za chwilę.')); return }
     const confirmMsg = quote.status === 'wyslana'
@@ -1520,9 +1588,9 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       )}
 
       <div style={card}>
-        <div style={sectionTitle}>💰 {t("Transport, cło i marża (zespół polski)")}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-          <div><label style={label}>{t("Szacowany transport")}</label><input type="text" inputMode="decimal" style={field} value={quote.transport_cost || ''} onChange={e => setQ({ transport_cost: e.target.value })} /></div>
+        <div style={sectionTitle}>💰 {t("Koszty i marża (zespół polski)")}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 10 }}>
+          <div><label style={label}>{t("Szacowany transport (do Polski)")}</label><input type="text" inputMode="decimal" style={field} value={quote.transport_cost || ''} onChange={e => setQ({ transport_cost: e.target.value })} /></div>
           <div><label style={label}>{t("Waluta transportu")}</label>
             <select style={field} value={quote.transport_currency || 'CNY'} onChange={e => handleTransportCurrencyChange(e.target.value)}>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1534,6 +1602,20 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </div>
           <div><label style={label}>{t("Ważna do")}</label><input type="date" style={field} value={quote.valid_until || ''} onChange={e => setQ({ valid_until: e.target.value })} /></div>
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
+          <div><label style={label}>{t("Odprawa celna (Chiny)")}</label><input type="text" inputMode="decimal" style={field} value={quote.china_customs_clearance_cost ?? ''} onChange={e => setQ({ china_customs_clearance_cost: e.target.value })} /></div>
+          <div><label style={label}>{t("Waluta odprawy (Chiny)")}</label>
+            <select style={field} value={quote.china_customs_clearance_currency || 'PLN'} onChange={e => handleChinaCustomsCurrencyChange(e.target.value)}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div><label style={label}>{t("Dostawa do klienta (Polska)")}</label><input type="text" inputMode="decimal" style={field} value={quote.pl_delivery_to_client_cost ?? ''} onChange={e => setQ({ pl_delivery_to_client_cost: e.target.value })} /></div>
+          <div><label style={label}>{t("Waluta dostawy (Polska)")}</label>
+            <select style={field} value={quote.pl_delivery_currency || 'PLN'} onChange={e => handlePlDeliveryCurrencyChange(e.target.value)}>
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, fontWeight: 600, marginBottom: 16, cursor: 'pointer' }}>
           <input type="checkbox" checked={quote.include_duty ?? true} onChange={e => setQ({ include_duty: e.target.checked })} />
           {t("Wliczaj cło do kosztu (obliczane od wartości towar + transport, wg stawki każdej pozycji)")}
@@ -1543,7 +1625,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ background: C.bg }}>
-                {['Pozycja', 'Towar', 'Transport (udział)', 'Wart. celna', 'Cło', 'Koszt razem', 'Cena dla klienta netto (PLN)'].map(h => (
+                {['Pozycja', 'Towar', 'Transport (udział)', 'Wart. celna', 'Cło', 'Odprawa+dostawa (udział)', 'Koszt razem', 'Cena dla klienta netto (PLN)'].map(h => (
                   <th key={h} style={{ textAlign: 'right', padding: '6px 8px', fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{t(h)}</th>
                 ))}
               </tr>
@@ -1556,6 +1638,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                   <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}` }}>{fmt(r.transportShare, 2)}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}` }}>{fmt(r.customsValue, 2)}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}` }}>{fmt(r.dutyAmount, 2)}</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}` }}>{fmt(r.extraCostsShare, 2)}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}` }}>{fmt(r.landedCost, 2)}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: `1px solid ${C.border}`, fontWeight: 700, color: C.blue }}>{fmt(r.finalPrice, 2)}</td>
                 </tr>
@@ -1568,13 +1651,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.transportShare, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.customsValue, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.dutyAmount, 2)}</td>
+                <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.extraCostsShare, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalsCalc.totals.landedCost, 2)}</td>
                 <td style={{ padding: '8px', textAlign: 'right', color: C.blue, fontSize: 13 }}>{fmt(totalsCalc.totals.finalPrice, 2)} PLN</td>
               </tr>
             </tfoot>
           </table>
         </div>
-        <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Ten rozkład (marża, cło, koszt towaru osobno) widzi tylko zespół wewnętrzny. Towar jest w cenie fabrycznej CNY, transport w walucie wybranej wyżej — obydwa są tu już przeliczone na złotówki wg kursów NBP poniżej. Na PDF do klienta trafia wyłącznie cena końcowa netto/VAT/brutto w PLN.")}</div>
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Ten rozkład (marża, cło, koszt towaru osobno) widzi tylko zespół wewnętrzny. Towar jest w cenie fabrycznej CNY, pozostałe koszty w walutach wybranych wyżej — wszystkie są tu już przeliczone na złotówki wg kursów NBP poniżej. Do klienta trafia wyłącznie cena końcowa netto/VAT/brutto w PLN.")}</div>
       </div>
 
       <div style={card}>
@@ -1602,7 +1686,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </div>
         </div>
         {(quote.transport_currency || 'CNY') !== 'PLN' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, alignItems: 'end', marginBottom: 14 }}>
             <div>
               <label style={label}>{t(`Kurs średni NBP (${quote.transport_currency || 'CNY'}→PLN, transport)`)}</label>
               <div style={{ ...field, background: C.bg, fontWeight: 700 }}>
@@ -1622,11 +1706,55 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             <div />
           </div>
         )}
+        {(quote.china_customs_clearance_currency || 'PLN') !== 'PLN' && (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, alignItems: 'end', marginBottom: 14 }}>
+            <div>
+              <label style={label}>{t(`Kurs średni NBP (${quote.china_customs_clearance_currency}→PLN, odprawa CN)`)}</label>
+              <div style={{ ...field, background: C.bg, fontWeight: 700 }}>
+                {quote.china_customs_clearance_rate ? `${quote.china_customs_clearance_rate} ${t("z dnia")} ${quote.china_customs_clearance_rate_date}` : t("— nie pobrano —")}
+              </div>
+            </div>
+            <div>
+              <button onClick={handleFetchChinaCustomsRate} disabled={fetchingChinaCustomsRate}
+                style={{ padding: '9px 14px', borderRadius: 7, border: `1px solid ${C.blue}`, background: C.blight, color: C.blue, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: fetchingChinaCustomsRate ? .6 : 1 }}>
+                {fetchingChinaCustomsRate ? t('Pobieranie…') : t(`🔄 Odśwież kurs ${quote.china_customs_clearance_currency}`)}
+              </button>
+            </div>
+            <div>
+              <label style={label}>{t("Kurs efektywny (odprawa CN)")}</label>
+              <div style={{ ...field, background: C.bg, fontWeight: 700 }}>{chinaCustomsClearanceRateEff ? fmt(chinaCustomsClearanceRateEff, 4) : '—'}</div>
+            </div>
+            <div />
+          </div>
+        )}
+        {(quote.pl_delivery_currency || 'PLN') !== 'PLN' && (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: 10, alignItems: 'end' }}>
+            <div>
+              <label style={label}>{t(`Kurs średni NBP (${quote.pl_delivery_currency}→PLN, dostawa PL)`)}</label>
+              <div style={{ ...field, background: C.bg, fontWeight: 700 }}>
+                {quote.pl_delivery_rate ? `${quote.pl_delivery_rate} ${t("z dnia")} ${quote.pl_delivery_rate_date}` : t("— nie pobrano —")}
+              </div>
+            </div>
+            <div>
+              <button onClick={handleFetchPlDeliveryRate} disabled={fetchingPlDeliveryRate}
+                style={{ padding: '9px 14px', borderRadius: 7, border: `1px solid ${C.blue}`, background: C.blight, color: C.blue, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: fetchingPlDeliveryRate ? .6 : 1 }}>
+                {fetchingPlDeliveryRate ? t('Pobieranie…') : t(`🔄 Odśwież kurs ${quote.pl_delivery_currency}`)}
+              </button>
+            </div>
+            <div>
+              <label style={label}>{t("Kurs efektywny (dostawa PL)")}</label>
+              <div style={{ ...field, background: C.bg, fontWeight: 700 }}>{plDeliveryRateEff ? fmt(plDeliveryRateEff, 4) : '—'}</div>
+            </div>
+            <div />
+          </div>
+        )}
         <div style={{ fontSize: 10, color: C.muted, marginTop: 10 }}>{t("Kursy zapisują się na wycenie w momencie zapisu/wysyłki — nie zmieniają się już potem samoczynnie. BNP Paribas nie udostępnia publicznego API, dlatego bazujemy na oficjalnym kursie średnim NBP i doliczamy prowizję banku ręcznie.")}</div>
       </div>
 
       {(() => {
         const tCur = quote.transport_currency || 'CNY'
+        const ccCur = quote.china_customs_clearance_currency || 'PLN'
+        const plCur = quote.pl_delivery_currency || 'PLN'
         const marginAmount = totalsCalc.totals.finalPrice - totalsCalc.totals.landedCost
         const steps = [
           { label: t('Kurs towaru (NBP + prowizja banku)'), calc: `1 CNY = ${fmt(quote.nbp_rate || 0, 4)} × (1 + ${fmt(quote.bank_commission_percent || 0, 2)}%)`, value: `${fmt(cnyRateEff, 4)} PLN` },
@@ -1635,7 +1763,15 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           { label: t('Transport'), calc: `${fmt(toNum(quote.transport_cost), 2)} ${tCur} × ${fmt(transportRateEff, 4)}`, value: `${fmt(totalsCalc.totals.transportShare, 2)} PLN` },
           { label: t('Wartość celna (towar + transport)'), calc: t('wartość towaru + transport'), value: `${fmt(totalsCalc.totals.customsValue, 2)} PLN` },
           { label: t('Cło'), calc: t('wartość celna × stawka cła każdej pozycji'), value: `${fmt(totalsCalc.totals.dutyAmount, 2)} PLN` },
-          { label: t('Koszt razem (bez marży)'), calc: t('wartość celna + cło'), value: `${fmt(totalsCalc.totals.landedCost, 2)} PLN` },
+          ...(toNum(quote.china_customs_clearance_cost) > 0 ? [
+            ...(ccCur !== 'PLN' ? [{ label: t(`Kurs odprawy celnej (${ccCur})`), calc: `1 ${ccCur} = ${fmt(quote.china_customs_clearance_rate || 0, 4)} × (1 + ${fmt(quote.bank_commission_percent || 0, 2)}%)`, value: `${fmt(chinaCustomsClearanceRateEff, 4)} PLN` }] : []),
+            { label: t('Odprawa celna (Chiny)'), calc: `${fmt(toNum(quote.china_customs_clearance_cost), 2)} ${ccCur} × ${fmt(chinaCustomsClearanceRateEff, 4)}`, value: `${fmt(totalsCalc.totals.chinaCustomsClearancePln, 2)} PLN` },
+          ] : []),
+          ...(toNum(quote.pl_delivery_to_client_cost) > 0 ? [
+            ...(plCur !== 'PLN' ? [{ label: t(`Kurs dostawy do klienta (${plCur})`), calc: `1 ${plCur} = ${fmt(quote.pl_delivery_rate || 0, 4)} × (1 + ${fmt(quote.bank_commission_percent || 0, 2)}%)`, value: `${fmt(plDeliveryRateEff, 4)} PLN` }] : []),
+            { label: t('Dostawa do klienta (Polska)'), calc: `${fmt(toNum(quote.pl_delivery_to_client_cost), 2)} ${plCur} × ${fmt(plDeliveryRateEff, 4)}`, value: `${fmt(totalsCalc.totals.plDeliveryPln, 2)} PLN` },
+          ] : []),
+          { label: t('Koszt razem (bez marży)'), calc: t('wartość celna + cło + odprawa celna (Chiny) + dostawa do klienta (Polska)'), value: `${fmt(totalsCalc.totals.landedCost, 2)} PLN` },
           {
             label: t(`Marża (${fmt(effectiveMarginPct, 1)}% efektywnie)`),
             calc: hasAnyManualPln

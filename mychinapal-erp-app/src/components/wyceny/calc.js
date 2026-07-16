@@ -25,21 +25,36 @@ export function toNum(v) {
 export function computeQuoteTotals(items, {
   transportCost = 0, includeDuty = true, marginPercent = 0,
   cnyRate = 1, transportRate = 1, vatPercent = 23,
+  // Dwa dodatkowe koszty globalne doliczane przez zespół PL — koszt odprawy
+  // celnej PO STRONIE CHIŃSKIEJ (eksportowej) i koszt dostawy towaru do
+  // klienta PO STRONIE POLSKIEJ (ostatni odcinek). Oba podawane w dowolnej
+  // walucie (jak transport) i przeliczane na PLN własnym kursem PRZED
+  // wejściem tutaj (patrz *RateEff w QuoteEditor.jsx) — tutaj liczą się już
+  // w PLN, dokładnie jak transportCost. Rozkładane na pozycje proporcjonalnie
+  // do wartości towaru, tak samo jak transport.
+  chinaCustomsClearanceCost = 0, chinaCustomsClearanceRate = 1,
+  plDeliveryToClientCost = 0, plDeliveryRate = 1,
 } = {}) {
   const list = items || []
   const cny = toNum(cnyRate)
   const tRate = toNum(transportRate)
   const goodsTotalPln = list.reduce((s, it) => s + toNum(it.qty) * toNum(it.unit_price_cny) * cny, 0)
   const transportPln = toNum(transportCost) * tRate
+  const chinaCustomsClearancePln = toNum(chinaCustomsClearanceCost) * toNum(chinaCustomsClearanceRate)
+  const plDeliveryPln = toNum(plDeliveryToClientCost) * toNum(plDeliveryRate)
+  const extraCostsPln = chinaCustomsClearancePln + plDeliveryPln
 
   const rows = list.map(it => {
     const goodsValue = toNum(it.qty) * toNum(it.unit_price_cny) * cny // PLN
     const transportShare = goodsTotalPln > 0
       ? transportPln * (goodsValue / goodsTotalPln)
       : transportPln / (list.length || 1)
+    const extraCostsShare = goodsTotalPln > 0
+      ? extraCostsPln * (goodsValue / goodsTotalPln)
+      : extraCostsPln / (list.length || 1)
     const customsValue = goodsValue + transportShare
     const dutyAmount = includeDuty ? customsValue * (toNum(it.duty_rate_percent) / 100) : 0
-    const landedCost = customsValue + dutyAmount
+    const landedCost = customsValue + dutyAmount + extraCostsShare
     // Zespół PL może ręcznie ustawić cenę PLN/szt. dla konkretnej pozycji
     // (pole "Cena PLN/szt." w edytorze) — wtedy TA pozycja ma cenę
     // finalną = ilość × ta ręczna cena, zamiast automatycznego
@@ -51,7 +66,7 @@ export function computeQuoteTotals(items, {
       : landedCost * (1 + toNum(marginPercent) / 100) // netto PLN
     const vatAmount = finalPrice * (toNum(vatPercent) / 100)
     const finalPriceGross = finalPrice + vatAmount
-    return { ...it, goodsValue, transportShare, customsValue, dutyAmount, landedCost, finalPrice, vatAmount, finalPriceGross }
+    return { ...it, goodsValue, transportShare, extraCostsShare, customsValue, dutyAmount, landedCost, finalPrice, vatAmount, finalPriceGross }
   })
 
   // Całkowita objętość zamówienia (suma CBM wszystkich pozycji, które mają
@@ -62,14 +77,17 @@ export function computeQuoteTotals(items, {
   const totals = rows.reduce((acc, r) => ({
     goodsValue: acc.goodsValue + r.goodsValue,
     transportShare: acc.transportShare + r.transportShare,
+    extraCostsShare: acc.extraCostsShare + r.extraCostsShare,
     customsValue: acc.customsValue + r.customsValue,
     dutyAmount: acc.dutyAmount + r.dutyAmount,
     landedCost: acc.landedCost + r.landedCost,
     finalPrice: acc.finalPrice + r.finalPrice,
     vatAmount: acc.vatAmount + r.vatAmount,
     finalPriceGross: acc.finalPriceGross + r.finalPriceGross,
-  }), { goodsValue: 0, transportShare: 0, customsValue: 0, dutyAmount: 0, landedCost: 0, finalPrice: 0, vatAmount: 0, finalPriceGross: 0 })
+  }), { goodsValue: 0, transportShare: 0, extraCostsShare: 0, customsValue: 0, dutyAmount: 0, landedCost: 0, finalPrice: 0, vatAmount: 0, finalPriceGross: 0 })
   totals.totalCbm = totalCbm
+  totals.chinaCustomsClearancePln = chinaCustomsClearancePln
+  totals.plDeliveryPln = plDeliveryPln
 
   return { rows, totals }
 }
