@@ -233,9 +233,13 @@ export default function Wyceny() {
               </div>
               <div style={{ fontSize: 9.5, color: C.muted, marginTop: 8 }}>{new Date(q.created_at).toLocaleDateString('pl-PL')}</div>
               <span onClick={(e) => handleDelete(q, e)} title={t('Usuń wycenę')}
-                style={{ position: 'absolute', top: 12, right: 12, fontSize: 12, color: C.muted, opacity: 0 }}
+                style={{
+                  position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12.5, color: C.red, background: C.rlight, border: `1px solid ${C.rmid}`,
+                }}
                 className="wyc-del">🗑</span>
-              <style>{`.wyc-card:hover .wyc-del { opacity: .6 !important; }`}</style>
+              <style>{`.wyc-del:hover { background: ${C.red} !important; color: #fff !important; }`}</style>
             </div>
           )
         })}

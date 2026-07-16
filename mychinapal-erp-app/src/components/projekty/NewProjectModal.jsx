@@ -38,7 +38,7 @@ export default function NewProjectModal({ clients = [], clientId, clientName, on
         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{t("Nowy projekt / zamówienie")}</div>
 
         <label style={label}>{t("Nazwa / etykieta zamówienia *")}</label>
-        <input style={input} value={orderLabel} onChange={e => setOrderLabel(e.target.value)} placeholder={t("np. ZAM-2026-014 — Powerbanki 30k")} autoFocus />
+        <input style={input} value={orderLabel} onChange={e => setOrderLabel(e.target.value)} placeholder={t("np. ZAM-2026-014 — Powerbanki 30k")} autoFocus autoComplete="off" name="new-order-label-no-autofill" />
 
         <label style={label}>{t("Klient *")}</label>
         {locked ? (
