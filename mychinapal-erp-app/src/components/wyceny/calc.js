@@ -40,7 +40,15 @@ export function computeQuoteTotals(items, {
     const customsValue = goodsValue + transportShare
     const dutyAmount = includeDuty ? customsValue * (toNum(it.duty_rate_percent) / 100) : 0
     const landedCost = customsValue + dutyAmount
-    const finalPrice = landedCost * (1 + toNum(marginPercent) / 100) // netto PLN
+    // Zespół PL może ręcznie ustawić cenę PLN/szt. dla konkretnej pozycji
+    // (pole "Cena PLN/szt." w edytorze) — wtedy TA pozycja ma cenę
+    // finalną = ilość × ta ręczna cena, zamiast automatycznego
+    // landedCost × (1 + marża%). Pozycje bez ręcznej ceny liczą się jak
+    // dotychczas (globalna marża % z panelu "Transport, cło i marża").
+    const hasManualPln = it.unit_price_pln !== null && it.unit_price_pln !== undefined && it.unit_price_pln !== ''
+    const finalPrice = hasManualPln
+      ? toNum(it.qty) * toNum(it.unit_price_pln)
+      : landedCost * (1 + toNum(marginPercent) / 100) // netto PLN
     const vatAmount = finalPrice * (toNum(vatPercent) / 100)
     const finalPriceGross = finalPrice + vatAmount
     return { ...it, goodsValue, transportShare, customsValue, dutyAmount, landedCost, finalPrice, vatAmount, finalPriceGross }

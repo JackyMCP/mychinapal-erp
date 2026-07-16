@@ -24,6 +24,7 @@ const MAX_AI_FILE_MB = 8
 const blankItem = () => ({
   _key: crypto.randomUUID(), id: null,
   name: '', specification: '', qty: 1, unit: 'szt.', unit_price_cny: 0,
+  unit_price_pln: null,
   cbm: '', weight_kg: '', container_note: '', production_days: '',
   hs_code: '', duty_rate_percent: '', photo_paths: [], ai_suggestion: null,
 })
@@ -812,6 +813,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         quote_id: quoteId, position: i + 1, photo_paths: it.photo_paths || [], photo_path: it.photo_paths?.[0] || null,
         name: it.name || null, specification: it.specification || null,
         qty: toNum(it.qty), unit: it.unit || 'set', unit_price_cny: toNum(it.unit_price_cny),
+        unit_price_pln: it.unit_price_pln === '' || it.unit_price_pln === null || it.unit_price_pln === undefined ? null : toNum(it.unit_price_pln),
         cbm: it.cbm === '' || it.cbm === null || it.cbm === undefined ? null : toNum(it.cbm),
         weight_kg: it.weight_kg === '' || it.weight_kg === null || it.weight_kg === undefined ? null : toNum(it.weight_kg),
         container_note: it.container_note || null,
@@ -1180,7 +1182,43 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                   <input style={{ ...field, marginTop: 4 }} value={it.unit} onChange={e => setItem(it._key, { unit: e.target.value })} placeholder={t('wpisz jednostkę')} />
                 )}
               </div>
-              <div><label style={label}>{t("Cena EXW (CNY/szt.)")}</label><input type="text" inputMode="decimal" style={field} value={it.unit_price_cny} onChange={e => setItem(it._key, { unit_price_cny: e.target.value })} /></div>
+              <div>
+                <label style={label}>{t("Cena EXW (CNY/szt.)")}</label>
+                <input type="text" inputMode="decimal" style={field} value={it.unit_price_cny} onChange={e => setItem(it._key, { unit_price_cny: e.target.value })} />
+                {/* Cena PLN/szt. dla zespołu PL — pod ceną CNY: auto-przeliczona
+                    wg kursu NBP + prowizji (ten sam kurs co w panelu "Transport,
+                    cło i marża" niżej), ale można ją ręcznie podbić — różnica
+                    między tym co wpisano a auto-przeliczeniem to marża TEJ
+                    pozycji. Bez ręcznej wartości pozycja liczy się jak dotąd,
+                    globalną marżą % z panelu niżej (patrz calc.js). */}
+                {(() => {
+                  const suggestedPln = toNum(it.unit_price_cny) * cnyRateEff
+                  const hasManualPln = it.unit_price_pln !== null && it.unit_price_pln !== undefined && it.unit_price_pln !== ''
+                  const unitPln = hasManualPln ? toNum(it.unit_price_pln) : suggestedPln
+                  const marginPerUnit = hasManualPln ? unitPln - suggestedPln : 0
+                  const lineTotalPln = toNum(it.qty) * unitPln
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      <label style={{ ...label, marginBottom: 2 }}>{t("Cena PLN/szt. (zespół PL)")}</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="text" inputMode="decimal" style={field}
+                          value={it.unit_price_pln ?? ''} placeholder={fmt(suggestedPln, 2)}
+                          onChange={e => setItem(it._key, { unit_price_pln: e.target.value })} />
+                        {hasManualPln && (
+                          <button type="button" onClick={() => setItem(it._key, { unit_price_pln: null })}
+                            title={t('Wróć do automatycznego przeliczenia wg kursu')}
+                            style={{ padding: '0 9px', borderRadius: 7, border: `1px solid ${C.border}`, background: C.white, color: C.muted, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>↺</button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
+                        {hasManualPln
+                          ? t(`Marża: ${fmt(marginPerUnit, 2)} PLN/szt. · Razem: ${fmt(lineTotalPln, 2)} PLN`)
+                          : t(`Auto wg kursu (bez marży ręcznej) · Razem: ${fmt(lineTotalPln, 2)} PLN`)}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
               <div><label style={label}>{t("CBM (m³)")}</label><input type="text" inputMode="decimal" style={field} value={it.cbm} onChange={e => setItem(it._key, { cbm: e.target.value })} /></div>
               <div><label style={label}>{t("Waga (kg)")}</label><input type="text" inputMode="decimal" style={field} value={it.weight_kg} onChange={e => setItem(it._key, { weight_kg: e.target.value })} /></div>
               <div><label style={label}>{t("Kontener (opc.)")}</label><input style={field} value={it.container_note} onChange={e => setItem(it._key, { container_note: e.target.value })} placeholder="2*40HQ" /></div>
