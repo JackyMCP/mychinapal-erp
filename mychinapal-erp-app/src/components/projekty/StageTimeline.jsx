@@ -1,5 +1,6 @@
 import { useLang } from "../../lib/i18n/LanguageContext";
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
@@ -8,9 +9,10 @@ import { useUI } from '../../lib/ui'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg })
 
-function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHandedOffOrSent }) {
+function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHandedOffOrSent, latestQuoteId }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(status === 'current')
   const [uploading, setUploading] = useState(false)
   const [category, setCategory] = useState(stage.categories[0])
@@ -102,14 +104,25 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteHa
                 // ta pozycja nie wisiała na czerwono mimo realnego postępu.
                 const satisfiedByQuote = cat === 'Wycena' && !docs.length && quoteHandedOffOrSent
                 const done = docs.length > 0 || satisfiedByQuote
+                // Wiersz "Wycena" ma prowadzić wprost do edycji tej wyceny w
+                // module Wyceny (zamiast zmuszać do szukania jej ręcznie na
+                // liście) — dostępne zawsze, gdy dla tego zamówienia w ogóle
+                // istnieje wycena, niezależnie czy checklista jest już na
+                // zielono, czy dopiero czeka.
+                const quoteClickable = cat === 'Wycena' && !!latestQuoteId
                 return (
                   <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12 }}>
+                    <div onClick={quoteClickable ? () => navigate(`/wyceny?quote=${latestQuoteId}`) : undefined}
+                      title={quoteClickable ? t('Kliknij, żeby otworzyć tę wycenę do edycji') : undefined}
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, cursor: quoteClickable ? 'pointer' : 'default' }}>
                       <div style={{ width: 19, height: 19, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, background: done ? C.glight : C.rlight, color: done ? C.green : C.red }}>{done ? '✓' : '✗'}</div>
-                      {t(cat)}
-                      {docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`)
-                        : satisfiedByQuote ? t(" — przekazana do zespołu PL, czeka na doliczenie marży i wysyłkę do klienta")
-                        : t(" — brakuje")}
+                      <span style={{ textDecoration: quoteClickable ? 'none' : undefined }}>
+                        {t(cat)}
+                        {docs.length > 0 ? t(` — wgrano ${docs.length} plik(ów)`)
+                          : satisfiedByQuote ? t(" — przekazana do zespołu PL, czeka na doliczenie marży i wysyłkę do klienta")
+                          : t(" — brakuje")}
+                      </span>
+                      {quoteClickable && <span style={{ color: C.blue, fontWeight: 700 }}>✎ {t('edytuj')}</span>}
                     </div>
                     {docs.length > 0 && (
                       <div style={{ marginTop: 6, marginLeft: 28, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -180,12 +193,17 @@ export default function StageTimeline({ project, documents, onDocumentsChanged, 
   // patrzącą WYŁĄCZNIE na tabelę `documents`, bez świadomości wycen).
   const { doneStages, currentIndex } = computeStageProgress(documents, quotes)
   const quoteHandedOffOrSent = (quotes || []).some(q => q.status === 'do_marzy_pl' || q.status === 'wyslana')
+  // Do przycisku "edytuj" przy wierszu "Wycena" — najświeższa wycena tego
+  // zamówienia (quotes przychodzi posortowane malejąco wg created_at z
+  // Projekty.jsx). Zwykle jest tylko jedna, ale gdyby ktoś utworzył kilka,
+  // otwieramy tę ostatnią.
+  const latestQuoteId = (quotes && quotes.length) ? quotes[0].id : null
 
   return (
     <div>
       {STAGE_DEFS.map(stage => {
         const status = doneStages.has(stage.key) ? 'done' : (stage.key === currentIndex ? 'current' : (currentIndex !== null && stage.key > currentIndex ? 'locked' : 'done'))
-        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} quoteHandedOffOrSent={quoteHandedOffOrSent} />
+        return <StageCard key={stage.key} stage={stage} status={status} docsByCategory={docsByCategory} project={project} onUploaded={onDocumentsChanged} quoteHandedOffOrSent={quoteHandedOffOrSent} latestQuoteId={latestQuoteId} />
       })}
     </div>
   )
