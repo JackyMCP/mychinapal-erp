@@ -11,6 +11,12 @@ import { generateQuotePdf } from './pdf'
 import { parseQuoteExcel } from './excelImport'
 
 const MAX_PHOTOS_PER_ITEM = 6
+// Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
+// edge function generate-quote-from-files (MAX_FILES / MAX_FILE_BYTES tam),
+// żeby użytkownik dostał czytelny komunikat PRZED wysłaniem, a nie dopiero
+// z odpowiedzią funkcji.
+const MAX_AI_FILES = 12
+const MAX_AI_FILE_MB = 8
 
 const blankItem = () => ({
   _key: crypto.randomUUID(), id: null,
@@ -46,6 +52,10 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [sending, setSending] = useState(false)
   const [photoUrls, setPhotoUrls] = useState({})
   const [previewPdfUrl, setPreviewPdfUrl] = useState(null)
+  const [aiFilesOpen, setAiFilesOpen] = useState(false)
+  const [aiFilesList, setAiFilesList] = useState([])
+  const [aiFilesInstruction, setAiFilesInstruction] = useState('')
+  const [aiFilesBusy, setAiFilesBusy] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -176,6 +186,105 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }
     setImporting(false)
   }
+
+  // "Stwórz wycenę z plików (AI)" — użytkownik wgrywa dowolny zestaw plików
+  // (zdjęcia produktów, PDF ze specyfikacją/zdjęciami, notatki tekstowe) i AI
+  // (edge function generate-quote-from-files) wyciąga z nich listę pozycji.
+  // Jeśli któryś z wgranych plików to zdjęcie konkretnej pozycji, AI wskazuje
+  // to (photo_file_indexes) i to zdjęcie wgrywamy do Storage jako photo_paths
+  // tej pozycji — tak samo jak przy imporcie z Excela.
+  const uploadAiPhotoBlob = async (blob, fileName, userId) => {
+    const ext = (blob.type?.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+    const path = `${quote.client_id}/wycena-${quoteId}-${crypto.randomUUID()}-ai-import.${ext}`
+    const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, blob, { contentType: blob.type || 'image/jpeg' })
+    if (upErr) throw upErr
+    await supabase.from('documents').insert({
+      client_id: quote.client_id, project_id: quote.project_id,
+      category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: fileName || 'zdjecie.jpg',
+      uploaded_by: userId, source: 'ai_files_import',
+    })
+    return path
+  }
+
+  const fileToBase64 = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result).split(',')[1] || '')
+    r.onerror = () => reject(new Error(t('Nie udało się odczytać pliku ') + file.name))
+    r.readAsDataURL(file)
+  })
+
+  const handleAiFilesSelected = (fileList) => {
+    const incoming = Array.from(fileList || [])
+    setAiFilesList(prev => {
+      const combined = [...prev]
+      for (const f of incoming) {
+        if (combined.length >= MAX_AI_FILES) { toast.error(t(`Maksymalnie ${MAX_AI_FILES} plików naraz.`)); break }
+        if (f.size > MAX_AI_FILE_MB * 1024 * 1024) { toast.error(t(`Plik "${f.name}" jest za duży (max ${MAX_AI_FILE_MB}MB).`)); continue }
+        combined.push(f)
+      }
+      return combined
+    })
+  }
+  const removeAiFile = (idx) => setAiFilesList(prev => prev.filter((_, i) => i !== idx))
+
+  const handleGenerateFromFiles = async () => {
+    if (!aiFilesList.length) { toast.error(t('Wgraj przynajmniej jeden plik.')); return }
+    setAiFilesBusy(true)
+    try {
+      const filesPayload = await Promise.all(aiFilesList.map(async (f) => ({
+        name: f.name, mimeType: f.type || 'application/octet-stream', base64: await fileToBase64(f),
+      })))
+      const { data, error } = await supabase.functions.invoke('generate-quote-from-files', {
+        body: { files: filesPayload, instruction: aiFilesInstruction },
+      })
+      if (error) throw error
+      if (!data?.items?.length) { toast.error(t('AI nie rozpoznało żadnych pozycji w przesłanych plikach.')); setAiFilesBusy(false); return }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      const readyItems = []
+      let photoFailCount = 0
+      for (const it of data.items) {
+        const photoIdxs = Array.isArray(it.photo_file_indexes) ? it.photo_file_indexes : []
+        const photoPaths = []
+        for (const idx of photoIdxs) {
+          const srcFile = aiFilesList[idx]
+          if (!srcFile || !srcFile.type?.startsWith('image/')) continue
+          try {
+            photoPaths.push(await uploadAiPhotoBlob(srcFile, srcFile.name, user?.id))
+          } catch { photoFailCount++ }
+        }
+        readyItems.push({
+          ...blankItem(),
+          name: it.name || '', specification: it.specification || '',
+          qty: it.qty !== null && it.qty !== undefined && it.qty !== '' ? (toNum(it.qty) || 1) : 1,
+          unit: it.unit || 'szt.',
+          unit_price_cny: it.unit_price_cny !== null && it.unit_price_cny !== undefined ? toNum(it.unit_price_cny) : 0,
+          weight_kg: it.weight_kg !== null && it.weight_kg !== undefined ? it.weight_kg : '',
+          cbm: it.cbm !== null && it.cbm !== undefined ? it.cbm : '',
+          photo_paths: photoPaths,
+        })
+      }
+      const onlyBlank = items.length === 1 && !items[0].name && !items[0].id
+      setItems(prev => [...(onlyBlank ? [] : prev), ...readyItems])
+      setAiFilesOpen(false); setAiFilesList([]); setAiFilesInstruction('')
+      let msg = t(`AI utworzyło ${readyItems.length} pozycji z przesłanych plików — sprawdź i uzupełnij dane przed zapisaniem.`)
+      if (data.notes) msg += ' ' + data.notes
+      toast.success(msg)
+      if (data.warnings?.length) toast.error(data.warnings.join(' '))
+      if (photoFailCount) toast.error(t(`Nie udało się wgrać ${photoFailCount} zdjęć wskazanych przez AI — dodaj je ręcznie.`))
+    } catch (e) {
+      let detail = e?.message || String(e)
+      try {
+        if (e?.context && typeof e.context.json === 'function') {
+          const body = await e.context.json()
+          if (body?.error) detail = body.error
+        }
+      } catch { /* zostaje e.message */ }
+      toast.error(t('Błąd generowania z plików: ') + detail)
+    }
+    setAiFilesBusy(false)
+  }
+
   const removeItem = (key) => {
     const it = items.find(i => i._key === key)
     if (it?.id) setDeletedIds(prev => [...prev, it.id])
@@ -716,9 +825,53 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             {importing ? t('Importowanie…') : t('📥 Importuj z Excela')}
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={importing} onChange={e => handleImportExcel(e.target.files?.[0])} />
           </label>
+          <button onClick={() => setAiFilesOpen(true)}
+            style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.purple}`, background: C.plight, color: C.purple, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            🤖 {t("Stwórz z plików (AI)")}
+          </button>
           <div style={{ fontSize: 9.5, color: C.muted, alignSelf: 'center' }}>{t("Rozpozna kolumny typu Name/Specification/QTY/EXW Unit Price/Volume — resztę uzupełnisz ręcznie.")}</div>
         </div>
       </div>
+
+      {aiFilesOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => !aiFilesBusy && setAiFilesOpen(false)}>
+          <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 520, maxWidth: '94vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 6 }}>🤖 {t("Stwórz pozycje z plików (AI)")}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>
+              {t("Wgraj zdjęcia produktów, PDF ze specyfikacją/cennikiem albo notatki tekstowe — AI utworzy z nich pozycje towaru (nazwa, specyfikacja, ilość) i podepnie rozpoznane zdjęcia do właściwych pozycji.")}
+            </div>
+            <label style={{ display: 'block', padding: '10px 14px', borderRadius: 9, border: `1.5px dashed ${C.purple}`, background: C.plight, color: C.purple, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', textAlign: 'center', marginBottom: 10 }}>
+              + {t("Wybierz pliki")} ({aiFilesList.length}/{MAX_AI_FILES})
+              <input type="file" multiple accept="image/*,.pdf,.txt,.csv" style={{ display: 'none' }} disabled={aiFilesBusy}
+                onChange={e => { handleAiFilesSelected(e.target.files); e.target.value = '' }} />
+            </label>
+            {aiFilesList.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12, maxHeight: 160, overflowY: 'auto' }}>
+                {aiFilesList.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '6px 9px', borderRadius: 7, background: C.bg }}>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.type?.startsWith('image/') ? '🖼️' : f.type === 'application/pdf' ? '📄' : '📎'} {f.name}</span>
+                    <span style={{ color: C.muted }}>{(f.size / 1024 / 1024).toFixed(1)}MB</span>
+                    <span onClick={() => removeAiFile(i)} style={{ color: C.red, cursor: 'pointer', fontWeight: 700 }}>✕</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label style={label}>{t("Dodatkowa instrukcja (opcjonalnie)")}</label>
+            <textarea value={aiFilesInstruction} onChange={e => setAiFilesInstruction(e.target.value)} rows={2}
+              placeholder={t("np. \"to są 3 różne modele domków, każde zdjęcie to inny model\"")}
+              style={{ ...field, resize: 'vertical', fontFamily: 'inherit', marginBottom: 16 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAiFilesOpen(false)} disabled={aiFilesBusy}
+                style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
+              <button onClick={handleGenerateFromFiles} disabled={aiFilesBusy || !aiFilesList.length}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.purple, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (aiFilesBusy || !aiFilesList.length) ? .6 : 1 }}>
+                {aiFilesBusy ? t("Analizuję pliki…") : t("🤖 Generuj pozycje")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={card}>
         <div style={sectionTitle}>💰 {t("Transport, cło i marża (zespół polski)")}</div>
