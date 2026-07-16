@@ -13,6 +13,9 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [category, setCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1] || DOC_CATEGORIES[0])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const fileRef = useRef(null)
 
   const handleUpload = async (file) => {
@@ -62,6 +65,40 @@ export default function ProjectFiles({ project, documents, onChanged }) {
     onChanged && onChanged()
   }
 
+  // Masowe usuwanie — zgłoszone jako potrzebne, gdy w projekcie nazbiera się
+  // dużo plików naraz (np. z powtarzanych prób) i klikanie kosza pojedynczo
+  // za każdym razem z osobnym potwierdzeniem jest zbyt uciążliwe. "Zaznacz
+  // wszystkie" + jedno potwierdzenie na koniec załatwia to w 2 kliknięciach.
+  const toggleSelected = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAll = () => {
+    setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(d => d.id)))
+  }
+  const handleBulkDelete = async () => {
+    if (!selected.size) return
+    if (!await confirm(t(`Usunąć ${selected.size} zaznaczonych plików? Tej operacji nie da się cofnąć.`))) return
+    setBulkDeleting(true)
+    const toDelete = sorted.filter(d => selected.has(d.id))
+    const paths = toDelete.map(d => d.file_path)
+    if (paths.length) await supabase.storage.from('dokumenty').remove(paths)
+    const { data: delRows } = await supabase.from('documents').delete().in('id', toDelete.map(d => d.id)).select('id')
+    const deletedCount = delRows?.length || 0
+    setBulkDeleting(false)
+    setSelected(new Set())
+    setSelectMode(false)
+    if (deletedCount < toDelete.length) {
+      toast.error(t(`Usunięto ${deletedCount} z ${toDelete.length} — reszta to nie Twoje pliki (możesz usuwać tylko własne, chyba że masz rolę Zarządu).`))
+    } else {
+      toast.success(t(`Usunięto ${deletedCount} plików ✓`))
+    }
+    onChanged && onChanged()
+  }
+
   const sorted = [...(documents || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   return (
@@ -72,16 +109,36 @@ export default function ProjectFiles({ project, documents, onChanged }) {
       }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px' }}>📁 {t('Pliki projektu')}</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={category} onChange={e => setCategory(e.target.value)}
-            style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 11, outline: 'none' }}>
-            {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
-          </select>
-          <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => handleUpload(e.target.files?.[0])} />
-          <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            style={{ padding: '7px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: uploading ? .6 : 1 }}>
-            {uploading ? t('Wgrywanie…') : t('+ Wgraj plik')}
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {selectMode ? (
+            <>
+              <span onClick={toggleSelectAll} style={{ fontSize: 11, fontWeight: 600, color: C.blue, cursor: 'pointer' }}>
+                {selected.size === sorted.length ? t('Odznacz wszystkie') : t('Zaznacz wszystkie')}
+              </span>
+              <button onClick={handleBulkDelete} disabled={!selected.size || bulkDeleting}
+                style={{ padding: '7px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: selected.size ? 'pointer' : 'default', background: selected.size ? C.red : C.border, color: '#fff', opacity: bulkDeleting ? .6 : 1 }}>
+                {bulkDeleting ? t('Usuwanie…') : t(`🗑 Usuń zaznaczone (${selected.size})`)}
+              </button>
+              <span onClick={() => { setSelectMode(false); setSelected(new Set()) }} style={{ fontSize: 11, fontWeight: 600, color: C.muted, cursor: 'pointer' }}>{t('Anuluj')}</span>
+            </>
+          ) : (
+            <>
+              {sorted.length > 0 && (
+                <span onClick={() => setSelectMode(true)} style={{ fontSize: 11, fontWeight: 600, color: C.text2, cursor: 'pointer', padding: '6px 9px', borderRadius: 7, border: `1px solid ${C.border}` }}>
+                  {t('Zaznacz i usuń wiele')}
+                </span>
+              )}
+              <select value={category} onChange={e => setCategory(e.target.value)}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 11, outline: 'none' }}>
+                {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
+              </select>
+              <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => handleUpload(e.target.files?.[0])} />
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                style={{ padding: '7px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: uploading ? .6 : 1 }}>
+                {uploading ? t('Wgrywanie…') : t('+ Wgraj plik')}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -90,16 +147,20 @@ export default function ProjectFiles({ project, documents, onChanged }) {
       )}
       {sorted.map(doc => (
         <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.border}` }}>
-          <span onClick={() => handleDownload(doc)} style={{ cursor: 'pointer', fontSize: 17, flexShrink: 0 }}>📎</span>
-          <div onClick={() => handleDownload(doc)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+          {selectMode && (
+            <input type="checkbox" checked={selected.has(doc.id)} onChange={() => toggleSelected(doc.id)}
+              style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+          )}
+          <span onClick={() => selectMode ? toggleSelected(doc.id) : handleDownload(doc)} style={{ cursor: 'pointer', fontSize: 17, flexShrink: 0 }}>📎</span>
+          <div onClick={() => selectMode ? toggleSelected(doc.id) : handleDownload(doc)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
             <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.file_name}</div>
             <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{t(doc.category)} · {new Date(doc.created_at).toLocaleDateString('pl-PL')}{doc.source === 'chat' ? ` · ${t('z czatu')}` : ''}</div>
           </div>
-          <span onClick={(e) => handleDelete(doc, e)} title={t('Usuń plik')}
+          {!selectMode && <span onClick={(e) => handleDelete(doc, e)} title={t('Usuń plik')}
             style={{ fontSize: 13, color: C.muted, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
             onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
-          >🗑</span>
+          >🗑</span>}
         </div>
       ))}
     </div>

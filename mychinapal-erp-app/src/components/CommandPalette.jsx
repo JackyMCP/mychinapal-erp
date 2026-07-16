@@ -58,7 +58,7 @@ export default function CommandPalette() {
       const [clientsRes, projectsRes, docsRes, tasksRes, msgsRes, productsRes] = await Promise.all([
         supabase.from('clients').select('id,name').ilike('name', like).limit(6),
         supabase.from('projects').select('id,order_label,client_id').ilike('order_label', like).limit(6),
-        supabase.from('documents').select('id,file_name,client_id,project_id').ilike('file_name', like).limit(6),
+        supabase.from('documents').select('id,file_name,client_id,project_id').eq('visible_in_files', true).ilike('file_name', like).limit(6),
         supabase.from('tasks').select('id,title,client_id').ilike('title', like).limit(6),
         supabase.from('chat_messages').select('id,channel_id,content,translated_content').or(`content.ilike.${like},translated_content.ilike.${like}`).limit(6),
         supabase.from('products').select('id,name').ilike('name', like).limit(6),

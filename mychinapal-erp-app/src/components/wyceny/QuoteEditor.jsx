@@ -331,7 +331,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
             await supabase.from('documents').insert({
               client_id: quote.client_id, project_id: quote.project_id,
               category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: `excel-${p.name || 'produkt'}.${ext}`,
-              uploaded_by: user?.id, source: 'excel_import',
+              uploaded_by: user?.id, source: 'excel_import', visible_in_files: false,
             })
             photoPaths.push(path)
           } catch { uploadFailCount++ }
@@ -391,7 +391,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     await supabase.from('documents').insert({
       client_id: quote.client_id, project_id: quote.project_id,
       category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: fileName || 'zdjecie.jpg',
-      uploaded_by: userId, source: 'ai_files_import',
+      uploaded_by: userId, source: 'ai_files_import', visible_in_files: false,
     })
     return path
   }
@@ -459,7 +459,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
                 await supabase.from('documents').insert({
                   client_id: quote.client_id, project_id: quote.project_id,
                   category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: `excel-${p.name || 'produkt'}.${ext}`,
-                  uploaded_by: user?.id, source: 'excel_import',
+                  uploaded_by: user?.id, source: 'excel_import', visible_in_files: false,
                 })
                 photoPaths.push(path)
               } catch { photoFailCount++ }
@@ -580,7 +580,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       const { error: docErr } = await supabase.from('documents').insert({
         client_id: quote.client_id, project_id: quote.project_id,
         category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: file.name || 'zdjecie.jpg',
-        uploaded_by: user?.id, source: 'manual',
+        uploaded_by: user?.id, source: 'manual', visible_in_files: false,
       })
       if (docErr) { toast.error(t('Zdjęcie wgrane, ale nie udało się go zarejestrować (podgląd może nie działać): ') + docErr.message) }
       setItem(key, { photo_paths: [...existingPaths, path] })
@@ -842,6 +842,19 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     setVerifyBusy(false)
   }
 
+  // Zdjęcia pozycji wgrywane są do Storage (i dostają wiersz w `documents`,
+  // wymagany przez politykę RLS podglądu) OD RAZU przy dodaniu — ale z flagą
+  // visible_in_files=false, żeby NIE pojawiały się w zakładce "Pliki
+  // projektu" jako draft podczas samego tworzenia wyceny. Dopiero przy
+  // JAWNEJ akcji użytkownika (kliknięcie "Zapisz", "Prześlij do zespołu PL"
+  // albo "Wyślij do klienta" — NIE przy cichym autozapisie co 1.2s) zdjęcia
+  // faktycznie użyte w pozycjach stają się widoczne jako pliki projektu.
+  const markPhotosVisibleInFiles = async () => {
+    const paths = [...new Set(items.flatMap(it => it.photo_paths || []).filter(Boolean))]
+    if (!paths.length) return
+    await supabase.from('documents').update({ visible_in_files: true }).in('file_path', paths)
+  }
+
   const handleSave = async (silent = false) => {
     setSaving(true)
     const { error: qErr } = await supabase.from('quotes').update({
@@ -886,6 +899,9 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         if (data) { skipNextAutosave.current = true; setItems(prev => prev.map(p => p._key === it._key ? { ...p, id: data.id } : p)) }
       }
     }
+    // Tylko przy JAWNYM kliknięciu "Zapisz" (nie przy cichym autozapisie)
+    // zdjęcia pozycji stają się widoczne w "Plikach projektu".
+    if (!silent) await markPhotosVisibleInFiles()
     setSaving(false)
     if (!silent) toast.success(t('Wycena zapisana ✓'))
     return true
@@ -933,6 +949,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)
     if (error) { toast.error(t('Nie udało się przesłać: ') + error.message); return }
+    await markPhotosVisibleInFiles()
     // Karty w Bazie produktów (Magazyn) mają istnieć od razu, jak tylko
     // zespół chiński skończy wycenę i przekaże ją dalej — nie dopiero po
     // wysłaniu do klienta (to mogło być tygodnie później). Najlepszy
@@ -1160,6 +1177,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       })
       const { error: sendErr } = await supabase.from('quotes').update({ status: 'wyslana', sent_at: new Date().toISOString(), pdf_path: pdfPath }).eq('id', quoteId)
       if (sendErr) throw sendErr
+      await markPhotosVisibleInFiles()
       await syncQuoteItemsToProductCatalog()
       toast.success(t('Wycena wysłana ✓ Etap „Wpłata klienta na towar” został odblokowany.'))
       load(); onChanged && onChanged()

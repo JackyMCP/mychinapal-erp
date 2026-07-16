@@ -92,7 +92,7 @@ export default function Klienci() {
     const cid = id || selectedId
     if (!cid) { setDocuments([]); setContacts([]); setTasks([]); setClientQuotes([]); return }
     const [docRes, contactRes, taskRes, quotesRes] = await Promise.all([
-      supabase.from('documents').select('*').eq('client_id', cid).order('created_at', { ascending: false }),
+      supabase.from('documents').select('*').eq('client_id', cid).eq('visible_in_files', true).order('created_at', { ascending: false }),
       supabase.from('client_contacts').select('*').eq('client_id', cid).order('created_at'),
       supabase.from('tasks').select('*').eq('client_id', cid).order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('quotes').select('project_id, status').eq('client_id', cid),

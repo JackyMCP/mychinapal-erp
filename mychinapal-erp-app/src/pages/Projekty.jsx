@@ -43,7 +43,7 @@ export default function Projekty() {
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('clients').select('id,name'),
       supabase.from('v_marza_zlecenie').select('*'),
-      supabase.from('documents').select('*'),
+      supabase.from('documents').select('*').eq('visible_in_files', true),
       supabase.from('quotes').select('id, project_id, status, created_at').order('created_at', { ascending: false }),
     ])
     setProjects(prRes.data || [])

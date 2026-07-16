@@ -60,7 +60,7 @@ export default function Dashboard() {
     // reguły co w panelu Zamówienia, żeby etap na Dashboardzie zawsze zgadzał się z realnym)
     if (myActiveProjects.length > 0) {
       const [{ data: docsData }, { data: quotesData }] = await Promise.all([
-        supabase.from('documents').select('project_id, category').in('project_id', myActiveProjects.map(p => p.id)),
+        supabase.from('documents').select('project_id, category').eq('visible_in_files', true).in('project_id', myActiveProjects.map(p => p.id)),
         supabase.from('quotes').select('project_id, status').in('project_id', myActiveProjects.map(p => p.id)),
       ])
       const docsByProject = {}
