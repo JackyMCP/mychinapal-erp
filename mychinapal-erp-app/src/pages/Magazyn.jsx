@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { C } from '../lib/theme'
 import CountUp from '../components/ui/CountUp'
 import TabKartoteka from '../components/magazyn/TabKartoteka'
+import TabBazaProduktow from '../components/magazyn/TabBazaProduktow'
 import TabDokumenty from '../components/magazyn/TabDokumenty'
 import TabNowy from '../components/magazyn/TabNowy'
 import TabFabryka from '../components/magazyn/TabFabryka'
@@ -13,6 +14,7 @@ import CompanyFlagSwitch from '../components/CompanyFlagSwitch'
 
 const TABS = [
   { key: 'kartoteka', label: 'Kartoteka towarów', icon: '📋' },
+  { key: 'baza', label: 'Baza produktów', icon: '🗂️' },
   { key: 'dokumenty', label: 'Dokumenty magazynowe (PZ/WZ)', icon: '🔁' },
   { key: 'fabryka', label: 'Fabryka', icon: '🏭' },
   { key: 'nowy', label: 'Nowy towar / przyjęcie', icon: '➕' },
@@ -120,6 +122,7 @@ export default function Magazyn() {
         </div>
 
         {tab === 'kartoteka' && <TabKartoteka products={companyProducts} loading={loading} onChanged={loadAll} currencyLabel={currencyLabel} />}
+        {tab === 'baza' && <TabBazaProduktow products={companyProducts} loading={loading} onChanged={loadAll} currencyLabel={currencyLabel} company={company} />}
         {tab === 'dokumenty' && <TabDokumenty docs={companyDocs} loading={loading} />}
         {tab === 'fabryka' && <TabFabryka projects={projects} goClient={(clientId) => clientId && navigate(`/klienci?client=${clientId}`)} />}
         {tab === 'nowy' && <TabNowy products={companyProducts} projects={projects} onChanged={loadAll} onGoTab={setTab} company={company}

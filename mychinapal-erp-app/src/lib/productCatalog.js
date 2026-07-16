@@ -20,6 +20,15 @@ async function copyQuotePhotoToProductsBucket(quotePhotoPath) {
   }
 }
 
+// Kopiuje WSZYSTKIE zdjęcia pozycji (nie tylko okładkę) do bucketu 'produkty'
+// — karta w Bazie produktów ma pokazywać całą galerię, tak jak w wycenie.
+async function copyAllQuotePhotos(paths) {
+  const results = await Promise.all((paths || []).map(p => copyQuotePhotoToProductsBucket(p)))
+  return results.filter(Boolean)
+}
+
+const numOrNull = (v) => (v === '' || v === null || v === undefined ? null : Number(v))
+
 // Czy towar o takiej nazwie (bez rozróżniania wielkości liter) już istnieje
 // w kartotece danej spółki — żeby nie dublować kart przy każdej synchronizacji.
 export async function findExistingProductByName(name, company = 'PL') {
@@ -39,11 +48,20 @@ export async function createProductFromQuoteItem(item, { quoteNumber, company = 
   const existing = await findExistingProductByName(name, company)
   if (existing) return { data: existing, alreadyExisted: true }
 
-  const photo_path = await copyQuotePhotoToProductsBucket(item.photo_paths?.[0] || item.photo_path)
+  const sourcePaths = (item.photo_paths?.length ? item.photo_paths : (item.photo_path ? [item.photo_path] : []))
+  const photo_paths = await copyAllQuotePhotos(sourcePaths)
   const code = `WYC-${String(quoteNumber || 'X').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 20)}-${Math.random().toString(36).slice(2, 6)}`
   const { data, error } = await supabase.from('products').insert({
     code, name, unit: item.unit || 'szt.', is_service: false,
-    photo_path, source: 'wycena', created_by: userId || null, company,
+    // Karta w Bazie produktów ma od razu mieć wszystkie dane z pozycji
+    // wyceny do dalszej edycji — nie tylko nazwę/zdjęcie jak wcześniej.
+    specification: item.specification || null,
+    hs_code: item.hs_code || null,
+    duty_rate_percent: numOrNull(item.duty_rate_percent),
+    weight_kg: numOrNull(item.weight_kg),
+    cbm: numOrNull(item.cbm),
+    photo_path: photo_paths[0] || null, photo_paths,
+    source: 'wycena', created_by: userId || null, company,
   }).select().single()
   return { data, error }
 }
@@ -67,16 +85,25 @@ export async function createProductsFromQuoteItems(items, { quoteNumber, company
     candidates.push(it)
   }
   if (!candidates.length) return { inserted: 0 }
-  const rows = await Promise.all(candidates.map(async (it, idx) => ({
-    code: `WYC-${String(quoteNumber || 'X').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 20)}-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
-    name: it.name.trim(),
-    unit: it.unit || 'szt.',
-    is_service: false,
-    photo_path: await copyQuotePhotoToProductsBucket(it.photo_paths?.[0] || it.photo_path),
-    source: 'wycena',
-    created_by: userId || null,
-    company,
-  })))
+  const rows = await Promise.all(candidates.map(async (it, idx) => {
+    const sourcePaths = (it.photo_paths?.length ? it.photo_paths : (it.photo_path ? [it.photo_path] : []))
+    const photo_paths = await copyAllQuotePhotos(sourcePaths)
+    return {
+      code: `WYC-${String(quoteNumber || 'X').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 20)}-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
+      name: it.name.trim(),
+      unit: it.unit || 'szt.',
+      is_service: false,
+      specification: it.specification || null,
+      hs_code: it.hs_code || null,
+      duty_rate_percent: numOrNull(it.duty_rate_percent),
+      weight_kg: numOrNull(it.weight_kg),
+      cbm: numOrNull(it.cbm),
+      photo_path: photo_paths[0] || null, photo_paths,
+      source: 'wycena',
+      created_by: userId || null,
+      company,
+    }
+  }))
   const { error } = await supabase.from('products').insert(rows)
   return { inserted: error ? 0 : rows.length, error }
 }
