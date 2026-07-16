@@ -19,7 +19,6 @@
     "@tiptap/react": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
     "exceljs": "^4.4.0",
-    "html-docx-js-typescript": "^0.1.5",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "react": "^18.3.1",

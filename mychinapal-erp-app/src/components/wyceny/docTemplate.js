@@ -1,19 +1,18 @@
 import { fetchAsDataUrl } from './pdf'
 
-// Generator startowej treści dokumentu wyceny (edytowalnego dalej ręcznie w
-// przeglądarce, patrz QuoteWordEditor.jsx) — zastępuje dawny sztywny
-// generator PDF (pdf.js) i wizualny edytor "jak Canva" (QuoteLayoutEditor).
-// Zwraca gotowy, markowy HTML (granatowy nagłówek z logo + złotą poświatą,
-// karty pozycji ze zdjęciem/nazwą/specyfikacją/ceną w PLN — BEZ ceny CNY i
-// marży, które są tylko wewnętrzne — podsumowanie netto/VAT/brutto, warunki
-// i dane bankowe). Obrazki jako data:URL (zdjęcia pozycji + logo), żeby
-// dokument był w pełni samodzielny — działa identycznie w edytorze,
-// eksporcie do PDF (html2canvas) i eksporcie do Word (html-docx-js).
-//
-// UWAGA: gradienty/poświata w tle są dekoracją widoczną w przeglądarce i w
-// eksporcie do PDF (html2canvas renderuje CSS). Format .docx (Word) nie
-// wspiera gradientów CSS — przy eksporcie do Word nagłówek wychodzi jako
-// jednolity granat zamiast poświaty, reszta wygląda tak samo.
+// Dokument wyceny — PODGLĄD jest zawsze renderowany BEZPOŚREDNIO z danych
+// formularza (ta funkcja, czysta i synchroniczna) i wyświetlany przez
+// dangerouslySetInnerHTML — NIGDY nie przechodzi przez edytor tekstu, więc
+// nigdy się nie może "połamać". Edytowalna jest TYLKO sekcja
+// warunków/dodatkowej treści (notesHtml, z prostego edytora TipTap bez
+// tabel) — ona jedna wstawia się do szablonu jako gotowy fragment HTML.
+// Wcześniejsza wersja ładowała CAŁY ten szablon (tabele, gradienty w tle) do
+// edytora rich-text — schemat ProseMirror nie obsługuje dowolnego HTML
+// (tabele bez rozszerzenia Table, atrybuty style poza schematem są
+// odrzucane), więc układ wychodził połamany/nieczytelny. Stąd ten podział.
+export async function loadLogoDataUrl() {
+  return fetchAsDataUrl('/logo-white.png')
+}
 
 const NAVY = '#0A1628'
 const NAVY2 = '#132A4A'
@@ -26,9 +25,15 @@ export function fmtPlnHtml(n) {
   return Number(n || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export async function buildQuoteDocHtml({ quote, client, contact, company, rows, totals, photoDataUrls = {} }) {
-  const logo = await fetchAsDataUrl('/logo-white.png')
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
 
+// Czysta, synchroniczna funkcja renderująca — używana zarówno przez żywy
+// podgląd na ekranie (useMemo, przeliczany przy każdej zmianie formularza)
+// jak i przez eksport do PDF (te same dane, tylko zdjęcia/logo jako base64
+// zamiast podpisanych URL-i, żeby PDF był samodzielny).
+export function renderQuoteDocHtml({ quote, client, contact, company, rows, totals, photoDataUrls = {}, logoDataUrl, notesHtml }) {
   const sellerLines = [
     company?.company_name || 'MyChinaPal Sp. z o.o.',
     company?.company_address || '',
@@ -53,7 +58,7 @@ export async function buildQuoteDocHtml({ quote, client, contact, company, rows,
     if (r.production_days) metaBits.push(`Produkcja: ${r.production_days} dni`)
     if (r.weight_kg) metaBits.push(`Waga: ${r.weight_kg} kg`)
     if (r.cbm) metaBits.push(`CBM: ${r.cbm} m³`)
-    else if (r.container_note) metaBits.push(r.container_note)
+    else if (r.container_note) metaBits.push(escapeHtml(r.container_note))
     return `
       <table style="width:100%; border-collapse:collapse; margin-bottom:14px; border:1px solid #E1E3E7; border-radius:10px;">
         <tr>
@@ -89,17 +94,17 @@ export async function buildQuoteDocHtml({ quote, client, contact, company, rows,
   return `
     <div style="position:relative; overflow:hidden; border-radius:14px; padding:34px 30px; margin-bottom:24px; color:#fff; background:radial-gradient(circle at 85% 0%, ${GOLD_LIGHT}33, transparent 60%), linear-gradient(120deg, ${NAVY} 0%, ${NAVY2} 55%, ${NAVY} 100%);">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        ${logo ? `<img src="${logo}" style="height:34px;" />` : `<div style="font-size:20px; font-weight:800;">MyChinaPal</div>`}
+        ${logoDataUrl ? `<img src="${logoDataUrl}" style="height:34px;" />` : `<div style="font-size:20px; font-weight:800;">MyChinaPal</div>`}
         <div style="text-align:right;">
           <div style="font-size:19px; font-weight:800; letter-spacing:.04em;">WYCENA</div>
-          <div style="font-size:11.5px; color:${GOLD_LIGHT}; margin-top:2px;">${quote.quote_number || ''}</div>
+          <div style="font-size:11.5px; color:${GOLD_LIGHT}; margin-top:2px;">${escapeHtml(quote?.quote_number || '')}</div>
         </div>
       </div>
     </div>
 
     <div style="display:flex; justify-content:space-between; font-size:11px; color:${MUTED}; margin-bottom:18px;">
-      <span>Data: ${quote.created_at ? new Date(quote.created_at).toLocaleDateString('pl-PL') : ''}</span>
-      ${quote.valid_until ? `<span>Ważna do: ${new Date(quote.valid_until).toLocaleDateString('pl-PL')}</span>` : ''}
+      <span>Data: ${quote?.created_at ? new Date(quote.created_at).toLocaleDateString('pl-PL') : ''}</span>
+      ${quote?.valid_until ? `<span>Ważna do: ${new Date(quote.valid_until).toLocaleDateString('pl-PL')}</span>` : ''}
     </div>
 
     <table style="width:100%; border-collapse:collapse; margin-bottom:22px;">
@@ -126,15 +131,11 @@ export async function buildQuoteDocHtml({ quote, client, contact, company, rows,
       <div style="display:flex; justify-content:space-between; font-size:15px; font-weight:800;"><span>RAZEM BRUTTO:</span><span style="color:${GOLD};">${fmtPlnHtml(totals.finalPriceGross)} PLN</span></div>
     </div>
 
-    ${quote.notes ? `<div style="margin-top:22px;">
-      <div style="font-size:11px; font-weight:700; color:${NAVY}; margin-bottom:4px;">Objaśnienia</div>
-      <div style="font-size:10.5px; color:${MUTED}; white-space:pre-line;">${escapeHtml(quote.notes)}</div>
+    ${notesHtml && notesHtml !== '<p></p>' ? `<div style="margin-top:22px;">
+      <div style="font-size:11px; font-weight:700; color:${NAVY}; margin-bottom:6px;">Warunki</div>
+      <div style="font-size:10.5px; color:${TEXT};">${notesHtml}</div>
     </div>` : ''}
 
     ${company?.company_bank_account ? `<div style="margin-top:14px; font-size:10.5px; color:${MUTED};">Nr konta: ${escapeHtml(company.company_bank_account)}</div>` : ''}
   `
-}
-
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }

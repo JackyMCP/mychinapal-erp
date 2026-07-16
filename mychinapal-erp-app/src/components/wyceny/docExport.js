@@ -1,6 +1,5 @@
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { asBlob } from 'html-docx-js-typescript'
 
 // Renderuje podaną treść HTML (dokument wyceny z QuoteWordEditor) do PDF —
 // zastępuje dawny generator pdf.js/pdfFromLayout.js, który rysował PDF
@@ -42,14 +41,4 @@ export async function exportHtmlToPdfBlob(html) {
     document.body.removeChild(container)
   }
   return blob
-}
-
-// Konwertuje treść dokumentu do prawdziwego pliku Word (.docx), do pobrania
-// i dalszej edycji poza aplikacją. Uwaga: format .docx nie wspiera
-// gradientów CSS (poświata w nagłówku) — wychodzi jako jednolity granat,
-// reszta (zdjęcia, tekst, kolory, pogrubienia) zachowuje się poprawnie.
-export async function exportHtmlToDocxBlob(html) {
-  const fullDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`
-  const result = await asBlob(fullDoc)
-  return result
 }

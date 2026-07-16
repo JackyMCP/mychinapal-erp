@@ -10,9 +10,9 @@ import { describeHsCode } from './hsChapters'
 import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
 import { createProductsFromQuoteItems } from '../../lib/productCatalog'
-import { buildQuoteDocHtml } from './docTemplate'
+import { renderQuoteDocHtml, loadLogoDataUrl } from './docTemplate'
 import QuoteWordEditor from './QuoteWordEditor'
-import { exportHtmlToPdfBlob, exportHtmlToDocxBlob } from './docExport'
+import { exportHtmlToPdfBlob } from './docExport'
 
 const MAX_PHOTOS_PER_ITEM = 6
 // Limity dla "Stwórz z plików (AI)" — muszą być spójne z limitami po stronie
@@ -32,6 +32,8 @@ const blankItem = () => ({
 
 const CURRENCIES = ['PLN', 'CNY', 'USD', 'EUR']
 const UNIT_OPTIONS = ['szt.', 'zestaw', 'kpl.', 'para', 'opak.', 'm²', 'm³', 'kg', 'mb']
+
+const escapeHtmlLocal = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
 const field = { border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 9px', fontSize: 11.5, width: '100%', outline: 'none', boxSizing: 'border-box' }
 const label = { fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.03em', display: 'block', marginBottom: 4 }
@@ -68,16 +70,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [aiFilesList, setAiFilesList] = useState([])
   const [aiFilesInstruction, setAiFilesInstruction] = useState('')
   const [aiFilesBusy, setAiFilesBusy] = useState(false)
-  // Dokument wyceny — od teraz KOŃCOWY dokument dla klienta to ten HTML,
-  // edytowalny prawdziwym edytorem tekstu (QuoteWordEditor, jak Word Online),
-  // a nie sztywny generator PDF ani dawny wizualny edytor "jak Canva".
-  // "Wygeneruj z formularza" tworzy startową treść z pozycji/cen/warunków;
-  // od tego momentu to TA treść (nie formularz) jest źródłem prawdy, dopóki
-  // ktoś nie wygeneruje ponownie (z potwierdzeniem nadpisania).
-  const [docHtml, setDocHtml] = useState('')
-  const [docKey, setDocKey] = useState(0)
-  const [docGenerating, setDocGenerating] = useState(false)
-  const [exportingDocx, setExportingDocx] = useState(false)
+  // Dokument wyceny — ŻYWY PODGLĄD (patrz previewHtml niżej) renderuje się
+  // ZAWSZE bezpośrednio z formularza (pozycje, ceny, zdjęcia) i NIGDY nie
+  // przechodzi przez edytor tekstu — dzięki temu nigdy się nie może
+  // "połamać" (wcześniejsza wersja ładowała cały ten HTML do edytora
+  // rich-text, którego schemat nie obsługuje tabel/dowolnych stylów, i psuł
+  // układ). Edytowalna jest TYLKO sekcja "Warunki" (notesHtml) — prosty
+  // tekst sformatowany w QuoteWordEditor, wstawiany do szablonu w
+  // wyznaczonym miejscu. To ta sama treść trafia do PDF wysyłanego klientowi.
+  const [notesHtml, setNotesHtml] = useState('')
+  const [notesKey, setNotesKey] = useState(0)
+  const [logoDataUrl, setLogoDataUrl] = useState(null)
+  useEffect(() => { loadLogoDataUrl().then(setLogoDataUrl) }, [])
   // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
   // zatwierdzenia (albo anulowania) przez użytkownika, zanim cokolwiek z
   // nich trafi do wyceny (zdjęcia jeszcze NIE są wgrane do Storage na tym
@@ -125,8 +129,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       setQuote(prev => ({ ...prev, bank_commission_percent: Number(companySettings.bank_commission_percent) }))
     }
     setDeletedIds([])
-    setDocHtml(q.doc_html || '')
-    setDocKey(k => k + 1)
+    // doc_html przechowuje treść edytora "Warunki" (nie cały dokument — patrz
+    // komentarz przy stanie notesHtml). Stare wyceny mają tylko zwykły tekst
+    // w quote.notes (sprzed tej zmiany) — jeśli nie ma jeszcze doc_html,
+    // startujemy edytor od tamtej treści, żeby nic nie zniknęło.
+    setNotesHtml(q.doc_html || (q.notes ? `<p>${escapeHtmlLocal(q.notes)}</p>` : ''))
+    setNotesKey(k => k + 1)
     setLoading(false)
     // Świeżo wczytane dane NIE mają wywoływać autozapisu (to nie jest
     // zmiana wprowadzona przez użytkownika) — dopiero KOLEJNA zmiana stanu
@@ -809,7 +817,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       bank_commission_percent: quote.bank_commission_percent === '' || quote.bank_commission_percent === null || quote.bank_commission_percent === undefined ? null : toNum(quote.bank_commission_percent),
       transport_currency: quote.transport_currency || 'CNY',
       transport_rate: quote.transport_rate || null, transport_rate_date: quote.transport_rate_date || null,
-      doc_html: docHtml || null,
+      doc_html: notesHtml || null,
     }).eq('id', quoteId)
     if (qErr) { setSaving(false); toast.error(t('Nie udało się zapisać wyceny: ') + qErr.message); return false }
 
@@ -864,7 +872,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     }, 1200)
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quote, items, docHtml])
+  }, [quote, items, notesHtml])
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
@@ -948,58 +956,39 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     return photoDataUrls
   }
 
-  // Buduje startową treść dokumentu wyceny z bieżącego formularza (pozycje,
-  // zdjęcia, ceny w PLN, warunki) — od tego momentu to TA treść (edytowalna
-  // dalej ręcznie w QuoteWordEditor poniżej) jest źródłem prawdy dla
-  // dokumentu, dopóki ktoś nie wygeneruje ponownie. Jeśli dokument już ma
-  // jakąś treść, pytamy o potwierdzenie (nadpisze ręczne zmiany).
-  const handleGenerateDoc = async () => {
-    const hasContent = docHtml && docHtml.trim() && docHtml !== '<p></p>'
-    if (hasContent) {
-      if (!await confirm(t('Wygenerować dokument od nowa z formularza? Nadpisze wszystkie ręczne zmiany wprowadzone w edytorze tekstu poniżej.'))) return
+  // Zdjęcia do ŻYWEGO podglądu na ekranie — reużywamy już wczytane podpisane
+  // URL-e (photoUrls, keyowane po ścieżce pliku) zamiast ściągać/kodować je
+  // ponownie do base64 — podgląd ma się przeliczać natychmiast przy każdej
+  // zmianie formularza, bez czekania na sieć.
+  const previewPhotoUrls = useMemo(() => {
+    const map = {}
+    for (const it of items) {
+      const urls = (it.photo_paths || []).map(p => photoUrls[p]).filter(Boolean)
+      if (urls.length) map[it._key] = urls
     }
-    setDocGenerating(true)
-    try {
-      const photoDataUrls = await buildPhotoDataUrls()
-      const html = await buildQuoteDocHtml({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
-      setDocHtml(html)
-      setDocKey(k => k + 1)
-      await supabase.from('quotes').update({ doc_html: html, doc_generated_at: new Date().toISOString() }).eq('id', quoteId)
-      toast.success(t('Dokument wygenerowany z formularza ✓ Możesz go teraz dowolnie edytować poniżej.'))
-    } catch (e) {
-      toast.error(t('Nie udało się wygenerować dokumentu: ') + (e.message || e))
-    }
-    setDocGenerating(false)
-  }
+    return map
+  }, [items, photoUrls])
 
-  const handleDownloadDocx = async () => {
-    if (!docHtml || !docHtml.trim() || docHtml === '<p></p>') { toast.error(t('Najpierw wygeneruj dokument z formularza.')); return }
-    setExportingDocx(true)
-    try {
-      const blob = await exportHtmlToDocxBlob(docHtml)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `${quote.quote_number || 'wycena'}.docx`
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 4000)
-    } catch (e) {
-      toast.error(t('Nie udało się wygenerować pliku Word: ') + (e.message || e))
-    }
-    setExportingDocx(false)
-  }
+  // Żywy podgląd całego dokumentu — renderowany BEZPOŚREDNIO z formularza
+  // (pozycje, ceny PLN, zdjęcia) przy każdej zmianie, i wyświetlany przez
+  // dangerouslySetInnerHTML (patrz render niżej). Nigdy nie przechodzi przez
+  // edytor tekstu, więc nigdy się nie "psuje" — to właśnie to, co zobaczy
+  // klient (1:1, po wyeksportowaniu do PDF).
+  const previewHtml = useMemo(() => renderQuoteDocHtml({
+    quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
+    photoDataUrls: previewPhotoUrls, logoDataUrl, notesHtml,
+  }), [quote, client, contact, company, totalsCalc, previewPhotoUrls, logoDataUrl, notesHtml])
 
-  // Jeśli dokument jeszcze nie istnieje (nikt nie kliknął "Wygeneruj z
-  // formularza"), generujemy go automatycznie w locie — żeby "Podgląd PDF"
-  // i "Wyślij do klienta" zawsze miały z czego zrobić plik, nawet jeśli
-  // użytkownik pominął ten krok.
-  const ensureDocHtml = async () => {
-    if (docHtml && docHtml.trim() && docHtml !== '<p></p>') return docHtml
+  // Do PDF (podgląd/wysyłka do klienta) potrzebujemy samodzielnego HTML-a —
+  // zdjęcia jako base64 (nie podpisane URL-e, które wygasają) — dlatego tu
+  // budujemy osobną wersję z buildPhotoDataUrls, ale tym samym rendererem
+  // (renderQuoteDocHtml), więc wygląd jest identyczny jak w żywym podglądzie.
+  const buildExportHtml = async () => {
     const photoDataUrls = await buildPhotoDataUrls()
-    const html = await buildQuoteDocHtml({ quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals, photoDataUrls })
-    setDocHtml(html)
-    setDocKey(k => k + 1)
-    await supabase.from('quotes').update({ doc_html: html, doc_generated_at: new Date().toISOString() }).eq('id', quoteId)
-    return html
+    return renderQuoteDocHtml({
+      quote, client, contact, company, rows: totalsCalc.rows, totals: totalsCalc.totals,
+      photoDataUrls, logoDataUrl, notesHtml,
+    })
   }
 
   const handlePreviewPdf = async () => {
@@ -1013,7 +1002,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     const win = window.open('', '_blank')
     setSending('preview')
     try {
-      const html = await ensureDocHtml()
+      const html = await buildExportHtml()
       const blob = await exportHtmlToPdfBlob(html)
       const url = URL.createObjectURL(blob)
       setPreviewPdfUrl(url)
@@ -1087,7 +1076,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     if (!ok) return
     setSending(true)
     try {
-      const html = await ensureDocHtml()
+      const html = await buildExportHtml()
       const blob = await exportHtmlToPdfBlob(html)
       const pdfPath = `${quote.client_id}/wycena-${quote.quote_number || quoteId}.pdf`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(pdfPath, blob, { upsert: true, contentType: 'application/pdf' })
@@ -1610,27 +1599,19 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       </div>
 
       <div style={card}>
-        <div style={sectionTitle}>📄 {t("Objaśnienia na wycenie (widoczne dla klienta)")}</div>
-        <textarea value={quote.notes || ''} onChange={e => setQ({ notes: e.target.value })} rows={6}
-          style={{ ...field, resize: 'vertical', fontFamily: 'inherit' }} />
+        <div style={sectionTitle}>📄 {t("Warunki / dodatkowa treść (widoczne na wycenie, edytowalne)")}</div>
+        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10 }}>
+          {t("To jedyna ręcznie edytowalna część dokumentu — reszta (pozycje, zdjęcia, ceny, podsumowanie) układa się automatycznie z formularza powyżej, żeby nic się nigdy nie \"połamało\". Tutaj możesz dopisać/sformatować warunki, terminy płatności, dodatkowe uwagi itp.")}
+        </div>
+        <QuoteWordEditor key={notesKey} html={notesHtml} onChange={setNotesHtml} />
       </div>
 
       <div style={card}>
-        <div style={sectionTitle}>📝 {t("Dokument wyceny (edytowalny, jak Word)")}</div>
-        <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 12 }}>
-          {t("Wygeneruj startową treść z formularza (pozycje, zdjęcia, ceny PLN, warunki), a potem dowolnie dopisz/przeformatuj tekst poniżej — to ta treść trafia do PDF wysyłanego klientowi i do pliku Word.")}
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <button onClick={handleGenerateDoc} disabled={docGenerating}
-            style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #B48C28, #E4C158)', color: '#0A1628', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', opacity: docGenerating ? .7 : 1 }}>
-            {docGenerating ? t('Generowanie…') : (docHtml && docHtml !== '<p></p>' ? t('🧾 Wygeneruj ponownie z formularza') : t('🧾 Wygeneruj z formularza'))}
-          </button>
-          <button onClick={handleDownloadDocx} disabled={exportingDocx}
-            style={{ padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, color: C.text2, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', opacity: exportingDocx ? .6 : 1 }}>
-            {exportingDocx ? t('Przygotowywanie…') : t('⬇ Pobierz jako Word (.docx)')}
-          </button>
-        </div>
-        <QuoteWordEditor key={docKey} html={docHtml} onChange={setDocHtml} />
+        <div style={sectionTitle}>👁 {t("Podgląd dokumentu (dokładnie to trafi do klienta)")}</div>
+        <div style={{
+          border: `1px solid ${C.border}`, borderRadius: 10, padding: 24, background: '#fff',
+          maxHeight: 640, overflowY: 'auto',
+        }} dangerouslySetInnerHTML={{ __html: previewHtml }} />
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
