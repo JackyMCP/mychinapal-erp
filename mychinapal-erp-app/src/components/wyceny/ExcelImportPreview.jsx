@@ -14,9 +14,42 @@ const field = { border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 
 export default function ExcelImportPreview({ rows, fileName, onConfirm, onCancel }) {
   const { t } = useLang()
   const [localRows, setLocalRows] = useState(() => rows.map((r, i) => ({ ...r, _pKey: i })))
+  // Zdjęcie przeciągane w danym momencie (skąd) — żeby drop na innej pozycji
+  // wiedział, co i skąd przenieść. Parser dopasowuje zdjęcia do wierszy "na
+  // wyczucie" wg pozycji w pliku Excel i czasem się myli o wiersz — to jedyny
+  // w pełni niezawodny sposób, żeby dało się to poprawić ręcznie.
+  const [dragSrc, setDragSrc] = useState(null) // { key, idx }
 
   const patchRow = (key, patch) => setLocalRows(prev => prev.map(r => r._pKey === key ? { ...r, ...patch } : r))
   const removeRow = (key) => setLocalRows(prev => prev.filter(r => r._pKey !== key))
+
+  const movePhoto = (fromKey, idx, toKey) => {
+    if (fromKey === toKey) return
+    setLocalRows(prev => {
+      const fromRow = prev.find(r => r._pKey === fromKey)
+      const moved = fromRow?._photoDataUrls?.[idx]
+      if (moved === undefined) return prev
+      return prev.map(r => {
+        if (r._pKey === fromKey) {
+          const next = (r._photoDataUrls || []).slice()
+          next.splice(idx, 1)
+          return { ...r, _photoDataUrls: next }
+        }
+        if (r._pKey === toKey) {
+          return { ...r, _photoDataUrls: [...(r._photoDataUrls || []), moved] }
+        }
+        return r
+      })
+    })
+  }
+  const removePhoto = (key, idx) => setLocalRows(prev => prev.map(r => (
+    r._pKey === key ? { ...r, _photoDataUrls: (r._photoDataUrls || []).filter((_, i) => i !== idx) } : r
+  )))
+  const handleDropOnRow = (e, toKey) => {
+    e.preventDefault()
+    if (dragSrc) movePhoto(dragSrc.key, dragSrc.idx, toKey)
+    setDragSrc(null)
+  }
 
   const handleConfirm = () => {
     // _pKey był tylko pomocniczym kluczem do edycji na tym ekranie — usuwamy
@@ -32,6 +65,9 @@ export default function ExcelImportPreview({ rows, fileName, onConfirm, onCancel
           <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>
             {t("Sprawdź czy nazwy, zdjęcia, ilości i ceny są przypisane do właściwych wierszy — parser dopasowuje kolumny i zdjęcia automatycznie i czasem się myli. Popraw, usuń błędny wiersz albo anuluj cały import.")}
           </div>
+          <div style={{ fontSize: 10.5, color: C.blue, marginTop: 4, fontWeight: 600 }}>
+            {t("🖐 Przeciągnij zdjęcie na inną pozycję, żeby je tam przenieść — jeśli parser podpiął je do złego wiersza.")}
+          </div>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1, marginTop: 12, marginRight: -6, paddingRight: 6 }}>
@@ -39,11 +75,28 @@ export default function ExcelImportPreview({ rows, fileName, onConfirm, onCancel
             <div style={{ textAlign: 'center', padding: 30, color: C.muted, fontSize: 12 }}>{t("Wszystkie wiersze zostały usunięte z podglądu — cofnij albo anuluj import.")}</div>
           )}
           {localRows.map((r) => (
-            <div key={r._pKey} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 4px', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ width: 46, height: 46, borderRadius: 8, flexShrink: 0, background: C.bg, border: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {r._photoDataUrls?.[0]
-                  ? <img src={r._photoDataUrls[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span style={{ fontSize: 16, opacity: .35 }}>📦</span>}
+            <div key={r._pKey}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => handleDropOnRow(e, r._pKey)}
+              style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 4px', borderBottom: `1px solid ${C.border}`, background: dragSrc && dragSrc.key !== r._pKey ? C.blight : 'transparent', transition: 'background .1s ease' }}>
+              <div style={{
+                width: 96, minHeight: 46, flexShrink: 0, borderRadius: 8, background: C.bg,
+                border: `1.5px dashed ${C.border}`, display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 4, padding: 4, boxSizing: 'border-box',
+              }}>
+                {(!r._photoDataUrls || r._photoDataUrls.length === 0) && (
+                  <span style={{ fontSize: 16, opacity: .35, margin: 'auto' }}>📦</span>
+                )}
+                {(r._photoDataUrls || []).map((url, idx) => (
+                  <div key={idx} draggable
+                    onDragStart={() => setDragSrc({ key: r._pKey, idx })}
+                    onDragEnd={() => setDragSrc(null)}
+                    title={t('Przeciągnij, żeby przenieść na inną pozycję')}
+                    style={{ position: 'relative', width: 40, height: 40, borderRadius: 6, overflow: 'hidden', border: `1px solid ${C.border}`, cursor: 'grab', flexShrink: 0 }}>
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
+                    <span onClick={() => removePhoto(r._pKey, idx)} title={t('Usuń to zdjęcie')}
+                      style={{ position: 'absolute', top: -3, right: -3, width: 15, height: 15, borderRadius: '50%', background: C.red, color: '#fff', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', lineHeight: 1, boxShadow: '0 0 0 1.5px #fff' }}>✕</span>
+                  </div>
+                ))}
               </div>
               <div style={{ flex: '1 1 200px', minWidth: 140 }}>
                 <input style={field} value={r.name} onChange={e => patchRow(r._pKey, { name: e.target.value })} placeholder={t('Nazwa')} />
