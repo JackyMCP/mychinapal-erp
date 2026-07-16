@@ -9,7 +9,7 @@ import { computeQuoteTotals, toNum, STATUS_LABELS } from './calc'
 import { describeHsCode } from './hsChapters'
 import { parseQuoteExcel } from './excelImport'
 import ExcelImportPreview from './ExcelImportPreview'
-import { createProductsFromQuoteItems } from '../../lib/productCatalog'
+import { syncQuoteItemsWithCatalog } from '../../lib/productCatalog'
 import { renderQuoteDocHtml, loadLogoDataUrl } from './docTemplate'
 import QuoteDocEditor from './QuoteDocEditor'
 import { exportHtmlToPdfBlob } from './docExport'
@@ -953,6 +953,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       setDeletedIds([])
     }
 
+    const itemsWithIds = []
     for (let i = 0; i < items.length; i++) {
       const it = items[i]
       const payload = {
@@ -967,6 +968,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         hs_code: it.hs_code || null, duty_rate_percent: it.duty_rate_percent === '' || it.duty_rate_percent === null || it.duty_rate_percent === undefined ? null : toNum(it.duty_rate_percent),
         ai_suggestion: it.ai_suggestion || null,
       }
+      let id = it.id
       if (it.id) {
         await supabase.from('quote_items').update(payload).eq('id', it.id)
       } else {
@@ -974,12 +976,18 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
         // To setItems tylko "dopisuje" id nowo utworzonej pozycji po zapisie —
         // to NIE jest zmiana wprowadzona przez użytkownika, więc nie ma
         // odpalać kolejnego autozapisu (spowodowałoby to zapisywanie w kółko).
-        if (data) { skipNextAutosave.current = true; setItems(prev => prev.map(p => p._key === it._key ? { ...p, id: data.id } : p)) }
+        if (data) { id = data.id; skipNextAutosave.current = true; setItems(prev => prev.map(p => p._key === it._key ? { ...p, id: data.id } : p)) }
       }
+      itemsWithIds.push({ ...it, id })
     }
     // Tylko przy JAWNYM kliknięciu "Zapisz" (nie przy cichym autozapisie)
-    // zdjęcia pozycji stają się widoczne w "Plikach projektu".
-    if (!silent) await markPhotosVisibleInFiles()
+    // zdjęcia pozycji stają się widoczne w "Plikach projektu" ORAZ karty w
+    // Bazie produktów nadążają za edycją (nazwa/specyfikacja/zdjęcia/kod CN)
+    // — nie przy każdym cichym tiku autozapisu co 1.2s.
+    if (!silent) {
+      await markPhotosVisibleInFiles()
+      await syncProductCatalogLinksFor(itemsWithIds)
+    }
     setSaving(false)
     if (!silent) toast.success(t('Wycena zapisana ✓'))
     return true
@@ -1032,7 +1040,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     // zespół chiński skończy wycenę i przekaże ją dalej — nie dopiero po
     // wysłaniu do klienta (to mogło być tygodnie później). Najlepszy
     // wysiłek: błąd synchronizacji katalogu nie ma blokować przekazania.
-    await syncQuoteItemsToProductCatalog()
+    await syncProductCatalogLinksFor(items)
     let taskFailCount = 0
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -1216,10 +1224,24 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   // Zdjęcie kopiowane jest z prywatnego bucketu 'dokumenty' (gdzie leżą
   // zdjęcia pozycji wyceny) do publicznego 'produkty' (którego oczekuje
   // Kartoteka towarów w Magazynie) — patrz productCatalog.js.
-  const syncQuoteItemsToProductCatalog = async () => {
+  // Wersja z TRWAŁYM powiązaniem (quote_items.product_id) — pierwsza
+  // synchronizacja tworzy/dopasowuje kartę, każda kolejna (np. przy Zapisz,
+  // Prześlij do PL, Wyślij do klienta) aktualizuje TĘ SAMĄ kartę zamiast
+  // tworzyć nowe, nawet jeśli nazwa pozycji się zmieni. Synchronizowane są
+  // tylko dane katalogowe (nazwa/specyfikacja/zdjęcia/kod CN/cło) — ceny i
+  // marże celowo zostają wyłącznie w wycenie.
+  const syncProductCatalogLinksFor = async (itemsList) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      await createProductsFromQuoteItems(items, { quoteNumber: quote.quote_number || quoteId, company: 'PL', userId: user?.id || null })
+      const newLinks = await syncQuoteItemsWithCatalog(itemsList, { quoteNumber: quote.quote_number || quoteId, company: 'PL', userId: user?.id || null })
+      if (newLinks.length) {
+        await Promise.all(newLinks.map(({ itemId, product_id }) => supabase.from('quote_items').update({ product_id }).eq('id', itemId)))
+        skipNextAutosave.current = true
+        setItems(prev => prev.map(p => {
+          const link = newLinks.find(l => l.itemId === p.id)
+          return link ? { ...p, product_id: link.product_id } : p
+        }))
+      }
     } catch {
       // Katalog produktów to funkcja pomocnicza — jej błąd nie ma prawa
       // przerwać wysyłki wyceny do klienta.
@@ -1262,7 +1284,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       const { error: sendErr } = await supabase.from('quotes').update({ status: 'wyslana', sent_at: new Date().toISOString(), pdf_path: pdfPath }).eq('id', quoteId)
       if (sendErr) throw sendErr
       await markPhotosVisibleInFiles()
-      await syncQuoteItemsToProductCatalog()
+      await syncProductCatalogLinksFor(items)
       toast.success(t('Wycena wysłana ✓ Etap „Wpłata klienta na towar” został odblokowany.'))
       load(); onChanged && onChanged()
     } catch (e) {

@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient'
 import { isFileTooBig } from './files'
 import { parseQuoteExcel } from '../components/wyceny/excelImport'
 import { nextQuoteNumber } from '../components/wyceny/calc'
-import { createProductsFromQuoteItems } from './productCatalog'
+import { syncQuoteItemsWithCatalog } from './productCatalog'
 
 // Odpytuje AI (edge function) dla wielu pozycji naraz, ale w OGRANICZONYCH
 // partiach równoległych zamiast: (a) całkiem sekwencyjnie — za wolne przy
@@ -223,16 +223,18 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
         photo_paths: photoPaths, photo_path: photoPaths[0] || null,
       }
     })
-    const { error: itemsErr } = await supabase.from('quote_items').insert(itemRows)
+    const { data: insertedItems, error: itemsErr } = await supabase.from('quote_items').insert(itemRows).select()
     if (itemsErr) { result.error = 'Wycena utworzona, ale nie udało się zapisać pozycji: ' + itemsErr.message; return result }
     result.itemCount = itemRows.length
 
     // 6b) Karty w Bazie produktów (Magazyn) mają istnieć OD RAZU po tym, jak
     // zespół CN dostarczy wycenę — nie dopiero po wysłaniu do klienta (to
-    // mogło być tygodnie później). Pomija nazwy już istniejące w katalogu
-    // (patrz productCatalog.js) — najlepszy wysiłek, błąd nie blokuje reszty.
+    // mogło być tygodnie później). Trwałe powiązanie (product_id) na
+    // quote_items sprawia, że kolejne edycje w QuoteEditor.jsx aktualizują
+    // TĘ SAMĄ kartę zamiast tworzyć nowe — najlepszy wysiłek.
     try {
-      await createProductsFromQuoteItems(itemRows, { quoteNumber: quote_number, company: 'PL', userId: user?.id || null })
+      const newLinks = await syncQuoteItemsWithCatalog(insertedItems || [], { quoteNumber: quote_number, company: 'PL', userId: user?.id || null })
+      await Promise.all(newLinks.map(({ itemId, product_id }) => supabase.from('quote_items').update({ product_id }).eq('id', itemId)))
     } catch { /* najlepszy wysiłek */ }
 
     // 7) Powiadom cały zespół PL (zadanie w Centrum zadań).

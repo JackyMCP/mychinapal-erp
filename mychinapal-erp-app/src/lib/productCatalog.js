@@ -107,3 +107,44 @@ export async function createProductsFromQuoteItems(items, { quoteNumber, company
   const { error } = await supabase.from('products').insert(rows)
   return { inserted: error ? 0 : rows.length, error }
 }
+
+// Synchronizacja pozycji wyceny <-> Baza produktów, z TRWAŁYM powiązaniem
+// (quote_items.product_id) — pierwsza synchronizacja tworzy (albo dopasowuje
+// po nazwie) kartę produktu i zapamiętuje powiązanie; KAŻDA kolejna
+// synchronizacja tej samej pozycji aktualizuje TĘ SAMĄ kartę (nazwa,
+// specyfikacja, zdjęcia, kod CN, stawka cła, waga, CBM) — nawet jeśli nazwa
+// pozycji się później zmieni, powiązanie po id się nie zgubi. Ceny/marże
+// celowo NIE są synchronizowane — karta produktu to katalog, nie cennik.
+// Zwraca listę { itemId, product_id } dla pozycji, które dopiero co zostały
+// powiązane po raz pierwszy — wywołujący musi to zapisać na quote_items.
+export async function syncQuoteItemsWithCatalog(items, { quoteNumber, company = 'PL', userId } = {}) {
+  const newLinks = []
+  for (const it of (items || [])) {
+    const name = (it.name || '').trim()
+    if (!name || !it.id) continue
+    try {
+      if (it.product_id) {
+        const sourcePaths = (it.photo_paths?.length ? it.photo_paths : (it.photo_path ? [it.photo_path] : []))
+        const patch = {
+          name, specification: it.specification || null,
+          hs_code: it.hs_code || null, duty_rate_percent: numOrNull(it.duty_rate_percent),
+          weight_kg: numOrNull(it.weight_kg), cbm: numOrNull(it.cbm),
+        }
+        if (sourcePaths.length) {
+          const photo_paths = await copyAllQuotePhotos(sourcePaths)
+          if (photo_paths.length) { patch.photo_path = photo_paths[0]; patch.photo_paths = photo_paths }
+        }
+        await supabase.from('products').update(patch).eq('id', it.product_id)
+      } else {
+        const existing = await findExistingProductByName(name, company)
+        if (existing) {
+          newLinks.push({ itemId: it.id, product_id: existing.id })
+        } else {
+          const { data } = await createProductFromQuoteItem(it, { quoteNumber, company, userId })
+          if (data?.id) newLinks.push({ itemId: it.id, product_id: data.id })
+        }
+      }
+    } catch { /* najlepszy wysiłek per-pozycja — jedna nieudana synchronizacja nie blokuje reszty */ }
+  }
+  return newLinks
+}
