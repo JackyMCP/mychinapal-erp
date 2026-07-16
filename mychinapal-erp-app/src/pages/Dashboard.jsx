@@ -15,6 +15,9 @@ import TeamChat from '../components/dashboard/TeamChat'
 import GoldOreReveal from '../components/dashboard/GoldOreReveal'
 import CoinSackReveal from '../components/dashboard/CoinSackReveal'
 import useIsMobile from '../lib/useIsMobile'
+import DashboardWidgetSettings from '../components/dashboard/DashboardWidgetSettings'
+import { loadDashboardLayout, saveDashboardLayout } from '../lib/dashboardLayout'
+import { widgetsForRole, defaultLayout } from '../lib/dashboardWidgets'
 
 export default function Dashboard() {
   const {
@@ -31,6 +34,10 @@ export default function Dashboard() {
   const [profiles, setProfiles] = useState([])
   const [txSum, setTxSum] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [layout, setLayout] = useState(defaultLayout())
+  const [showSettings, setShowSettings] = useState(false)
+  const [editLayout, setEditLayout] = useState([])
+  const [savingLayout, setSavingLayout] = useState(false)
 
   const loadDashboard = async () => {
     if (!profile) return
@@ -87,41 +94,81 @@ export default function Dashboard() {
 
   useEffect(() => { loadDashboard() }, [profile?.id])
 
+  useEffect(() => {
+    if (!profile?.id) return
+    loadDashboardLayout(profile.id).then(setLayout)
+  }, [profile?.id])
+
   const clientNameById = Object.fromEntries(clients.map(c => [c.id, c.name]))
+
+  const openSettings = () => { setEditLayout(layout); setShowSettings(true) }
+  const closeSettings = () => setShowSettings(false)
+  const handleSaveLayout = async () => {
+    setSavingLayout(true)
+    const { error } = await saveDashboardLayout(profile.id, editLayout)
+    setSavingLayout(false)
+    if (!error) { setLayout(editLayout); setShowSettings(false) }
+  }
+
+  // Każdy widget renderowany na pełną szerokość, w kolejności wybranej przez
+  // użytkownika (patrz DashboardWidgetSettings.jsx) — dwa widgety, które z
+  // natury występują w parze (Moje projekty/Moje zadania obok siebie,
+  // Wpływy/Wypływy obok siebie), zachowują swój wewnętrzny układ 2-kolumnowy,
+  // ale jako JEDNA pozycja na liście do przestawiania.
+  const widgetRenderers = {
+    worldclocks: () => <WorldClocks />,
+    companydirection: () => <CompanyDirection currentUserId={profile?.id} />,
+    moneygames: () => txSum && (
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 9 }}>
+        <GoldOreReveal value={txSum.wpływy} label={t("Wpływy (WN+)")} />
+        <CoinSackReveal value={txSum.wypływy} label={t("Wypływy (MA-)")} />
+      </div>
+    ),
+    whoami: () => <WhoAmI profile={profile} isZarzad={isZarzad} />,
+    myprojects: () => (
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+        <MyProjects projects={myProjects} clientNameById={clientNameById} stageByProject={stageByProject} />
+        <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} isZarzad={isZarzad} />
+      </div>
+    ),
+    mytasks: null, // renderowane razem z myprojects (patrz wyżej) — para 2-kolumnowa
+    calendar: () => <CalendarWidget events={events} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />,
+    chatogolny: () => <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.blue} />,
+    chatzarzadu: () => <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.purple} />,
+  }
+
+  const visible = widgetsForRole(layout, isZarzad).filter(e => e.visible)
+  // "mytasks" nie renderuje się osobno (żyje wewnątrz "myprojects"), więc
+  // jeśli ktoś ukryje samo "Moje projekty" ale zostawi "Moje zadania"
+  // widoczne, i tak pokazujemy parę — inaczej zadania by zniknęły bez sensu.
+  const shownIds = new Set(visible.map(e => e.id))
+  if (shownIds.has('mytasks') && !shownIds.has('myprojects')) shownIds.add('myprojects')
+  const orderedIds = layout.map(e => e.id).filter(id => shownIds.has(id) && id !== 'mytasks')
+  // widgety spoza zapisanego layoutu (np. nowo dodane) i tak trafiły tu przez
+  // widgetsForRole/normalizeLayout, więc orderedIds już je zawiera
 
   return (
     <div>
-      <div style={{ padding: '16px 22px 0', maxWidth: 1400 }}>
-        <WorldClocks />
-      </div>
-      <PageHeader title={t("Dashboard")} subtitle={loading ? t('Ładowanie…') : t('Twój panel sterowania MyChinaPal')} />
+      <PageHeader title={t("Dashboard")} subtitle={loading ? t('Ładowanie…') : t('Twój panel sterowania MyChinaPal')}
+        right={(
+          <button onClick={openSettings} style={{ padding: '7px 13px', borderRadius: 8, border: `1px solid ${C.border}`, background: '#fff', color: C.text2, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t('⚙️ Dostosuj widgety')}
+          </button>
+        )} />
       <div style={{ padding: '16px 22px', maxWidth: 1400 }}>
-
-        {isZarzad && <div style={{ marginBottom: 14 }}><CompanyDirection currentUserId={profile?.id} /></div>}
-
-        {isZarzad && txSum && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 9, marginBottom: 14 }}>
-            <GoldOreReveal value={txSum.wpływy} label={t("Wpływy (WN+)")} />
-            <CoinSackReveal value={txSum.wypływy} label={t("Wypływy (MA-)")} />
-          </div>
-        )}
-
-        <div style={{ marginBottom: 14 }}><WhoAmI profile={profile} isZarzad={isZarzad} /></div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 14 }}>
-          <MyProjects projects={myProjects} clientNameById={clientNameById} stageByProject={stageByProject} />
-          <MyTasks tasks={tasks} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} isZarzad={isZarzad} />
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <CalendarWidget events={events} profiles={profiles} currentUserId={profile?.id} onChanged={loadDashboard} />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (isZarzad ? '1fr 1fr' : '1fr'), gap: 14 }}>
-          <TeamChat channelName="Czat Ogólny" zarzadOnly={false} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.blue} />
-          {isZarzad && <TeamChat channelName="Czat Zarządu" zarzadOnly={true} currentUserId={profile?.id} currentUserName={profile?.full_name} accentColor={C.purple} />}
-        </div>
+        {orderedIds.map(id => {
+          const render = widgetRenderers[id]
+          if (!render) return null
+          const node = render()
+          if (!node) return null
+          return <div key={id} style={{ marginBottom: 14 }}>{node}</div>
+        })}
       </div>
+
+      {showSettings && (
+        <DashboardWidgetSettings layout={editLayout} isZarzad={isZarzad} onChange={setEditLayout}
+          onClose={closeSettings} onSave={handleSaveLayout} saving={savingLayout} />
+      )}
     </div>
   );
 }
