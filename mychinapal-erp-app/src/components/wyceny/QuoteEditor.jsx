@@ -80,6 +80,14 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
   const [docHtml, setDocHtml] = useState('')
   const [docVersion, setDocVersion] = useState(0)
   const [docLoading, setDocLoading] = useState(false)
+  // Dopóki nikt nie dotknął dokumentu ręcznie (docDirty===false), każda
+  // zmiana w formularzu (zdjęcie, cena, marża, pozycja) ma automatycznie
+  // odświeżać podgląd — jak przy dawnym "żywym" podglądzie. Ustawiane na
+  // true WYŁĄCZNIE przez onChange z QuoteDocEditor (czyli realną ręczną
+  // edycję tekstu w dokumencie) — od tego momentu auto-odświeżanie się
+  // wyłącza, żeby nie nadpisywać ręcznych poprawek; trzeba wtedy świadomie
+  // kliknąć "Wygeneruj ponownie z formularza".
+  const [docDirty, setDocDirty] = useState(false)
   const [logoDataUrl, setLogoDataUrl] = useState(null)
   useEffect(() => { loadLogoDataUrl().then(setLogoDataUrl) }, [])
   // Podgląd importu z Excela — sparsowane wiersze CZEKAJĄ tutaj do
@@ -135,6 +143,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     // wczytaniu (patrz efekt przy autoGenQuoteId niżej).
     setDocHtml(q.doc_html || '')
     setDocVersion(v => v + 1)
+    setDocDirty(false)
     setLoading(false)
     // Świeżo wczytane dane NIE mają wywoływać autozapisu (to nie jest
     // zmiana wprowadzona przez użytkownika) — dopiero KOLEJNA zmiana stanu
@@ -1000,6 +1009,7 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
       })
       setDocHtml(html)
       setDocVersion(v => v + 1)
+      setDocDirty(false)
       await supabase.from('quotes').update({ doc_html: html }).eq('id', quoteId)
     } catch (e) {
       toast.error(t('Nie udało się wygenerować dokumentu: ') + (e.message || e))
@@ -1021,6 +1031,25 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     regenerateDoc(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, quote?.id, quote?.doc_html])
+
+  // Auto-odświeżanie dokumentu: dopóki nikt nie zaczął go ręcznie edytować
+  // (docDirty), każda zmiana w formularzu (pozycje/zdjęcia/ceny/marża/kursy)
+  // ma się w nim od razu pokazywać — inaczej wyglądało to jak "zdjęcie się
+  // nie aktualizuje" / "błędna marża w podsumowaniu" (realnie zgłoszony
+  // błąd: dokument został wygenerowany raz, wcześniej, z niekompletnymi
+  // danymi, i potem nic go już nie odświeżało). Debounce 900ms, żeby nie
+  // przebudowywać całego dokumentu (w tym pobieranie zdjęć do base64) przy
+  // każdym pojedynczym wciśniętym znaku.
+  const docSyncTimer = useRef(null)
+  useEffect(() => {
+    if (loading || !quote) return
+    if (!docHtml) return // jeszcze nie było pierwszej generacji — zajmie się tym efekt wyżej
+    if (docDirty) return // ktoś edytuje ręcznie — nie nadpisujemy
+    if (docSyncTimer.current) clearTimeout(docSyncTimer.current)
+    docSyncTimer.current = setTimeout(() => { regenerateDoc(false) }, 900)
+    return () => { if (docSyncTimer.current) clearTimeout(docSyncTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, totalsCalc, logoDataUrl, quote?.notes, docDirty])
 
   const handlePreviewPdf = async () => {
     // Okno musi się otworzyć SYNCHRONICZNIE w reakcji na kliknięcie — jeśli
@@ -1638,10 +1667,12 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
           </button>
         </div>
         <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10 }}>
-          {t("Kliknij bezpośrednio w dokument, żeby zmienić tekst, dopisać warunki, pogrubić itp. — zapisuje się automatycznie. \"Wygeneruj ponownie\" nadpisze ręczne zmiany aktualnymi danymi z formularza (pozycje, ceny, zdjęcia).")}
+          {docDirty
+            ? t("✎ Dokument edytowany ręcznie — zmiany w formularzu (zdjęcia, ceny, pozycje) już go automatycznie NIE odświeżają, żeby nie nadpisać Twoich poprawek. Kliknij „Wygeneruj ponownie”, żeby wciągnąć aktualne dane z formularza.")
+            : t("Dokument aktualizuje się automatycznie na żywo razem z formularzem (pozycje, ceny, zdjęcia). Kliknij bezpośrednio w dokument, żeby dopisać/zmienić tekst — od tego momentu auto-odświeżanie się wyłączy.")}
         </div>
         {docHtml ? (
-          <QuoteDocEditor html={docHtml} version={docVersion} onChange={setDocHtml} />
+          <QuoteDocEditor html={docHtml} version={docVersion} onChange={(html) => { setDocHtml(html); setDocDirty(true) }} />
         ) : (
           <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 12 }}>{t('Generowanie dokumentu…')}</div>
         )}
