@@ -151,7 +151,8 @@ export default function ProjectChat({ project }) {
       const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
       const result = await createQuoteFromExcelFile(attachFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
       if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
-      const infoNote = `📊 ${t('Wycena przyjęta z Excela')}: ${attachFile.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
+      const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
+      const infoNote = `📊 ${actionLabel}: ${attachFile.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
       content = text.trim() ? `${text.trim()}\n\n${infoNote}` : infoNote
     } else if (attachFile) {
       const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`

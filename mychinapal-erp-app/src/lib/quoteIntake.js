@@ -102,7 +102,7 @@ export { isExcelFile }
  * @returns {Promise<{ok:boolean, quoteId:string|null, itemCount:number, notified:number, notifyFailed:boolean, uploadFailCount:number, error:string|null}>}
  */
 export async function createQuoteFromExcelFile(file, project, client, existingQuoteNumbers = []) {
-  const result = { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, error: null }
+  const result = { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, error: null, overwritten: false }
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -140,31 +140,61 @@ export async function createQuoteFromExcelFile(file, project, client, existingQu
     // 4) Tłumaczenie na polski PRZED zapisem pozycji (żeby sugestia CN/HS niżej już pracowała na polskim tekście).
     await translateItemsToPolish(parsedItems)
 
-    // 5) Utwórz wycenę — status od razu 'do_marzy_pl', bo zespół CN swoją część już zrobił.
-    // Numer wyceny liczony jest z migawki `existingQuoteNumbers` przekazanej
-    // przez wywołującego — przy dwóch prawie równoczesnych próbach (np.
-    // użytkownik klika drugi raz, bo pierwsza się jeszcze przetwarza) obie
-    // mogą policzyć ten sam "kolejny" numer. Baza ma teraz unique constraint
-    // na quote_number (patrz migracja quotes_quote_number_unique) — więc
-    // druga próba dostanie tu jawny błąd 23505 zamiast po cichu utworzyć
-    // duplikat; łapiemy to i próbujemy ponownie z ŚWIEŻO pobraną listą
-    // numerów z bazy (nie z tej samej, potencjalnie już nieaktualnej migawki).
+    // 5) Jeśli to zamówienie ma już wycenę, która jeszcze NIE została wysłana
+    // do klienta (status 'szkic_cn'/'do_marzy_pl'), kolejny wgrany Excel od
+    // CN ma ją NADPISAĆ (te same numer/id wyceny, świeże pozycje i zdjęcia)
+    // zamiast tworzyć kolejną — inaczej powtórne testowanie/poprawianie tego
+    // samego zamówienia zaśmiecało listę wycen kolejnymi numerami. Wyceny już
+    // WYSŁANE zostają nietknięte — dla nich kolejny import to świadomie NOWA
+    // wycena (rewizja), żeby zachować historię tego, co realnie poszło do
+    // klienta.
+    const { data: existingDraft } = await supabase.from('quotes')
+      .select('*').eq('project_id', project.id).neq('status', 'wyslana')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+
     let quote = null
-    let quote_number = nextQuoteNumber(existingQuoteNumbers)
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const { data, error } = await supabase.from('quotes').insert({
-        quote_number, client_id: client.id, project_id: project.id,
-        status: 'do_marzy_pl', currency: 'CNY', created_by: user?.id,
-        source_excel_path: excelPath, source_excel_name: file.name,
-        notes: '1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.',
-      }).select().single()
-      if (!error) { quote = data; break }
-      const isDuplicateNumber = error.code === '23505' || /quote_number/.test(error.message || '')
-      if (!isDuplicateNumber) { result.error = 'Nie udało się utworzyć wyceny: ' + error.message; return result }
-      const { data: freshRows } = await supabase.from('quotes').select('quote_number')
-      quote_number = nextQuoteNumber((freshRows || []).map(r => r.quote_number))
+    let quote_number = existingDraft?.quote_number
+
+    if (existingDraft) {
+      // Nadpisanie: usuń stare pozycje tej wyceny (świeże przyjdą za chwilę w
+      // kroku 6/6b) i podmień plik źródłowy Excela. Numer/status/notatki
+      // zostają — zespół PL mógł już np. zmienić tekst "Warunki".
+      const { error: delErr } = await supabase.from('quote_items').delete().eq('quote_id', existingDraft.id)
+      if (delErr) { result.error = 'Nie udało się nadpisać poprzednich pozycji wyceny: ' + delErr.message; return result }
+      const { data: updated, error: updErr } = await supabase.from('quotes').update({
+        status: 'do_marzy_pl', source_excel_path: excelPath, source_excel_name: file.name,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existingDraft.id).select().single()
+      if (updErr) { result.error = 'Nie udało się nadpisać wyceny: ' + updErr.message; return result }
+      quote = updated
+      quote_number = updated.quote_number
+      result.overwritten = true
+    } else {
+      // Brak jeszcze niewysłanej wyceny dla tego zamówienia — tworzymy nową.
+      // Numer wyceny liczony jest z migawki `existingQuoteNumbers` przekazanej
+      // przez wywołującego — przy dwóch prawie równoczesnych próbach (np.
+      // użytkownik klika drugi raz, bo pierwsza się jeszcze przetwarza) obie
+      // mogą policzyć ten sam "kolejny" numer. Baza ma unique constraint na
+      // quote_number (patrz migracja quotes_quote_number_unique) — druga
+      // próba dostanie tu jawny błąd 23505 zamiast po cichu utworzyć
+      // duplikat; łapiemy to i próbujemy ponownie z ŚWIEŻO pobraną listą
+      // numerów z bazy (nie z tej samej, potencjalnie już nieaktualnej migawki).
+      quote_number = nextQuoteNumber(existingQuoteNumbers)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data, error } = await supabase.from('quotes').insert({
+          quote_number, client_id: client.id, project_id: project.id,
+          status: 'do_marzy_pl', currency: 'CNY', created_by: user?.id,
+          source_excel_path: excelPath, source_excel_name: file.name,
+          notes: '1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.',
+        }).select().single()
+        if (!error) { quote = data; break }
+        const isDuplicateNumber = error.code === '23505' || /quote_number/.test(error.message || '')
+        if (!isDuplicateNumber) { result.error = 'Nie udało się utworzyć wyceny: ' + error.message; return result }
+        const { data: freshRows } = await supabase.from('quotes').select('quote_number')
+        quote_number = nextQuoteNumber((freshRows || []).map(r => r.quote_number))
+      }
+      if (!quote) { result.error = 'Nie udało się utworzyć wyceny: numer wyceny wciąż zajęty po kilku próbach — spróbuj ponownie.'; return result }
     }
-    if (!quote) { result.error = 'Nie udało się utworzyć wyceny: numer wyceny wciąż zajęty po kilku próbach — spróbuj ponownie.'; return result }
     result.quoteId = quote.id
 
     // 6) Wgraj zdjęcia wyciągnięte z Excela (visible_in_files:false — patrz

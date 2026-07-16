@@ -31,7 +31,8 @@ export default function ProjectFiles({ project, documents, onChanged }) {
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
     if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
-    toast.success(t(`Wycena przyjęta ✓ ${result.itemCount} pozycji — powiadomiono ${result.notified} os. z zespołu PL`))
+    const actionLabel = result.overwritten ? t('Wycena nadpisana nowymi danymi ✓') : t('Wycena przyjęta ✓')
+    toast.success(t(`${actionLabel} ${result.itemCount} pozycji — powiadomiono ${result.notified} os. z zespołu PL`))
     if (result.notifyFailed) toast.error(t('Uwaga: część powiadomień do zespołu PL mogła się nie wysłać.'))
     onChanged && onChanged()
   }

@@ -103,7 +103,8 @@ export default function Wyceny() {
     const notifyMsg = result.notifyFailed
       ? t(` (⚠ nie udało się powiadomić części zespołu PL)`)
       : t(` — zespół PL (${result.notified}) dostał powiadomienie`)
-    toast.success(t(`Wycena przyjęta ✓ ${result.itemCount} pozycji`) + notifyMsg)
+    const actionMsg = result.overwritten ? t('Wycena nadpisana nowymi danymi ✓') : t('Wycena przyjęta ✓')
+    toast.success(t(`${actionMsg} ${result.itemCount} pozycji`) + notifyMsg)
     if (result.uploadFailCount) toast.error(t(`Nie udało się wgrać ${result.uploadFailCount} zdjęć z Excela.`))
   }
 
