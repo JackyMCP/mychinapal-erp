@@ -18,6 +18,7 @@ import Projekty from './pages/Projekty'
 import KasaBank from './pages/KasaBank'
 import Czat from './pages/Czat'
 import Wyceny from './pages/Wyceny'
+import Poczta from './pages/Poczta'
 import ComingSoon from './pages/ComingSoon'
 import Ustawienia from './pages/Ustawienia'
 import MojeProjekty from './pages/MojeProjekty'
@@ -51,7 +52,7 @@ function Shell() {
           <Route path="/magazyn" element={<Magazyn />} />
           <Route path="/faktury" element={<Faktury />} />
           <Route path="/logistyka" element={<ComingSoon title="Logistyka & Import" />} />
-          <Route path="/poczta" element={<ComingSoon title="Poczta" />} />
+          <Route path="/poczta" element={<Poczta />} />
           <Route path="/czat" element={<Czat />} />
           <Route path="/wyceny" element={<Wyceny />} />
           <Route path="/raporty" element={<ComingSoon title="Raporty & Analizy" />} />

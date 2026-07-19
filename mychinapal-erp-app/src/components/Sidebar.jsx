@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import InstallAppButton from './InstallAppButton'
 import NotificationsButton from './NotificationsButton'
 import useIsMobile from '../lib/useIsMobile'
+import { supabase } from '../lib/supabaseClient'
 
 export const MOBILE_TOPBAR_HEIGHT = 52
 
@@ -32,7 +33,7 @@ function isModActive(m, pathname) {
 }
 
 export default function Sidebar() {
-  const { profile, signOut, isZarzad } = useAuth()
+  const { profile, session, signOut, isZarzad } = useAuth()
   const { lang, setLang, t } = useLang()
   const [collapsed, setCollapsed] = useState(false)
   const isMobile = useIsMobile()
@@ -41,6 +42,31 @@ export default function Sidebar() {
   const location = useLocation()
   const navRefs = useRef({})
   const [pill, setPill] = useState({ top: 0, height: 0, opacity: 0 })
+  const [unreadMail, setUnreadMail] = useState(0)
+
+  // Nieprzeczytane maile (Odebrane) — czerwona plakietka na "Poczta", tak jak
+  // czerwone kółko z licznikiem na czacie. Odświeżane na żywo przez Realtime,
+  // dokładnie tak samo jak reszta modułu Poczta.
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!userId) { setUnreadMail(0); return }
+    let accountId = null
+    const loadUnread = async () => {
+      const { data: acc } = await supabase.from('email_accounts').select('id').eq('user_id', userId).maybeSingle()
+      accountId = acc?.id || null
+      if (!accountId) { setUnreadMail(0); return }
+      const { count } = await supabase.from('email_messages').select('id', { count: 'exact', head: true })
+        .eq('email_account_id', accountId).eq('folder', 'inbox').eq('direction', 'inbound').eq('is_read', false)
+      setUnreadMail(count || 0)
+    }
+    loadUnread()
+    const channel = supabase.channel(`sidebar-mail-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'email_messages' }, () => {
+        if (accountId) loadUnread()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [session?.user?.id])
 
   useEffect(() => {
     const activeMod = modules.find(m => isModActive(m, location.pathname))
@@ -107,7 +133,10 @@ export default function Sidebar() {
                     background: active ? 'linear-gradient(135deg, rgba(37,99,235,.9), rgba(59,130,246,.75))' : 'transparent',
                   }}>
                   <span style={{ fontSize: 17, width: 20, textAlign: 'center', flexShrink: 0 }}>{m.icon}</span>
-                  <span>{t(m.label)}</span>
+                  <span style={{ flex: 1 }}>{t(m.label)}</span>
+                  {m.path === '/poczta' && unreadMail > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>{unreadMail > 99 ? '99+' : unreadMail}</span>
+                  )}
                 </NavLink>
               )
             })}
@@ -187,7 +216,10 @@ export default function Sidebar() {
               transition: 'color .15s ease',
             })}>
             <span style={{ fontSize: 15, width: 18, textAlign: 'center', flexShrink: 0 }}>{m.icon}</span>
-            {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(m.label)}</span>}
+            {!collapsed && <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(m.label)}</span>}
+            {m.path === '/poczta' && unreadMail > 0 && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: collapsed ? '1px 4px' : '1px 6px', flexShrink: 0, position: collapsed ? 'absolute' : 'static', top: collapsed ? 2 : undefined, right: collapsed ? 2 : undefined }}>{collapsed ? '' : (unreadMail > 99 ? '99+' : unreadMail)}</span>
+            )}
           </NavLink>
         ))}
       </div>
