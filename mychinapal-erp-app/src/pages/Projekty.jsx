@@ -180,7 +180,7 @@ export default function Projekty() {
           <ProjectFiles project={selected} documents={projectDocs} onChanged={loadAll} />
 
           <div style={{ marginTop: 8 }}>
-            <ProjectChat project={selected} />
+            <ProjectChat project={selected} onChanged={loadAll} />
           </div>
         </div>
       </div>

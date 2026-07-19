@@ -1018,23 +1018,19 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
 
   const handleSendToPL = async () => {
     if (!items.some(it => it.name && Number(it.qty) > 0)) { toast.error(t('Dodaj przynajmniej jedną pozycję z nazwą i ilością.')); return }
-    // Zadanie (widoczne w Dashboard/Moje zadania) dla CAŁEGO zespołu PL
-    // przypisanego do tego zamówienia — nie tylko dla jednego "głównego PL".
-    // Bierzemy wszystkie przypisania oprócz roli 'glowny_cn' (to jest
-    // wyraźnie oznaczona strona chińska — nie ma sensu jej powiadamiać, że
-    // sama właśnie przekazała wycenę dalej). Brak generycznej tabeli
-    // powiadomień w aplikacji, więc zadanie w centrum zadań pełni tę rolę —
-    // sprawdzamy to PRZED zmianą statusu: jeśli nie ma komu przypisać
-    // zadania, przekazanie ma się nie udać z czytelnym błędem, a nie po
-    // cichu "zniknąć" bez żadnego powiadomienia (tak było wcześniej).
+    // Zadanie (widoczne w Dashboard/Moje zadania) dla CAŁEGO zespołu
+    // przypisanego do tego zamówienia — dla wszystkich, nie tylko dla
+    // jednego "głównego PL". Bierzemy wszystkie przypisania oprócz roli
+    // 'glowny_cn' (to wyraźnie oznaczona strona chińska — nie ma sensu jej
+    // powiadamiać, że sama właśnie przekazała wycenę dalej). Brak
+    // przypisanego zespołu NIE blokuje przekazania wyceny — ma się ono ZAWSZE
+    // udać i odblokować kolejny etap, niezależnie od tego, kto (jeśli
+    // ktokolwiek) jest przypisany; jeśli nikt nie jest przypisany, po prostu
+    // nikt nie dostaje zadania.
     const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
       .select('user_id, role').eq('project_id', quote.project_id).neq('role', 'glowny_cn')
-    if (assignErr) { toast.error(t('Nie udało się sprawdzić zespołu PL zamówienia: ') + assignErr.message); return }
+    if (assignErr) { toast.error(t('Nie udało się sprawdzić zespołu przypisanego do zamówienia: ') + assignErr.message); return }
     const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
-    if (!plUserIds.length) {
-      toast.error(t('To zamówienie nie ma jeszcze przypisanego nikogo z zespołu PL — przypisz opiekuna w panelu Projekty & Zamówienia, dopiero potem przekaż wycenę do zespołu PL.'))
-      return
-    }
     const ok = await handleSave(true)
     if (!ok) return
     const { error } = await supabase.from('quotes').update({ status: 'do_marzy_pl' }).eq('id', quoteId)

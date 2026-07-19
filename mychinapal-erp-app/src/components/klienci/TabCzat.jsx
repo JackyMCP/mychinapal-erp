@@ -13,12 +13,14 @@ import MentionInput from '../czat/MentionInput'
 import MentionText from '../czat/MentionText'
 import UnreadBadge from '../czat/UnreadBadge'
 import { extractMentions } from '../../lib/mentions'
+import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
+import ExcelImportPreview from '../wyceny/ExcelImportPreview'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
-export default function TabCzat({ clientId, clientName, projects, profiles: profilesProp }) {
+export default function TabCzat({ clientId, clientName, projects, profiles: profilesProp, onChanged }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const navigate = useNavigate()
@@ -39,9 +41,21 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   const [scrollTick, setScrollTick] = useState(0)
   const [ownProfiles, setOwnProfiles] = useState([])
   const [unreadMap, setUnreadMap] = useState({})
+  // Wycena wgrywana z Excela na czacie klienta — ten czat nie jest przypisany
+  // do jednego zamówienia (w przeciwieństwie do czatu zamówienia), więc trzeba
+  // dodatkowo wybrać, którego zamówienia dotyczy plik.
+  const [previewItems, setPreviewItems] = useState(null)
+  const [pendingExcelFile, setPendingExcelFile] = useState(null)
+  const [pendingExcelProject, setPendingExcelProject] = useState(null)
+  const [pendingExcelText, setPendingExcelText] = useState('')
+  const [quoteProjectId, setQuoteProjectId] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
   const profiles = profilesProp && profilesProp.length ? profilesProp : ownProfiles
+
+  useEffect(() => {
+    if (projects && projects.length && !quoteProjectId) setQuoteProjectId(projects[0].id)
+  }, [projects])
 
   useEffect(() => {
     if (profilesProp && profilesProp.length) return
@@ -183,9 +197,59 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
     setMessages(prev => [...older, ...prev])
   }
 
+  // Wysyła gotową wiadomość czatu klienta (treść + ewentualny załącznik-dokument
+  // już zapisany) — wspólne dla zwykłego wysyłania i dla zakończenia przepływu
+  // podglądu Excela poniżej.
+  const sendChatMessage = async (content, attachmentDocId, srcText) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const mentionIds = extractMentions(srcText, profiles)
+    const { data: inserted, error } = await supabase.from('chat_messages').insert({
+      channel_id: channelId, sender_id: user.id, content,
+      attachment_document_id: attachmentDocId,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
+    }).select(MSG_SELECT).single()
+    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
+    if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
+    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
+  }
+
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !channelId) return
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
+
+    // Excel skategoryzowany jako "Wycena" na czacie KLIENTA (nie zamówienia) —
+    // to jeden z czterech niezależnych sposobów przyjęcia wyceny (obok czatu
+    // zamówienia, panelu Pliki projektu i zakładki Wyceny). Ten czat nie jest
+    // przypisany do jednego zamówienia, więc trzeba wiedzieć, którego z nich
+    // dotyczy plik — jeśli klient ma więcej niż jedno, wybiera je w selektorze
+    // obok kategorii (patrz JSX niżej); jeśli nie ma żadnego, nie ma do czego
+    // przypisać wyceny i trzeba najpierw założyć zamówienie.
+    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
+      if (!projects || projects.length === 0) {
+        toast.error(t('Ten klient nie ma jeszcze żadnego zamówienia — najpierw utwórz zamówienie, do którego ma zostać przypisana ta wycena.'))
+        return
+      }
+      const targetProjectId = projects.length === 1 ? projects[0].id : quoteProjectId
+      const targetProject = projects.find(p => p.id === targetProjectId)
+      if (!targetProject) { toast.error(t('Wybierz zamówienie, do którego należy ta wycena.')); return }
+      setSending(true)
+      const plCheck = await checkPlTeamAssigned(targetProject)
+      if (!plCheck.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); return }
+      let parsedItems
+      try {
+        parsedItems = await parseQuoteExcel(attachFile)
+      } catch (e) {
+        setSending(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
+      }
+      setSending(false)
+      if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
+      setPendingExcelFile(attachFile)
+      setPendingExcelProject(targetProject)
+      setPendingExcelText(text.trim())
+      setPreviewItems(parsedItems)
+      return
+    }
+
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
     let attachmentDocId = null
@@ -199,18 +263,32 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
       if (docErr) { setSending(false); toast.error('Nie udało się zapisać dokumentu: ' + docErr.message); return }
       attachmentDocId = doc.id
     }
-    const mentionIds = extractMentions(text, profiles)
-    const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: channelId, sender_id: user.id, content: text.trim() || `📎 ${attachFile?.name || ''}`,
-      attachment_document_id: attachmentDocId,
-      mentioned_user_ids: mentionIds.length ? mentionIds : null,
-    }).select(MSG_SELECT).single()
+    await sendChatMessage(text.trim() || `📎 ${attachFile?.name || ''}`, attachmentDocId, text)
     setSending(false)
-    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message); return }
-    if (inserted) setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted]))
-    if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  const handleCancelExcelPreview = () => { setPreviewItems(null); setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText('') }
+
+  const handleConfirmExcelPreview = async (editedItems) => {
+    setPreviewItems(null)
+    setSending(true)
+    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
+    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, pendingExcelProject, { id: clientId }, (quotesRows || []).map(q => q.quote_number))
+    if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText(''); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
+    const infoNote = `📊 ${actionLabel} (${pendingExcelProject?.order_label}): ${pendingExcelFile?.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
+    const content = pendingExcelText ? `${pendingExcelText}\n\n${infoNote}` : infoNote
+    await sendChatMessage(content, null, pendingExcelText)
+    setSending(false)
+    setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText('')
+    setText(''); setAttachFile(null)
+    if (fileRef.current) fileRef.current.value = ''
+    // Wycena powstała/nadpisała się w bazie — rodzic (panel klienta) trzyma
+    // własne kopie dokumentów/wycen do StageTimeline/Dokumentów i bez tego
+    // odświeżenia nie zobaczy zmiany aż do ręcznego przeładowania strony.
+    if (onChanged) onChanged()
   }
 
   const handleDownload = async (doc) => {
@@ -310,6 +388,13 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
             <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5 }}>
               {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
             </select>
+            {attachCategory === 'Wycena' && isExcelFile(attachFile) && projects && projects.length > 1 && (
+              <select value={quoteProjectId || ''} onChange={e => setQuoteProjectId(e.target.value)}
+                title={t("Do którego zamówienia należy ta wycena?")}
+                style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5, maxWidth: 150 }}>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.order_label}</option>)}
+              </select>
+            )}
             <span onClick={() => { setAttachFile(null); if (fileRef.current) fileRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', color: C.muted }}>{t("✕ usuń")}</span>
           </div>
         )}
@@ -329,6 +414,14 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
         <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
           onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
           onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
+      )}
+      {previewItems && (
+        <ExcelImportPreview
+          rows={previewItems}
+          fileName={pendingExcelFile?.name}
+          onConfirm={handleConfirmExcelPreview}
+          onCancel={handleCancelExcelPreview}
+        />
       )}
     </div>
   )

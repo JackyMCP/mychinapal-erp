@@ -17,7 +17,7 @@ const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na sta
 
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
 
-export default function ProjectChat({ project }) {
+export default function ProjectChat({ project, onChanged }) {
   const {
     t
   } = useLang();
@@ -220,6 +220,10 @@ export default function ProjectChat({ project }) {
     setPendingExcelFile(null); setPendingExcelText('')
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
+    // Wycena z Excela powstała/nadpisała się w bazie — rodzic (lista
+    // zamówień) trzyma własne kopie dokumentów/wycen do StageTimeline i bez
+    // tego odświeżenia nie zobaczy zmiany aż do ręcznego przeładowania strony.
+    if (onChanged) onChanged()
   }
 
   const handleDownload = async (doc) => {

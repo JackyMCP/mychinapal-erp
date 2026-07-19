@@ -99,20 +99,23 @@ export { isExcelFile }
 export { parseQuoteExcel }
 
 /**
- * Sprawdza, czy zamówienie ma komu przypisać zadanie (zespół PL) — wywoływane
- * ZANIM pokaże się ekran podglądu importu, żeby nie kazać nikomu poprawiać
- * dopasowania zdjęć tylko po to, żeby na końcu i tak dostać błąd braku
- * przypisanego zespołu.
+ * Zwraca listę osób przypisanych do zamówienia (poza rolą 'glowny_cn'), do
+ * powiadomienia zadaniem w Centrum zadań. WAŻNE: brak przypisanego zespołu
+ * (albo brak wyznaczonego "głównego" opiekuna PL) NIE MA blokować przyjęcia
+ * wyceny — wycena ma się ZAWSZE przyjąć i odblokować kolejny etap, bez
+ * względu na to, skąd jest wgrywana (czat zamówienia, czat klienta, panel
+ * zamówienia, zakładka Wyceny) i czy komukolwiek jest przypisana. Jeśli nikt
+ * nie jest przypisany, po prostu nikt nie dostaje zadania — to nie błąd.
+ * Wcześniej to twardo blokowało cały import, co powodowało, że realne
+ * zamówienia (np. te z importu historycznego, bez ustawionego zespołu)
+ * w ogóle nie dawały się przyjąć.
  * @returns {Promise<{ok:boolean, plUserIds:string[], error:string|null}>}
  */
 export async function checkPlTeamAssigned(project) {
   const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
     .select('user_id, role').eq('project_id', project.id).neq('role', 'glowny_cn')
-  if (assignErr) return { ok: false, plUserIds: [], error: 'Nie udało się sprawdzić zespołu PL zamówienia: ' + assignErr.message }
+  if (assignErr) return { ok: false, plUserIds: [], error: 'Nie udało się sprawdzić zespołu przypisanego do zamówienia: ' + assignErr.message }
   const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
-  if (!plUserIds.length) {
-    return { ok: false, plUserIds: [], error: 'To zamówienie nie ma jeszcze przypisanego nikogo z zespołu PL — przypisz opiekuna w panelu Projekty & Zamówienia, dopiero potem wgraj wycenę.' }
-  }
   return { ok: true, plUserIds, error: null }
 }
 
