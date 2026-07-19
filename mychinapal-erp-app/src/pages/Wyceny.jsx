@@ -6,8 +6,9 @@ import { C, fmt } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import useIsMobile from '../lib/useIsMobile'
 import NewProjectModal from '../components/projekty/NewProjectModal'
-import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
+import { detectQuoteValue, saveQuoteFile, previewQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
+import QuotePreviewModal from '../components/wyceny/QuotePreviewModal'
 
 // Wyceny to teraz po prostu moduł do wgrywania GOTOWYCH plików Excel — jedna
 // "karta wyceny" na zamówienie, z dwoma slotami: plik od zespołu CN (surowa
@@ -91,7 +92,23 @@ export default function Wyceny() {
     setPendingQuoteFile({ file: pickFile, side: pickSide, project, client, detectedValue: value, itemCount })
   }
 
-  const handleCancelQuoteValue = () => { setPendingQuoteFile(null); setPicking(true) }
+  // Szybkie wgranie/nadpisanie pliku wprost z kafelka (bez przechodzenia
+  // przez okno "+ Wgraj wycenę" i ponownego wybierania klienta/zamówienia —
+  // to już wiadomo z samej karty wyceny). Używane głównie do wgrania wyceny
+  // dla klienta przez zespół PL bezpośrednio z kafelka, ale działa dla obu stron.
+  const handleQuickUpload = async (q, side, file) => {
+    setDetecting(true)
+    const { value, itemCount } = await detectQuoteValue(file)
+    setDetecting(false)
+    setPendingQuoteFile({
+      file, side,
+      project: { id: q.project_id, client_id: q.client_id },
+      client: { id: q.client_id, name: q.clients?.name },
+      detectedValue: value, itemCount,
+    })
+  }
+
+  const handleCancelQuoteValue = () => { setPendingQuoteFile(null); if (pickFile) setPicking(true) }
 
   const handleConfirmQuoteValue = async (value) => {
     const { file, side, project, client } = pendingQuoteFile
@@ -269,16 +286,17 @@ export default function Wyceny() {
         {filtered.map((q, i) => (
           <QuoteTile key={q.id} q={q} i={i} highlighted={highlightId === q.id}
             tileRef={el => { tileRefs.current[q.id] = el }}
-            onDelete={handleDelete} t={t} toast={toast} />
+            onDelete={handleDelete} onQuickUpload={handleQuickUpload} t={t} toast={toast} />
         ))}
       </div>
     </div>
   )
 }
 
-function QuoteTile({ q, i, highlighted, tileRef, onDelete, t, toast }) {
+function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toast }) {
   const hasCn = !!q.source_excel_path
   const hasPl = !!q.client_excel_path
+  const [preview, setPreview] = useState(null) // { fileName, rows, total, loading, error }
 
   const handleDownload = async (path, e) => {
     e.stopPropagation()
@@ -286,6 +304,25 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, t, toast }) {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(path, 3600)
     if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
     window.open(data.signedUrl, '_blank')
+  }
+
+  // Podgląd wyceny chińskiej wprost z kafelka — bez pobierania pliku, tylko
+  // szybki wgląd w rozpoznane pozycje (patrz previewQuoteFile w quoteIntake.js).
+  const handlePreviewCn = async (e) => {
+    e.stopPropagation()
+    setPreview({ fileName: q.source_excel_name, rows: [], total: 0, loading: true, error: null })
+    const res = await previewQuoteFile(q.source_excel_path, q.source_excel_name)
+    setPreview({ fileName: q.source_excel_name, rows: res.rows, total: res.total, loading: false, error: res.ok ? null : res.error })
+  }
+
+  // Wgranie/nadpisanie wyceny dla klienta wprost z kafelka — zespół PL nie
+  // musi przechodzić przez górne okno "+ Wgraj wycenę" i ponownie wybierać
+  // klienta/zamówienie, bo to już wiadomo z samej karty.
+  const handlePickPlFile = (e) => {
+    e.stopPropagation()
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) onQuickUpload(q, 'pl', file)
   }
 
   return (
@@ -308,6 +345,12 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, t, toast }) {
             {hasCn ? `${q.source_excel_name || ''} · ${fmt(q.source_value_cny, 0)} CNY` : t('brak — czeka na plik')}
           </div>
         </div>
+        {hasCn && (
+          <span onClick={handlePreviewCn} title={t('Podgląd wyceny CN')}
+            style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: C.white, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            👁
+          </span>
+        )}
       </div>
 
       <div onClick={hasPl ? (e) => handleDownload(q.client_excel_path, e) : undefined}
@@ -319,9 +362,28 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, t, toast }) {
             {hasPl ? `${q.client_excel_name || ''} · ${fmt(q.client_value_pln, 0)} PLN` : t('brak — nie dodano marży')}
           </div>
         </div>
+        <label onClick={e => e.stopPropagation()} title={t(hasPl ? 'Wgraj ponownie (nadpisz)' : 'Wgraj wycenę dla klienta')}
+          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 7, border: `1px solid ${C.blue}`, background: C.white, color: C.blue, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          ⬆ {t('Wgraj')}
+          <input type="file" onChange={handlePickPlFile} style={{ display: 'none' }} />
+        </label>
       </div>
 
       <div style={{ fontSize: 9.5, color: C.muted }}>{new Date(q.updated_at).toLocaleDateString('pl-PL')}</div>
+
+      {preview && (
+        <QuotePreviewModal
+          title="Podgląd wyceny CN"
+          fileName={preview.fileName}
+          side="cn"
+          rows={preview.rows}
+          total={preview.total}
+          loading={preview.loading}
+          error={preview.error}
+          onDownload={(e) => handleDownload(q.source_excel_path, e)}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   )
 }

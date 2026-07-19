@@ -45,6 +45,25 @@ export async function detectQuoteValue(file) {
 }
 
 /**
+ * Pobiera już wgrany plik wyceny ze Storage i parsuje go (ta sama logika co
+ * przy wgrywaniu) do szybkiego podglądu pozycji w aplikacji — bez ściągania
+ * pliku na dysk. Używane przez przycisk "Podgląd" na kafelku w module Wyceny.
+ * @returns {Promise<{ok:boolean, rows:Array, total:number, error:string|null}>}
+ */
+export async function previewQuoteFile(path, fileName) {
+  try {
+    const { data: blob, error: dlErr } = await supabase.storage.from('dokumenty').download(path)
+    if (dlErr) return { ok: false, rows: [], total: 0, error: 'Nie udało się pobrać pliku: ' + dlErr.message }
+    const file = new File([blob], fileName || 'plik.xlsx', { type: blob.type })
+    const rows = await parseQuoteExcel(file)
+    const total = rows.reduce((s, it) => s + toNum(it.qty) * toNum(it.unit_price_cny), 0)
+    return { ok: true, rows, total: Math.round(total * 100) / 100, error: null }
+  } catch (e) {
+    return { ok: false, rows: [], total: 0, error: e?.message || String(e) }
+  }
+}
+
+/**
  * Zwraca listę osób przypisanych do zamówienia (poza rolą 'glowny_cn'), do
  * powiadomienia zadaniem w Centrum zadań. WAŻNE: brak przypisanego zespołu
  * NIE MA blokować przyjęcia wyceny — wycena ma się ZAWSZE przyjąć i
