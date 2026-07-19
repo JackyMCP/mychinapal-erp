@@ -1,114 +1,56 @@
 import { supabase } from './supabaseClient'
-import { isFileTooBig } from './files'
 import { parseQuoteExcel } from '../components/wyceny/excelImport'
-import { nextQuoteNumber } from '../components/wyceny/calc'
-import { syncQuoteItemsWithCatalog } from './productCatalog'
+import { nextQuoteNumber, toNum } from '../components/wyceny/calc'
 
-// Odpytuje AI (edge function) dla wielu pozycji naraz, ale w OGRANICZONYCH
-// partiach równoległych zamiast: (a) całkiem sekwencyjnie — za wolne przy
-// wielu pozycjach (każde zapytanie to kilka-kilkanaście sekund), albo
-// (b) bez żadnego limitu naraz — realnie zaobserwowane: przy większej
-// wycenie odpalenie WSZYSTKICH zapytań w jednej chwili powodowało serię
-// błędów 500 (przeciążenie edge function / modelu AI). `limit` równoległych
-// zapytań naraz to rozsądny kompromis między szybkością a stabilnością.
-async function mapWithConcurrency(items, limit, fn) {
-  const results = new Array(items.length)
-  let nextIndex = 0
-  async function worker() {
-    while (nextIndex < items.length) {
-      const current = nextIndex++
-      results[current] = await fn(items[current], current)
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker())
-  await Promise.all(workers)
-  return results
-}
-
-// Nowa koncepcja wycen: zespół CN nie wypełnia już ręcznie formularza w
-// aplikacji — dostarcza gotowy plik Excel z wyceną (pozycje towaru, ceny,
-// zdjęcia). Może to zrobić na TRZY niezależne sposoby, każdy z nich
-// wywołuje DOKŁADNIE tę samą funkcję poniżej, więc efekt końcowy jest
-// zawsze identyczny:
-//   1. wgranie pliku w panelu zamówienia (Pliki projektu) z kategorią "Wycena"
-//   2. wysłanie pliku na czacie zamówienia z przypisaniem kategorii "Wycena"
-//   3. wgranie pliku wprost w zakładce Wyceny ("Wgraj wycenę od zespołu CN")
-//
-// Efekt: plik zostaje sparsowany (te same reguły co dotychczasowy ręczny
-// import Excela), powstaje nowa wycena (status 'do_marzy_pl' — zespół CN
-// swoją część już zrobił) z pozycjami i zdjęciami, a CAŁY zespół PL
-// przypisany do zamówienia dostaje zadanie w Centrum zadań — dokładnie jak
-// dawniej przy ręcznym kliknięciu "Prześlij do zespołu PL".
+// NOWY MODEL WYCEN (uproszczony, na wyraźną prośbę): zamiast rozbijać Excela
+// na pozycje/zdjęcia/kody CN-HS (dawny mechanizm — usunięty), każde
+// zamówienie ma co najwyżej JEDNĄ "kartę wyceny" (tabela `quotes`, unique na
+// project_id) z dwoma slotami:
+//   - CN: surowy plik Excel od zespołu chińskiego + wykryta z niego wartość (CNY)
+//   - PL: TEN SAM plik, poprawiony przez zespół polski (doliczona marża) +
+//     wykryta z niego wartość dla klienta (PLN)
+// Plik wgrywa się z DOWOLNEGO miejsca (czat zamówienia/klienta/zarządu, panel
+// plików projektu, zakładka Wyceny) z kategorią "Wycena CN" albo "Wycena dla
+// klienta" — efekt jest zawsze identyczny: plik trafia do Dokumentów, karta
+// wyceny tego zamówienia się aktualizuje (nadpisuje odpowiedni slot), etap
+// się odblokowuje, a przy stronie CN cały zespół przypisany do zamówienia
+// dostaje zadanie w Centrum zadań. Żadnego ekranu z pozycjami do poprawiania
+// — tylko jedna wykryta suma do szybkiej weryfikacji/edycji (patrz
+// QuoteValueModal.jsx) tuż przed zapisaniem.
 function isExcelFile(file) {
   const name = (file?.name || '').toLowerCase()
   return name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')
 }
-
-const sleep = (ms) => new Promise(res => setTimeout(res, ms))
-
-async function createSignedUrlWithRetry(path, attempts = 4, delayMs = 600) {
-  let lastError = null
-  for (let i = 0; i < attempts; i++) {
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(path, 3600)
-    if (data?.signedUrl) return { signedUrl: data.signedUrl, error: null }
-    lastError = error
-    if (i < attempts - 1) await sleep(delayMs)
-  }
-  return { signedUrl: null, error: lastError }
-}
-
-// Tłumaczenie na polski — te same zasady co dotychczasowy ręczny import:
-// najlepszy wysiłek, brak tłumaczenia nie blokuje reszty (pozycje zostają
-// edytowalne w oryginalnym języku).
-async function translateItemsToPolish(readyItems) {
-  const toTranslate = readyItems.map((it, i) => ({ i, name: it.name || '', specification: it.specification || '' })).filter(x => x.name || x.specification)
-  if (!toTranslate.length) return
-  try {
-    const { data, error } = await supabase.functions.invoke('translate-quote-item', { body: { items: toTranslate } })
-    if (error) throw error
-    for (const t of (data?.items || [])) {
-      const it = readyItems[t.i]
-      if (!it) continue
-      if (t.name) it.name = t.name
-      if (t.specification) it.specification = t.specification
-    }
-  } catch { /* najlepszy wysiłek */ }
-}
-
-async function fetchCustomsSuggestion(name, specification, photoPath) {
-  let photo_url = null
-  if (photoPath) {
-    const { signedUrl } = await createSignedUrlWithRetry(photoPath)
-    photo_url = signedUrl
-  }
-  const { data, error } = await supabase.functions.invoke('suggest-customs-code', {
-    body: { name: name || '', specification: specification || '', photo_url },
-  })
-  if (error) throw error
-  return data
-}
-
-// isExcelFile export — używane przez wywołujących (ProjectFiles/czat), żeby
-// zdecydować, czy dany wgrany plik w ogóle kwalifikuje się do tego przepływu
-// (tylko pliki .xlsx/.xls/.xlsm z kategorią "Wycena").
 export { isExcelFile }
-// parseQuoteExcel — re-eksport, żeby ekran szybkiego podglądu (Wyceny.jsx)
-// mógł sparsować plik SAM, pokazać wiersze/zdjęcia do poprawienia (patrz
-// ExcelImportPreview.jsx — przeciąganie zdjęć między wierszami) i dopiero
-// PO zatwierdzeniu przekazać je do createQuoteFromParsedItems niżej.
-export { parseQuoteExcel }
+
+/**
+ * Próbuje wykryć łączną wartość wyceny z pliku Excel — reużywa tego samego
+ * (sprawdzonego) wykrywania kolumn Ilość/Cena co dawny import pozycji, ale
+ * NIE zapisuje żadnych pozycji/zdjęć/kodów CN-HS — liczy tylko sumę
+ * ilość×cena po wszystkich rozpoznanych wierszach. Dla plików innych niż
+ * Excel (albo gdy parsowanie się nie powiedzie/nic nie rozpozna) zwraca
+ * `value: null` — wtedy użytkownik wpisuje sumę ręcznie w oknie weryfikacji.
+ * @returns {Promise<{value:number|null, itemCount:number}>}
+ */
+export async function detectQuoteValue(file) {
+  if (!isExcelFile(file)) return { value: null, itemCount: 0 }
+  try {
+    const items = await parseQuoteExcel(file)
+    if (!items.length) return { value: null, itemCount: 0 }
+    const total = items.reduce((s, it) => s + toNum(it.qty) * toNum(it.unit_price_cny), 0)
+    return { value: Math.round(total * 100) / 100, itemCount: items.length }
+  } catch {
+    return { value: null, itemCount: 0 }
+  }
+}
 
 /**
  * Zwraca listę osób przypisanych do zamówienia (poza rolą 'glowny_cn'), do
  * powiadomienia zadaniem w Centrum zadań. WAŻNE: brak przypisanego zespołu
- * (albo brak wyznaczonego "głównego" opiekuna PL) NIE MA blokować przyjęcia
- * wyceny — wycena ma się ZAWSZE przyjąć i odblokować kolejny etap, bez
- * względu na to, skąd jest wgrywana (czat zamówienia, czat klienta, panel
- * zamówienia, zakładka Wyceny) i czy komukolwiek jest przypisana. Jeśli nikt
- * nie jest przypisany, po prostu nikt nie dostaje zadania — to nie błąd.
- * Wcześniej to twardo blokowało cały import, co powodowało, że realne
- * zamówienia (np. te z importu historycznego, bez ustawionego zespołu)
- * w ogóle nie dawały się przyjąć.
+ * NIE MA blokować przyjęcia wyceny — wycena ma się ZAWSZE przyjąć i
+ * odblokować kolejny etap, bez względu na to, skąd jest wgrywana i czy
+ * komukolwiek jest przypisana. Jeśli nikt nie jest przypisany, po prostu
+ * nikt nie dostaje zadania — to nie błąd.
  * @returns {Promise<{ok:boolean, plUserIds:string[], error:string|null}>}
  */
 export async function checkPlTeamAssigned(project) {
@@ -120,224 +62,89 @@ export async function checkPlTeamAssigned(project) {
 }
 
 /**
- * Główna funkcja przyjęcia wyceny od zespołu CN.
- * @param {File} file - plik Excel wgrany przez użytkownika
- * @param {{id:string, client_id:string}} project
- * @param {{id:string, name?:string}} client
- * @param {string[]} existingQuoteNumbers - numery istniejących wycen (do wygenerowania kolejnego numeru)
- * @returns {Promise<{ok:boolean, quoteId:string|null, itemCount:number, notified:number, notifyFailed:boolean, uploadFailCount:number, error:string|null}>}
+ * Zapisuje plik wyceny (CN albo PL) na karcie wyceny zamówienia — jeden
+ * wywoływany punkt dla WSZYSTKICH miejsc wgrywania (czat zamówienia/klienta/
+ * zarządu, panel plików, zakładka Wyceny). Wgrywa plik do Storage, dokłada
+ * wpis w Dokumentach (kategoria "Wycena CN"/"Wycena dla klienta"), i
+ * tworzy/nadpisuje jedyną kartę wyceny (`quotes`, unique project_id) tego
+ * zamówienia. Przy stronie CN dodatkowo powiadamia (zadanie w Centrum zadań,
+ * bez duplikatów przy ponownym wgraniu) cały zespół przypisany do zamówienia.
+ * @param {{file:File, project:{id:string, client_id:string}, client:{id:string, name?:string}, side:'cn'|'pl', value:number, source?:string}} args
+ * @returns {Promise<{ok:boolean, quoteId:string|null, notified:number, notifyFailed:boolean, overwritten:boolean, error:string|null}>}
  */
-export async function createQuoteFromExcelFile(file, project, client, existingQuoteNumbers = []) {
-  // Sparsuj Excel PRZED zapisem czegokolwiek — jeśli się nie uda, nic nie
-  // zostaje utworzone. To wariant BEZ ekranu podglądu (używany przez
-  // ProjectFiles/czat, gdzie nie ma miejsca na modal) — reszta pracy dzieje
-  // się w createQuoteFromParsedItems, dokładnie tak samo jak przy podglądzie.
-  let parsedItems
-  try {
-    parsedItems = await parseQuoteExcel(file)
-  } catch (e) {
-    return { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, overwritten: false, error: 'Nie udało się odczytać pliku Excel: ' + (e?.message || e) }
-  }
-  if (!parsedItems.length) {
-    return { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, overwritten: false, error: 'Nie rozpoznano żadnych pozycji w tym pliku Excel.' }
-  }
-  return createQuoteFromParsedItems(parsedItems, file, project, client, existingQuoteNumbers)
-}
-
-/**
- * Jak createQuoteFromExcelFile, ale przyjmuje JUŻ sparsowane (i ewentualnie
- * ręcznie poprawione na ekranie podglądu — patrz ExcelImportPreview.jsx)
- * pozycje zamiast parsować plik samodzielnie. Dzięki temu ekran podglądu
- * może dać zespołowi szansę poprawić dopasowanie zdjęć do wierszy PRZED
- * utworzeniem czegokolwiek w bazie.
- * @param {Array} parsedItems - wynik parseQuoteExcel, opcjonalnie poprawiony ręcznie
- * @param {File} file - oryginalny plik Excel (do zapisania w Storage/dokumentach)
- * @param {{id:string, client_id:string}} project
- * @param {{id:string, name?:string}} client
- * @param {string[]} existingQuoteNumbers
- */
-export async function createQuoteFromParsedItems(parsedItems, file, project, client, existingQuoteNumbers = []) {
-  const result = { ok: false, quoteId: null, itemCount: 0, notified: 0, notifyFailed: false, uploadFailCount: 0, error: null, overwritten: false }
+export async function saveQuoteFile({ file, project, client, side, value, source = 'manual' }) {
+  const result = { ok: false, quoteId: null, notified: 0, notifyFailed: false, overwritten: false, error: null }
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 1) Sprawdź ZAWCZASU, czy jest komu przypisać zadanie — bez zespołu PL
-    // przyjęcie wyceny ma się nie udać z czytelnym błędem, zamiast po cichu
-    // "zniknąć" bez żadnego powiadomienia.
-    const plCheck = await checkPlTeamAssigned(project)
-    if (!plCheck.ok) { result.error = plCheck.error; return result }
-    const plUserIds = plCheck.plUserIds
+    const ext = (file.name.split('.').pop() || 'xlsx').toLowerCase()
+    const path = `${client.id}/wycena-${side}-${crypto.randomUUID()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, file)
+    if (upErr) { result.error = 'Nie udało się wgrać pliku: ' + upErr.message; return result }
 
-    if (!parsedItems.length) {
-      result.error = 'Nie rozpoznano żadnych pozycji w tym pliku Excel.'
-      return result
-    }
+    const category = side === 'cn' ? 'Wycena CN' : 'Wycena dla klienta'
+    await supabase.from('documents').insert({
+      client_id: client.id, project_id: project.id, category,
+      file_path: path, file_name: file.name, uploaded_by: user?.id, source,
+    })
 
-    // 3) Wgraj oryginalny plik Excel do Storage (do wglądu / ponownego sparsowania).
-    const excelExt = (file.name.split('.').pop() || 'xlsx').toLowerCase()
-    const excelPath = `${client.id}/wycena-excel-${crypto.randomUUID()}.${excelExt}`
-    const { error: excelUpErr } = await supabase.storage.from('dokumenty').upload(excelPath, file)
-    if (excelUpErr) { result.error = 'Nie udało się wgrać pliku Excel: ' + excelUpErr.message; return result }
+    const { data: existing } = await supabase.from('quotes').select('*').eq('project_id', project.id).maybeSingle()
 
-    // 4) Tłumaczenie na polski PRZED zapisem pozycji (żeby sugestia CN/HS niżej już pracowała na polskim tekście).
-    await translateItemsToPolish(parsedItems)
+    const patch = side === 'cn'
+      ? { source_excel_path: path, source_excel_name: file.name, source_value_cny: value }
+      : { client_excel_path: path, client_excel_name: file.name, client_value_pln: value, sent_at: new Date().toISOString() }
+    const nextClientPath = side === 'pl' ? path : (existing?.client_excel_path || null)
+    patch.status = nextClientPath ? 'wyslana' : 'szkic_cn'
 
-    // 5) Jeśli to zamówienie ma już wycenę, która jeszcze NIE została wysłana
-    // do klienta (status 'szkic_cn'/'do_marzy_pl'), kolejny wgrany Excel od
-    // CN ma ją NADPISAĆ (te same numer/id wyceny, świeże pozycje i zdjęcia)
-    // zamiast tworzyć kolejną — inaczej powtórne testowanie/poprawianie tego
-    // samego zamówienia zaśmiecało listę wycen kolejnymi numerami. Wyceny już
-    // WYSŁANE zostają nietknięte — dla nich kolejny import to świadomie NOWA
-    // wycena (rewizja), żeby zachować historię tego, co realnie poszło do
-    // klienta.
-    const { data: existingDraft } = await supabase.from('quotes')
-      .select('*').eq('project_id', project.id).neq('status', 'wyslana')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle()
-
-    let quote = null
-    let quote_number = existingDraft?.quote_number
-
-    if (existingDraft) {
-      // Nadpisanie: usuń stare pozycje tej wyceny (świeże przyjdą za chwilę w
-      // kroku 6/6b) i podmień plik źródłowy Excela. Numer/status/notatki
-      // zostają — zespół PL mógł już np. zmienić tekst "Warunki".
-      const { error: delErr } = await supabase.from('quote_items').delete().eq('quote_id', existingDraft.id)
-      if (delErr) { result.error = 'Nie udało się nadpisać poprzednich pozycji wyceny: ' + delErr.message; return result }
-      const { data: updated, error: updErr } = await supabase.from('quotes').update({
-        status: 'do_marzy_pl', source_excel_path: excelPath, source_excel_name: file.name,
-        updated_at: new Date().toISOString(),
-      }).eq('id', existingDraft.id).select().single()
-      if (updErr) { result.error = 'Nie udało się nadpisać wyceny: ' + updErr.message; return result }
+    let quote
+    if (existing) {
+      const { data: updated, error: updErr } = await supabase.from('quotes').update(patch).eq('id', existing.id).select().single()
+      if (updErr) { result.error = 'Nie udało się zapisać wyceny: ' + updErr.message; return result }
       quote = updated
-      quote_number = updated.quote_number
       result.overwritten = true
     } else {
-      // Brak jeszcze niewysłanej wyceny dla tego zamówienia — tworzymy nową.
-      // Numer wyceny liczony jest z migawki `existingQuoteNumbers` przekazanej
-      // przez wywołującego — przy dwóch prawie równoczesnych próbach (np.
-      // użytkownik klika drugi raz, bo pierwsza się jeszcze przetwarza) obie
-      // mogą policzyć ten sam "kolejny" numer. Baza ma unique constraint na
-      // quote_number (patrz migracja quotes_quote_number_unique) — druga
-      // próba dostanie tu jawny błąd 23505 zamiast po cichu utworzyć
-      // duplikat; łapiemy to i próbujemy ponownie z ŚWIEŻO pobraną listą
-      // numerów z bazy (nie z tej samej, potencjalnie już nieaktualnej migawki).
-      quote_number = nextQuoteNumber(existingQuoteNumbers)
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const { data, error } = await supabase.from('quotes').insert({
-          quote_number, client_id: client.id, project_id: project.id,
-          status: 'do_marzy_pl', currency: 'CNY', created_by: user?.id,
-          source_excel_path: excelPath, source_excel_name: file.name,
-          notes: '1. Wycena ważna jest 15 dni.\n2. Wycena zawiera: [uzupełnij zakres].\n3. Wycena nie zawiera: transportu, montażu, [uzupełnij].\n4. Czas produkcji: ok. [uzupełnij] dni roboczych.',
-        }).select().single()
-        if (!error) { quote = data; break }
-        const isDuplicateNumber = error.code === '23505' || /quote_number/.test(error.message || '')
-        if (!isDuplicateNumber) { result.error = 'Nie udało się utworzyć wyceny: ' + error.message; return result }
-        const { data: freshRows } = await supabase.from('quotes').select('quote_number')
-        quote_number = nextQuoteNumber((freshRows || []).map(r => r.quote_number))
-      }
-      if (!quote) { result.error = 'Nie udało się utworzyć wyceny: numer wyceny wciąż zajęty po kilku próbach — spróbuj ponownie.'; return result }
+      const { data: rows } = await supabase.from('quotes').select('quote_number')
+      const quote_number = nextQuoteNumber((rows || []).map(r => r.quote_number))
+      const { data: inserted, error: insErr } = await supabase.from('quotes').insert({
+        quote_number, client_id: client.id, project_id: project.id, created_by: user?.id, ...patch,
+      }).select().single()
+      if (insErr) { result.error = 'Nie udało się utworzyć wyceny: ' + insErr.message; return result }
+      quote = inserted
     }
     result.quoteId = quote.id
 
-    // 6) Wgraj zdjęcia wyciągnięte z Excela (visible_in_files:false — patrz
-    // uzasadnienie w QuoteEditor.jsx: dokument staje się widoczny w Plikach
-    // projektu dopiero przy jawnej akcji zespołu PL, nie przy samym imporcie).
-    // Zdjęcia (per pozycja) i sugestia kodu CN/HS (edge function AI, kilka-
-    // kilkanaście sekund NA POZYCJĘ) są robione RÓWNOLEGLE dla wszystkich
-    // pozycji naraz (Promise.all) — sekwencyjna pętla tutaj wcześniej
-    // potrafiła "zawiesić" import na kilka minut przy wycenie z wieloma
-    // pozycjami (realnie zgłoszony problem: przycisk "Przetwarzanie…" wisiał
-    // bez końca). Ten sam wzorzec równoległości jest już używany w
-    // QuoteEditor.jsx przy ręcznym imporcie z Excela.
-    const itemsWithPhotos = await Promise.all(parsedItems.map(async (p) => {
-      const dataUrls = p._photoDataUrls || []
-      const photoPaths = []
-      for (const dataUrl of dataUrls) {
-        try {
-          const blob = await (await fetch(dataUrl)).blob()
-          if (isFileTooBig(blob)) { result.uploadFailCount++; continue }
-          const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
-          const path = `${client.id}/wycena-${quote.id}-${crypto.randomUUID()}-excel-import.${ext}`
-          const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, blob, { contentType: blob.type || 'image/jpeg' })
-          if (upErr) throw upErr
-          await supabase.from('documents').insert({
-            client_id: client.id, project_id: project.id,
-            category: 'Zdjęcie towaru (wycena)', file_path: path, file_name: `excel-${p.name || 'produkt'}.${ext}`,
-            uploaded_by: user?.id, source: 'excel_import', visible_in_files: false,
-          })
-          photoPaths.push(path)
-        } catch { result.uploadFailCount++ }
-      }
-      return { p, photoPaths }
-    }))
-
-    const itemRows = await mapWithConcurrency(itemsWithPhotos, 3, async ({ p, photoPaths }, i) => {
-      // Sugestia kodu CN/HS + stawki cła — najlepszy wysiłek, tak jak
-      // dotychczas przy ręcznym imporcie. Jeśli Excel już podał realną
-      // stawkę cła, nie nadpisujemy jej sugestią AI.
-      let hsCode = null
-      let dutyRate = p.duty_rate_percent === '' || p.duty_rate_percent === undefined ? null : p.duty_rate_percent
+    // Powiadomienie (zadanie w Centrum zadań) tylko przy stronie CN — to
+    // zespół PL ma wtedy dodać marżę i wysłać gotową wycenę do klienta.
+    // Jeśli ktoś ma już OTWARTE (nieukończone) zadanie dla TEJ SAMEJ karty
+    // wyceny (np. bo plik CN był poprawiany i wgrywany kilka razy pod rząd),
+    // tylko odśwież termin/opis zamiast tworzyć kolejny duplikat.
+    if (side === 'cn') {
       try {
-        const data = await fetchCustomsSuggestion(p.name, p.specification, photoPaths[0])
-        if (data?.hs_code) hsCode = data.hs_code
-        if (dutyRate === null && data?.duty_rate_percent !== undefined && data?.duty_rate_percent !== null) dutyRate = data.duty_rate_percent
-      } catch { /* najlepszy wysiłek */ }
-
-      return {
-        quote_id: quote.id, position: i + 1,
-        name: p.name || null, specification: p.specification || null,
-        qty: p.qty || 1, unit: p.unit || 'set', unit_price_cny: p.unit_price_cny || 0,
-        cbm: p.cbm === '' || p.cbm === undefined ? null : p.cbm,
-        weight_kg: p.weight_kg === '' || p.weight_kg === undefined ? null : p.weight_kg,
-        container_note: p.container_note || null,
-        production_days: p.production_days || null,
-        hs_code: hsCode, duty_rate_percent: dutyRate,
-        photo_paths: photoPaths, photo_path: photoPaths[0] || null,
+        const plCheck = await checkPlTeamAssigned(project)
+        if (!plCheck.ok) throw new Error(plCheck.error)
+        const plUserIds = plCheck.plUserIds
+        const { data: existingTasks } = await supabase.from('tasks')
+          .select('id, assigned_to, status').eq('quote_id', quote.id).in('assigned_to', plUserIds)
+        const openByUser = new Map((existingTasks || []).filter(t => t.status !== 'done').map(t => [t.assigned_to, t]))
+        const title = `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`
+        const description = `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} (wartość: ${value} CNY) — dolicz marżę i wgraj gotowy plik jako „Wycena dla klienta”.`
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const toInsert = plUserIds.filter(uid => !openByUser.has(uid))
+        const toUpdate = plUserIds.filter(uid => openByUser.has(uid))
+        const [insertRes, updateResArr] = await Promise.all([
+          toInsert.length
+            ? supabase.from('tasks').insert(toInsert.map(uid => ({
+                title, description, project_id: project.id, client_id: client.id, quote_id: quote.id,
+                assigned_to: uid, assigned_by: user?.id, due_date: todayStr, status: 'todo', priority: 'pilne',
+              })))
+            : Promise.resolve({ error: null }),
+          Promise.all(toUpdate.map(uid => supabase.from('tasks').update({ title, description, due_date: todayStr }).eq('id', openByUser.get(uid).id))),
+        ])
+        result.notified = toInsert.length + toUpdate.length
+        result.notifyFailed = !!insertRes.error || updateResArr.some(r => r.error)
+      } catch {
+        result.notifyFailed = true
       }
-    })
-    const { data: insertedItems, error: itemsErr } = await supabase.from('quote_items').insert(itemRows).select()
-    if (itemsErr) { result.error = 'Wycena utworzona, ale nie udało się zapisać pozycji: ' + itemsErr.message; return result }
-    result.itemCount = itemRows.length
-
-    // 6b) Karty w Bazie produktów (Magazyn) mają istnieć OD RAZU po tym, jak
-    // zespół CN dostarczy wycenę — nie dopiero po wysłaniu do klienta (to
-    // mogło być tygodnie później). Trwałe powiązanie (product_id) na
-    // quote_items sprawia, że kolejne edycje w QuoteEditor.jsx aktualizują
-    // TĘ SAMĄ kartę zamiast tworzyć nowe — najlepszy wysiłek.
-    try {
-      const newLinks = await syncQuoteItemsWithCatalog(insertedItems || [], { quoteNumber: quote_number, company: 'PL', userId: user?.id || null })
-      await Promise.all(newLinks.map(({ itemId, product_id }) => supabase.from('quote_items').update({ product_id }).eq('id', itemId)))
-    } catch { /* najlepszy wysiłek */ }
-
-    // 7) Powiadom cały zespół PL (zadanie w Centrum zadań) — jeśli ktoś ma
-    // już OTWARTE (nieukończone) zadanie dla TEJ SAMEJ wyceny (np. bo Excel
-    // był poprawiany i wgrywany kilka razy pod rząd, co nadpisuje tę samą
-    // wycenę — patrz krok 5 wyżej), tylko odśwież termin/opis istniejącego
-    // zadania zamiast tworzyć kolejny duplikat w Centrum zadań. Bez tego
-    // każde ponowne wgranie tego samego pliku mnożyło identyczne zadania.
-    try {
-      const { data: existingTasks } = await supabase.from('tasks')
-        .select('id, assigned_to, status').eq('quote_id', quote.id).in('assigned_to', plUserIds)
-      const openByUser = new Map((existingTasks || []).filter(t => t.status !== 'done').map(t => [t.assigned_to, t]))
-      const title = `Dodaj marżę i wyślij wycenę ${quote_number} do klienta`
-      const description = `Zespół chiński przekazał wycenę ${quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj koszty transportu/odprawy/dostawy i marżę, sprawdź kursy NBP i wyślij do klienta.`
-      const todayStr = new Date().toISOString().slice(0, 10)
-      const toInsert = plUserIds.filter(uid => !openByUser.has(uid))
-      const toUpdate = plUserIds.filter(uid => openByUser.has(uid))
-
-      const [insertRes, updateResArr] = await Promise.all([
-        toInsert.length
-          ? supabase.from('tasks').insert(toInsert.map(uid => ({
-              title, description, project_id: project.id, client_id: client.id, quote_id: quote.id,
-              assigned_to: uid, assigned_by: user?.id, due_date: todayStr, status: 'todo', priority: 'pilne',
-            })))
-          : Promise.resolve({ error: null, count: 0 }),
-        Promise.all(toUpdate.map(uid => supabase.from('tasks').update({ title, description, due_date: todayStr }).eq('id', openByUser.get(uid).id))),
-      ])
-      result.notified = toInsert.length + toUpdate.length
-      result.notifyFailed = !!insertRes.error || updateResArr.some(r => r.error)
-    } catch {
-      result.notifyFailed = true
     }
 
     result.ok = true

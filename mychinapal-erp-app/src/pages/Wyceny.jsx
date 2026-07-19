@@ -1,74 +1,67 @@
 import { useLang } from "../lib/i18n/LanguageContext";
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { C, fmt } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import useIsMobile from '../lib/useIsMobile'
-import { computeQuoteTotals, STATUS_LABELS } from '../components/wyceny/calc'
-import QuoteEditor from '../components/wyceny/QuoteEditor'
 import NewProjectModal from '../components/projekty/NewProjectModal'
-import ExcelImportPreview from '../components/wyceny/ExcelImportPreview'
-import { isExcelFile, checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems } from '../lib/quoteIntake'
+import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
+import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 
-const statusColor = (s) => s === 'wyslana' ? C.green : s === 'do_marzy_pl' ? C.orange : C.blue
-const statusBg = (s) => s === 'wyslana' ? C.glight : s === 'do_marzy_pl' ? C.olight : C.blight
-
+// Wyceny to teraz po prostu moduł do wgrywania GOTOWYCH plików Excel — jedna
+// "karta wyceny" na zamówienie, z dwoma slotami: plik od zespołu CN (surowa
+// wycena fabryczna) i TEN SAM plik poprawiony przez zespół PL (doliczona
+// marża — wycena dla klienta). Żadnego rozbijania na pozycje/zdjęcia/AI —
+// tylko plik + jedna wykryta/poprawiona suma do szybkiej weryfikacji.
 export default function Wyceny() {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const isMobile = useIsMobile()
   const [quotes, setQuotes] = useState([])
-  const [items, setItems] = useState([])
   const [clients, setClients] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
-  const [openId, setOpenId] = useState(null)
   const [picking, setPicking] = useState(false)
   const [pickClient, setPickClient] = useState('')
   const [pickProject, setPickProject] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [pickSide, setPickSide] = useState('cn')
   const [pickFile, setPickFile] = useState(null)
-  const [parsing, setParsing] = useState(false)
-  // null = ekran podglądu ukryty; tablica = pokazany, z wierszami do
-  // poprawienia (nazwa/specyfikacja/ilość/cena, dopasowanie zdjęć drag&drop)
-  // ZANIM cokolwiek trafi do bazy — patrz ExcelImportPreview.jsx.
-  const [previewItems, setPreviewItems] = useState(null)
+  const [detecting, setDetecting] = useState(false)
+  const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, project, client, detectedValue, itemCount }
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
+  const [highlightId, setHighlightId] = useState(null)
+  const tileRefs = useRef({})
 
-  // Pozwala przejść jednym kliknięciem wprost do konkretnej wyceny z
-  // zewnątrz (np. z zadania w Centrum zadań — "Dodaj marżę i wyślij wycenę
-  // ..." — patrz lib/taskLinks.js) przez link /wyceny?quote=<id>, zamiast
-  // zmuszać do szukania jej ręcznie na liście.
+  // Pozwala przejść jednym kliknięciem wprost do konkretnej karty wyceny z
+  // zewnątrz (np. z checklisty etapów zamówienia) przez link
+  // /wyceny?quote=<id> — podświetla i przewija do właściwego kafelka.
   useEffect(() => {
     const wanted = searchParams.get('quote')
-    if (wanted) setOpenId(wanted)
+    if (wanted) {
+      setHighlightId(wanted)
+      setTimeout(() => tileRefs.current[wanted]?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200)
+      setTimeout(() => setHighlightId(null), 2500)
+    }
   }, [searchParams])
 
   const loadAll = async () => {
     setLoading(true)
-    const [qRes, iRes, cRes, pRes] = await Promise.all([
-      supabase.from('quotes').select('*, clients(id,name), projects(id,order_label)').order('created_at', { ascending: false }),
-      supabase.from('quote_items').select('*'),
+    const [qRes, cRes, pRes] = await Promise.all([
+      supabase.from('quotes').select('*, clients(id,name), projects(id,order_label)').order('updated_at', { ascending: false }),
       supabase.from('clients').select('id,name').order('name'),
       supabase.from('projects').select('id,client_id,order_label').order('created_at', { ascending: false }),
     ])
     if (qRes.error) console.error(qRes.error)
     setQuotes(qRes.data || [])
-    setItems(iRes.data || [])
     setClients(cRes.data || [])
     setProjects(pRes.data || [])
     setLoading(false)
   }
   useEffect(() => { loadAll() }, [])
-
-  const itemsByQuote = useMemo(() => {
-    const m = {}
-    for (const it of items) { m[it.quote_id] = m[it.quote_id] || []; m[it.quote_id].push(it) }
-    return m
-  }, [items])
 
   const clientProjects = useMemo(() => projects.filter(p => p.client_id === pickClient), [projects, pickClient])
   const pickClientName = useMemo(() => clients.find(c => c.id === pickClient)?.name || '', [clients, pickClient])
@@ -83,115 +76,84 @@ export default function Wyceny() {
   const filtered = quotes.filter(q => {
     if (!search) return true
     const s = search.toLowerCase()
-    return (q.quote_number || '').toLowerCase().includes(s)
-      || (q.clients?.name || '').toLowerCase().includes(s)
-      || (q.projects?.order_label || '').toLowerCase().includes(s)
+    return (q.clients?.name || '').toLowerCase().includes(s) || (q.projects?.order_label || '').toLowerCase().includes(s)
   })
 
-  // Od tej wersji wycena NIE jest już tworzona ręcznie — zespół CN dostarcza
-  // gotowy plik Excel. Zanim jednak cokolwiek trafi do bazy, plik jest
-  // parsowany i pokazany na ekranie SZYBKIEGO PODGLĄDU (ExcelImportPreview)
-  // — tam da się poprawić nazwę/specyfikację/ilość/cenę i, co najważniejsze,
-  // PRZECIĄGNĄĆ zdjęcie na inną pozycję, jeśli parser dopasował je do złego
-  // wiersza (realnie zgłoszony problem: zdjęcia "rozjeżdżały się" o wiersz).
-  // Dopiero zatwierdzenie tego ekranu tworzy/nadpisuje wycenę + pozycje +
-  // zdjęcia i powiadamia cały zespół PL.
   const handlePickFileContinue = async () => {
     if (!pickClient || !pickProject) { toast.error(t('Wybierz klienta i zamówienie.')); return }
-    if (!pickFile) { toast.error(t('Wybierz plik Excel z wyceną od zespołu CN.')); return }
-    if (!isExcelFile(pickFile)) { toast.error(t('To musi być plik Excel (.xlsx / .xls).')); return }
-    const project = projects.find(p => p.id === pickProject)
-    setParsing(true)
-    const plCheck = await checkPlTeamAssigned(project)
-    if (!plCheck.ok) { setParsing(false); toast.error(t('Nie udało się przyjąć wyceny: ') + plCheck.error); return }
-    let parsedItems
-    try {
-      parsedItems = await parseQuoteExcel(pickFile)
-    } catch (e) {
-      setParsing(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
-    }
-    setParsing(false)
-    if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
-    setPicking(false)
-    setPreviewItems(parsedItems)
-  }
-
-  const handleCancelPreview = () => { setPreviewItems(null); setPicking(true) }
-
-  const handleConfirmPreview = async (editedItems) => {
-    setPreviewItems(null)
-    setCreating(true)
+    if (!pickFile) { toast.error(t('Wybierz plik.')); return }
     const project = projects.find(p => p.id === pickProject)
     const client = clients.find(c => c.id === pickClient)
-    const result = await createQuoteFromParsedItems(editedItems, pickFile, project, client, quotes.map(q => q.quote_number))
-    setCreating(false)
-    if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny: ') + result.error); return }
-    setPickClient(''); setPickProject(''); setPickFile(null)
+    setDetecting(true)
+    const { value, itemCount } = await detectQuoteValue(pickFile)
+    setDetecting(false)
+    setPicking(false)
+    setPendingQuoteFile({ file: pickFile, side: pickSide, project, client, detectedValue: value, itemCount })
+  }
+
+  const handleCancelQuoteValue = () => { setPendingQuoteFile(null); setPicking(true) }
+
+  const handleConfirmQuoteValue = async (value) => {
+    const { file, side, project, client } = pendingQuoteFile
+    setSaving(true)
+    const result = await saveQuoteFile({ file, project, client, side, value, source: 'manual' })
+    setSaving(false)
+    if (!result.ok) { toast.error(t('Nie udało się zapisać wyceny: ') + result.error); return }
+    setPendingQuoteFile(null)
+    setPickClient(''); setPickProject(''); setPickFile(null); setPickSide('cn')
     await loadAll()
-    setOpenId(result.quoteId)
-    const notifyMsg = result.notifyFailed
-      ? t(` (⚠ nie udało się powiadomić części zespołu PL)`)
-      : t(` — zespół PL (${result.notified}) dostał powiadomienie`)
-    const actionMsg = result.overwritten ? t('Wycena nadpisana nowymi danymi ✓') : t('Wycena przyjęta ✓')
-    toast.success(t(`${actionMsg} ${result.itemCount} pozycji`) + notifyMsg)
-    if (result.uploadFailCount) toast.error(t(`Nie udało się wgrać ${result.uploadFailCount} zdjęć z Excela.`))
+    const actionLabel = result.overwritten ? t('Wycena nadpisana ✓') : t('Wycena zapisana ✓')
+    if (side === 'cn') {
+      toast.success(`${actionLabel} — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}`)
+      if (result.notifyFailed) toast.error(t('Uwaga: część powiadomień mogła się nie wysłać.'))
+    } else {
+      toast.success(actionLabel)
+    }
   }
 
   const handleDelete = async (q, e) => {
     e.stopPropagation()
-    if (!await confirm(t('Usunąć wycenę „' + q.quote_number + '”? Tej operacji nie da się cofnąć.'))) return
-    // Usuń też otwarte (nieukończone) zadania "Dodaj marżę i wyślij wycenę…"
-    // powiązane z tą wyceną — inaczej zostają w Centrum zadań na zawsze
-    // (klucz obcy tasks.quote_id ma ON DELETE SET NULL, więc same by nie
-    // zniknęły, tylko stały się nieaktualnym "widmem" bez powiązania).
+    if (!await confirm(t(`Usunąć kartę wyceny zamówienia „${q.projects?.order_label || ''}”? Tej operacji nie da się cofnąć.`))) return
     await supabase.from('tasks').delete().eq('quote_id', q.id).neq('status', 'done')
     const { error } = await supabase.from('quotes').delete().eq('id', q.id)
     if (error) { toast.error(t('Nie udało się usunąć: ') + error.message); return }
 
-    // Jeśli to była OSTATNIA wycena tego zamówienia, samo zamówienie (razem
-    // z nazwą, którą ktoś mu nadał przy tworzeniu — np. "testowe") też nie
-    // ma już po co istnieć. Usuń je automatycznie, żeby puste zamówienia nie
-    // zaśmiecały panelu Projekty i listy rozwijalnej "Zamówienie" tutaj.
+    // Karta wyceny to jedyny wiersz `quotes` tego zamówienia (unique na
+    // project_id) — po jej usunięciu zamówienie zawsze zostaje bez wyceny.
+    // Jeśli to było jeszcze puste (testowe) zamówienie bez żadnych innych
+    // danych, proponujemy usunięcie też samego zamówienia — tak jak dotąd.
     if (q.project_id) {
-      const { count } = await supabase.from('quotes').select('id', { count: 'exact', head: true }).eq('project_id', q.project_id)
-      if (!count) {
-        try {
-          const { data } = await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id } })
-          if (data?.needs_confirmation) {
-            const c = data.counts || {}
-            const parts = []
-            if (c.invoices) parts.push(`${t('faktur')}: ${c.invoices}`)
-            if (c.transactions) parts.push(`${t('transakcji')}: ${c.transactions}`)
-            if (c.transaction_splits) parts.push(`${t('podziałów transakcji')}: ${c.transaction_splits}`)
-            if (c.warehouse_documents) parts.push(`${t('dokumentów magazynowych')}: ${c.warehouse_documents}`)
-            const ok2 = await confirm(
-              t(`To była ostatnia wycena zamówienia „${data.order_label}”. Ma ono jednak powiązane realne dane księgowe/magazynowe (${parts.join(', ')}) — zostaną zachowane, ale stracą powiązanie z tym zamówieniem. Usunąć mimo to samo (teraz puste) zamówienie?`),
-              { confirmLabel: t('Usuń zamówienie') },
-            )
-            if (ok2) await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id, force: true } })
-          }
-          // Brak uprawnień (nie-zarząd) lub inny błąd — zostawiamy puste
-          // zamówienie, da się je usunąć ręcznie w Projekty & Zamówienia.
-        } catch { /* najlepszy wysiłek — usunięcie samej wyceny i tak się udało */ }
-      }
+      try {
+        const { data } = await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id } })
+        if (data?.needs_confirmation) {
+          const c = data.counts || {}
+          const parts = []
+          if (c.invoices) parts.push(`${t('faktur')}: ${c.invoices}`)
+          if (c.transactions) parts.push(`${t('transakcji')}: ${c.transactions}`)
+          if (c.transaction_splits) parts.push(`${t('podziałów transakcji')}: ${c.transaction_splits}`)
+          if (c.warehouse_documents) parts.push(`${t('dokumentów magazynowych')}: ${c.warehouse_documents}`)
+          const ok2 = await confirm(
+            t(`To była wycena zamówienia „${data.order_label}”. Ma ono jednak powiązane realne dane księgowe/magazynowe (${parts.join(', ')}) — zostaną zachowane, ale stracą powiązanie z tym zamówieniem. Usunąć mimo to samo (teraz bez wyceny) zamówienie?`),
+            { confirmLabel: t('Usuń zamówienie') },
+          )
+          if (ok2) await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id, force: true } })
+        }
+      } catch { /* najlepszy wysiłek — usunięcie samej wyceny i tak się udało */ }
     }
-
     await loadAll()
   }
 
   if (loading) return <div style={{ padding: 40, fontSize: 13, color: C.muted }}>{t("Ładowanie wycen…")}</div>
-
-  if (openId) {
-    return <QuoteEditor quoteId={openId} onBack={() => { setOpenId(null); setSearchParams({}); loadAll() }} onChanged={loadAll} />
-  }
 
   return (
     <div style={{ padding: isMobile ? '14px 14px 24px' : '20px 26px 32px', maxWidth: 1300, margin: '0 auto' }}>
       <style>{`
         @keyframes wycFloat1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(14px,-10px) scale(1.06); } }
         @keyframes wycCardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wycHighlight { 0%,100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } 50% { box-shadow: 0 0 0 4px rgba(37,99,235,.35); } }
         .wyc-card { animation: wycCardIn .25s ease both; transition: transform .15s ease, box-shadow .15s ease; }
         .wyc-card:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(10,22,40,.1); }
+        .wyc-card.wyc-highlight { animation: wycHighlight 1.1s ease 2; }
       `}</style>
 
       <div style={{
@@ -204,7 +166,7 @@ export default function Wyceny() {
           <div style={{ width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)' }}>📝</div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 21, fontWeight: 800 }}>{t("Wyceny")}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 3 }}>{t("Wyceny od zespołu CN — dolicz koszty i marżę, wyślij do klienta")}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 3 }}>{t("Plik od zespołu CN + ten sam plik z marżą od zespołu PL — po jednej karcie na zamówienie")}</div>
           </div>
           <button onClick={() => setPicking(true)} style={{ padding: '11px 20px', borderRadius: 11, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', boxShadow: '0 6px 18px rgba(37,99,235,.4)' }}>
             {t("+ Wgraj wycenę")}
@@ -215,16 +177,18 @@ export default function Wyceny() {
       {picking && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPicking(false)}>
           <div style={{ background: C.white, borderRadius: 14, padding: 24, width: 440, maxWidth: '92vw', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{t("Wgraj wycenę od zespołu CN")}</div>
-            <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14 }}>{t("Wybierz plik Excel z wyceną — aplikacja rozpozna pozycje, zdjęcia i ceny, i powiadomi cały zespół PL przypisany do zamówienia.")}</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{t("Wgraj wycenę")}</div>
+            <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14 }}>{t("Wybierz klienta, zamówienie i czyj to plik — po zapisaniu poprosimy o potwierdzenie łącznej wartości.")}</div>
+
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Klient")}</label>
             <select value={pickClient} onChange={e => { setPickClient(e.target.value); setPickProject('') }}
               style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, width: '100%', marginBottom: 12, boxSizing: 'border-box' }}>
               <option value="">{t("— wybierz —")}</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+
             <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t("Zamówienie")}</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <select value={pickProject} onChange={e => setPickProject(e.target.value)} disabled={!pickClient}
                 style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }}>
                 <option value="">{t("— wybierz —")}</option>
@@ -235,9 +199,18 @@ export default function Wyceny() {
                 {t("+ Nowe")}
               </button>
             </div>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>{t("Nie widzisz klienta? Utwórz go najpierw w module Klienci. Zamówienie możesz założyć od razu tutaj przyciskiem „+ Nowe”.")}</div>
 
-            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Plik Excel z wyceną od zespołu CN")}</label>
+            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Czyj to plik?")}</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, border: `1.5px solid ${pickSide === 'cn' ? C.blue : C.border}`, background: pickSide === 'cn' ? C.blight : C.bg, borderRadius: 8, padding: '8px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+                <input type="radio" checked={pickSide === 'cn'} onChange={() => setPickSide('cn')} />{t("Zespół CN")}
+              </label>
+              <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, border: `1.5px solid ${pickSide === 'pl' ? C.blue : C.border}`, background: pickSide === 'pl' ? C.blight : C.bg, borderRadius: 8, padding: '8px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+                <input type="radio" checked={pickSide === 'pl'} onChange={() => setPickSide('pl')} />{t("Zespół PL (z marżą)")}
+              </label>
+            </div>
+
+            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 6 }}>{t("Plik")}</label>
             <label style={{
               display: 'flex', alignItems: 'center', gap: 10, border: `1.5px dashed ${pickFile ? C.blue : C.border}`,
               background: pickFile ? C.blight : C.bg, borderRadius: 9, padding: '12px 13px', cursor: 'pointer', marginBottom: 16,
@@ -245,31 +218,32 @@ export default function Wyceny() {
               <span style={{ fontSize: 18 }}>📄</span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: pickFile ? C.blue : C.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {pickFile ? pickFile.name : t("Wybierz plik .xlsx / .xls…")}
+                  {pickFile ? pickFile.name : t("Wybierz plik…")}
                 </span>
-                <span style={{ display: 'block', fontSize: 9.5, color: C.muted, marginTop: 1 }}>
-                  {t("Pozycje, ceny i zdjęcia zostaną rozpoznane automatycznie")}
-                </span>
+                <span style={{ display: 'block', fontSize: 9.5, color: C.muted, marginTop: 1 }}>{t("Excel (.xlsx/.xls) — spróbujemy automatycznie wykryć sumę")}</span>
               </span>
-              <input type="file" accept=".xlsx,.xls,.xlsm" onChange={e => setPickFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+              <input type="file" onChange={e => setPickFile(e.target.files?.[0] || null)} style={{ display: 'none' }} />
             </label>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => { setPicking(false); setPickFile(null) }} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t("Anuluj")}</button>
-              <button onClick={handlePickFileContinue} disabled={parsing || creating || !pickClient || !pickProject || !pickFile} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (parsing || creating || !pickClient || !pickProject || !pickFile) ? .6 : 1 }}>
-                {parsing ? t("Analizowanie pliku…") : (creating ? t("Przetwarzanie…") : t("Dalej — podgląd"))}
+              <button onClick={handlePickFileContinue} disabled={detecting || !pickClient || !pickProject || !pickFile} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (detecting || !pickClient || !pickProject || !pickFile) ? .6 : 1 }}>
+                {detecting ? t("Analizowanie pliku…") : t("Dalej")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {previewItems && (
-        <ExcelImportPreview
-          rows={previewItems}
-          fileName={pickFile?.name}
-          onConfirm={handleConfirmPreview}
-          onCancel={handleCancelPreview}
+      {pendingQuoteFile && (
+        <QuoteValueModal
+          file={pendingQuoteFile.file}
+          side={pendingQuoteFile.side}
+          detectedValue={pendingQuoteFile.detectedValue}
+          itemCount={pendingQuoteFile.itemCount}
+          saving={saving}
+          onConfirm={handleConfirmQuoteValue}
+          onCancel={handleCancelQuoteValue}
         />
       )}
 
@@ -282,56 +256,72 @@ export default function Wyceny() {
         />
       )}
 
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("🔍 Szukaj wg numeru, klienta, zamówienia…")}
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("🔍 Szukaj wg klienta, zamówienia…")}
         style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: '9px 13px', fontSize: 12, width: '100%', maxWidth: 360, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }} />
 
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: 48, color: C.muted, fontSize: 12, background: C.white, border: `1px solid ${C.border}`, borderRadius: 14 }}>
-          {t("Brak wycen — kliknij „+ Nowa wycena”, żeby zacząć.")}
+          {t("Brak wycen — kliknij „+ Wgraj wycenę”, żeby zacząć.")}
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-        {filtered.map((q, i) => {
-          const qItems = itemsByQuote[q.id] || []
-          // Na etapie szkicu CN nie ma jeszcze pobranych kursów NBP — pokazujemy
-          // wtedy surową wartość towaru w CNY (cena fabryczna). Po przejściu do
-          // zespołu PL / wysłaniu do klienta liczymy już naprawdę w PLN (wg
-          // zapisanych na wycenie kursów NBP + prowizji banku).
-          const cnyEff = (Number(q.nbp_rate) || 0) * (1 + (Number(q.bank_commission_percent) || 0) / 100)
-          const transportEff = (q.transport_currency || 'CNY') === 'PLN'
-            ? 1
-            : (Number(q.transport_rate) || 0) * (1 + (Number(q.bank_commission_percent) || 0) / 100)
-          const { totals } = q.status === 'szkic_cn'
-            ? computeQuoteTotals(qItems, {})
-            : computeQuoteTotals(qItems, { transportCost: q.transport_cost, includeDuty: q.include_duty, marginPercent: q.margin_percent || 0, cnyRate: cnyEff, transportRate: transportEff })
-          return (
-            <div key={q.id} className="wyc-card" style={{ animationDelay: `${i * 0.03}s`, background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, cursor: 'pointer', position: 'relative' }} onClick={() => setOpenId(q.id)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13.5, fontWeight: 700 }}>{q.quote_number}</div>
-                <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: statusBg(q.status), color: statusColor(q.status) }}>{t(STATUS_LABELS[q.status] || q.status)}</span>
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 2 }}>{q.clients?.name || '—'}</div>
-              <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>{q.projects?.order_label || '—'}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: C.muted }}>
-                <span>{qItems.length} {t("pozycji")}</span>
-                <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, color: C.text, fontSize: 13 }}>
-                  {q.status === 'szkic_cn' ? `${fmt(totals.goodsValue, 0)} CNY` : `${fmt(totals.finalPrice, 0)} PLN`}
-                </span>
-              </div>
-              <div style={{ fontSize: 9.5, color: C.muted, marginTop: 8 }}>{new Date(q.created_at).toLocaleDateString('pl-PL')}</div>
-              <span onClick={(e) => handleDelete(q, e)} title={t('Usuń wycenę')}
-                style={{
-                  position: 'absolute', top: 10, right: 10, width: 26, height: 26, borderRadius: 8,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12.5, color: C.red, background: C.rlight, border: `1px solid ${C.rmid}`,
-                }}
-                className="wyc-del">🗑</span>
-              <style>{`.wyc-del:hover { background: ${C.red} !important; color: #fff !important; }`}</style>
-            </div>
-          )
-        })}
+        {filtered.map((q, i) => (
+          <QuoteTile key={q.id} q={q} i={i} highlighted={highlightId === q.id}
+            tileRef={el => { tileRefs.current[q.id] = el }}
+            onDelete={handleDelete} t={t} toast={toast} />
+        ))}
       </div>
+    </div>
+  )
+}
+
+function QuoteTile({ q, i, highlighted, tileRef, onDelete, t, toast }) {
+  const hasCn = !!q.source_excel_path
+  const hasPl = !!q.client_excel_path
+
+  const handleDownload = async (path, e) => {
+    e.stopPropagation()
+    if (!path) return
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(path, 3600)
+    if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
+    window.open(data.signedUrl, '_blank')
+  }
+
+  return (
+    <div ref={tileRef} className={`wyc-card${highlighted ? ' wyc-highlight' : ''}`} style={{ animationDelay: `${i * 0.03}s`, background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13.5, fontWeight: 700 }}>{q.projects?.order_label || '—'}</div>
+        <span onClick={(e) => onDelete(q, e)} title={t('Usuń kartę wyceny')}
+          style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, color: C.red, background: C.rlight, border: `1px solid ${C.rmid}`, cursor: 'pointer', flexShrink: 0 }}
+          className="wyc-del">🗑</span>
+        <style>{`.wyc-del:hover { background: ${C.red} !important; color: #fff !important; }`}</style>
+      </div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 14 }}>{q.clients?.name || '—'}</div>
+
+      <div onClick={hasCn ? (e) => handleDownload(q.source_excel_path, e) : undefined}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, marginBottom: 8, background: hasCn ? C.glight : C.rlight, cursor: hasCn ? 'pointer' : 'default' }}>
+        <span style={{ fontSize: 13 }}>{hasCn ? '✓' : '✗'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: hasCn ? C.green : C.red }}>{t('Wycena od zespołu CN')}</div>
+          <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {hasCn ? `${q.source_excel_name || ''} · ${fmt(q.source_value_cny, 0)} CNY` : t('brak — czeka na plik')}
+          </div>
+        </div>
+      </div>
+
+      <div onClick={hasPl ? (e) => handleDownload(q.client_excel_path, e) : undefined}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, marginBottom: 10, background: hasPl ? C.glight : C.rlight, cursor: hasPl ? 'pointer' : 'default' }}>
+        <span style={{ fontSize: 13 }}>{hasPl ? '✓' : '✗'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: hasPl ? C.green : C.red }}>{t('Wycena dla klienta (z marżą)')}</div>
+          <div style={{ fontSize: 10, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {hasPl ? `${q.client_excel_name || ''} · ${fmt(q.client_value_pln, 0)} PLN` : t('brak — nie dodano marży')}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 9.5, color: C.muted }}>{new Date(q.updated_at).toLocaleDateString('pl-PL')}</div>
     </div>
   )
 }

@@ -2,7 +2,8 @@
 // Każdy etap wymaga wgrania dokumentu(ów) z podanej kategorii, żeby system
 // sam odblokował kolejny etap — bez ręcznego "przełączania" statusu.
 export const DOC_CATEGORIES = [
-  'Wycena',
+  'Wycena CN',
+  'Wycena dla klienta',
   'Faktura pro-forma',
   'Faktura zaliczkowa',
   'CI Zonglu',
@@ -16,16 +17,17 @@ export const DOC_CATEGORIES = [
   'Inne',
 ]
 
-// Od tej wersji wycena NIE jest już tworzona ręcznie w formularzu przez
-// zespół CN — CN dostarcza gotowy plik Excel (przez panel zamówienia, czat
-// zamówienia z przypisaniem kategorii, albo wprost w zakładce Wyceny), a
-// aplikacja parsuje go automatycznie. To rozbija dawny "etap 1" na dwa
-// osobne, realne kroki: (1) otrzymanie wyceny od CN, (2) uzupełnienie
-// kosztów/marży przez PL i wysyłka gotowej wyceny (Excel) do klienta —
+// Wycena to teraz po prostu dwa pliki Excel dołożone do "karty wyceny" tego
+// zamówienia (tabela quotes, jeden wiersz na zamówienie — patrz lib/quoteIntake.js):
+// plik od zespołu CN (surowa wycena fabryczna) i plik od zespołu PL (ten sam
+// plik z doliczoną marżą, gotowy dla klienta). Żadnego rozbijania na
+// pozycje/zdjęcia/AI — tylko wgranie pliku + wykryta/poprawiona łączna
+// wartość. To rozbija dawny "etap 1" na dwa osobne, realne kroki: (1)
+// otrzymanie wyceny od CN, (2) wysyłka gotowej wyceny (z marżą) do klienta —
 // stąd 10 etapów zamiast 9.
 export const STAGE_DEFS = [
-  { key: 1, name: 'Wycena od zespołu CN', desc: 'Zespół CN dostarczył wycenę (plik Excel) z pozycjami towaru', categories: [] },
-  { key: 2, name: 'Wysłanie wyceny do klienta', desc: 'Zespół PL uzupełnił koszty/marżę i wysłał gotową wycenę (Excel) do klienta', categories: ['Wycena'] },
+  { key: 1, name: 'Wycena od zespołu CN', desc: 'Zespół CN dostarczył wycenę (plik Excel)', categories: [] },
+  { key: 2, name: 'Wysłanie wyceny do klienta', desc: 'Zespół PL doliczył marżę i wysłał gotową wycenę (Excel) do klienta', categories: ['Wycena dla klienta'] },
   { key: 3, name: 'Wpłata klienta na towar', desc: 'Faktura pro-forma i faktura zaliczkowa', categories: ['Faktura pro-forma', 'Faktura zaliczkowa'] },
   { key: 4, name: 'Pieniądze wysłane do Zonglu', desc: 'CI (Commercial Invoice) od Zonglu', categories: ['CI Zonglu'] },
   { key: 5, name: 'Złożenie zamówienia w fabryce', desc: 'CI od fabryki', categories: ['CI Fabryka'] },

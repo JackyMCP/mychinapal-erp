@@ -10,8 +10,10 @@ import AttachCategoryModal from '../ui/AttachCategoryModal'
 import MentionInput from '../czat/MentionInput'
 import MentionText from '../czat/MentionText'
 import { extractMentions } from '../../lib/mentions'
-import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
-import ExcelImportPreview from '../wyceny/ExcelImportPreview'
+import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
+import QuoteValueModal from '../wyceny/QuoteValueModal'
+
+const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -38,9 +40,7 @@ export default function ProjectChat({ project, onChanged }) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [scrollTick, setScrollTick] = useState(0)
   const [profiles, setProfiles] = useState([])
-  const [previewItems, setPreviewItems] = useState(null)
-  const [pendingExcelFile, setPendingExcelFile] = useState(null)
-  const [pendingExcelText, setPendingExcelText] = useState('')
+  const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, detectedValue, itemCount, text }
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -158,27 +158,17 @@ export default function ProjectChat({ project, onChanged }) {
     if ((!text.trim() && !attachFile) || !channelId) return
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
 
-    // Excel skategoryzowany jako "Wycena" na czacie zamówienia to jeden z
-    // trzech niezależnych sposobów, w jaki zespół CN dostarcza wycenę — plik
-    // NIE trafia jako zwykły załącznik/dokument. Zanim jednak cokolwiek
-    // trafi do bazy, pokazujemy szybki podgląd (ten sam co w Wycenach i
-    // Plikach projektu) z możliwością poprawy pozycji i przeciągnięcia
-    // zdjęcia na inną pozycję, jeśli parser się pomylił.
-    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
+    // Plik skategoryzowany jako "Wycena CN"/"Wycena dla klienta" na czacie
+    // zamówienia to jeden z kilku niezależnych sposobów wgrania karty wyceny
+    // — plik NIE trafia jako zwykły załącznik/dokument, tylko od razu na
+    // odpowiedni slot karty wyceny tego zamówienia (patrz lib/quoteIntake.js).
+    // Zanim cokolwiek trafi do bazy, pokazujemy lekkie okienko z wykrytą (albo
+    // do ręcznego wpisania) łączną wartością do potwierdzenia.
+    if (attachFile && QUOTE_CATEGORIES[attachCategory]) {
       setSending(true)
-      const plCheck = await checkPlTeamAssigned(project)
-      if (!plCheck.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); return }
-      let parsedItems
-      try {
-        parsedItems = await parseQuoteExcel(attachFile)
-      } catch (e) {
-        setSending(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
-      }
+      const { value, itemCount } = await detectQuoteValue(attachFile)
       setSending(false)
-      if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
-      setPendingExcelFile(attachFile)
-      setPendingExcelText(text.trim())
-      setPreviewItems(parsedItems)
+      setPendingQuoteFile({ file: attachFile, side: QUOTE_CATEGORIES[attachCategory], detectedValue: value, itemCount, text: text.trim() })
       return
     }
 
@@ -204,25 +194,26 @@ export default function ProjectChat({ project, onChanged }) {
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const handleCancelExcelPreview = () => { setPreviewItems(null); setPendingExcelFile(null); setPendingExcelText('') }
+  const handleCancelQuoteValue = () => setPendingQuoteFile(null)
 
-  const handleConfirmExcelPreview = async (editedItems) => {
-    setPreviewItems(null)
+  const handleConfirmQuoteValue = async (value) => {
+    const { file, side, text: srcText } = pendingQuoteFile
     setSending(true)
-    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
-    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
-    if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); setPendingExcelFile(null); setPendingExcelText(''); return }
-    const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
-    const infoNote = `📊 ${actionLabel}: ${pendingExcelFile?.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
-    const content = pendingExcelText ? `${pendingExcelText}\n\n${infoNote}` : infoNote
-    await sendChatMessage(content, null, pendingExcelText)
+    const result = await saveQuoteFile({ file, project, client: { id: project.client_id }, side, value, source: 'chat' })
+    if (!result.ok) { setSending(false); toast.error(t('Nie udało się zapisać wyceny: ') + result.error); setPendingQuoteFile(null); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana') : t('Wycena zapisana')
+    const sideLabel = side === 'cn' ? t('od zespołu CN') : t('dla klienta (z marżą)')
+    const notifyNote = side === 'cn' ? ` — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}` : ''
+    const infoNote = `📊 ${actionLabel} ${sideLabel}: ${file?.name}${notifyNote}`
+    const content = srcText ? `${srcText}\n\n${infoNote}` : infoNote
+    await sendChatMessage(content, null, srcText)
     setSending(false)
-    setPendingExcelFile(null); setPendingExcelText('')
+    setPendingQuoteFile(null)
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
-    // Wycena z Excela powstała/nadpisała się w bazie — rodzic (lista
-    // zamówień) trzyma własne kopie dokumentów/wycen do StageTimeline i bez
-    // tego odświeżenia nie zobaczy zmiany aż do ręcznego przeładowania strony.
+    // Wycena powstała/nadpisała się w bazie — rodzic (lista zamówień) trzyma
+    // własne kopie dokumentów/wycen do StageTimeline i bez tego odświeżenia
+    // nie zobaczy zmiany aż do ręcznego przeładowania strony.
     if (onChanged) onChanged()
   }
 
@@ -320,12 +311,15 @@ export default function ProjectChat({ project, onChanged }) {
           onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
           onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
       )}
-      {previewItems && (
-        <ExcelImportPreview
-          rows={previewItems}
-          fileName={pendingExcelFile?.name}
-          onConfirm={handleConfirmExcelPreview}
-          onCancel={handleCancelExcelPreview}
+      {pendingQuoteFile && (
+        <QuoteValueModal
+          file={pendingQuoteFile.file}
+          side={pendingQuoteFile.side}
+          detectedValue={pendingQuoteFile.detectedValue}
+          itemCount={pendingQuoteFile.itemCount}
+          saving={sending}
+          onConfirm={handleConfirmQuoteValue}
+          onCancel={handleCancelQuoteValue}
         />
       )}
     </div>

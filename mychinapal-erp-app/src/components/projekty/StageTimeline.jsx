@@ -125,18 +125,17 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteSe
                   <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', margin: '14px 0 6px' }}>{t("Wymagane dokumenty")}</div>
                   {stage.categories.map(cat => {
                     const docs = docsByCategory[cat] || []
-                    // Kategoria "Wycena" (etap "Wysłanie wyceny do klienta"):
-                    // spełniona też, gdy którakolwiek wycena ma status
-                    // 'wyslana', zanim/niezależnie od tego czy jej PDF/Excel
-                    // trafił jeszcze jako osobny wpis w Dokumentach.
-                    const satisfiedByQuote = cat === 'Wycena' && !docs.length && quoteSentToClient
+                    // Kategoria "Wycena dla klienta" (etap "Wysłanie wyceny do
+                    // klienta"): spełniona też, gdy karta wyceny ma status
+                    // 'wyslana', zanim/niezależnie od tego czy plik trafił
+                    // jeszcze jako osobny wpis w Dokumentach.
+                    const satisfiedByQuote = cat === 'Wycena dla klienta' && !docs.length && quoteSentToClient
                     const done = docs.length > 0 || satisfiedByQuote
-                    // Wiersz "Wycena" ma prowadzić wprost do edycji tej wyceny w
-                    // module Wyceny (zamiast zmuszać do szukania jej ręcznie na
-                    // liście) — dostępne zawsze, gdy dla tego zamówienia w ogóle
-                    // istnieje wycena, niezależnie czy checklista jest już na
-                    // zielono, czy dopiero czeka.
-                    const quoteClickable = cat === 'Wycena' && !!latestQuoteId
+                    // Wiersz "Wycena dla klienta" ma prowadzić wprost do kafelka
+                    // tej wyceny w module Wyceny (zamiast zmuszać do szukania jej
+                    // ręcznie na liście) — dostępne zawsze, gdy dla tego
+                    // zamówienia w ogóle istnieje karta wyceny.
+                    const quoteClickable = cat === 'Wycena dla klienta' && !!latestQuoteId
                     return (
                       <div key={cat} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
                         <div onClick={quoteClickable ? () => navigate(`/wyceny?quote=${latestQuoteId}`) : undefined}

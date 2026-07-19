@@ -13,8 +13,10 @@ import MentionInput from '../czat/MentionInput'
 import MentionText from '../czat/MentionText'
 import UnreadBadge from '../czat/UnreadBadge'
 import { extractMentions } from '../../lib/mentions'
-import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
-import ExcelImportPreview from '../wyceny/ExcelImportPreview'
+import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
+import QuoteValueModal from '../wyceny/QuoteValueModal'
+
+const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -41,13 +43,10 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   const [scrollTick, setScrollTick] = useState(0)
   const [ownProfiles, setOwnProfiles] = useState([])
   const [unreadMap, setUnreadMap] = useState({})
-  // Wycena wgrywana z Excela na czacie klienta — ten czat nie jest przypisany
-  // do jednego zamówienia (w przeciwieństwie do czatu zamówienia), więc trzeba
+  // Wycena wgrywana na czacie klienta — ten czat nie jest przypisany do
+  // jednego zamówienia (w przeciwieństwie do czatu zamówienia), więc trzeba
   // dodatkowo wybrać, którego zamówienia dotyczy plik.
-  const [previewItems, setPreviewItems] = useState(null)
-  const [pendingExcelFile, setPendingExcelFile] = useState(null)
-  const [pendingExcelProject, setPendingExcelProject] = useState(null)
-  const [pendingExcelText, setPendingExcelText] = useState('')
+  const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, project, detectedValue, itemCount, text }
   const [quoteProjectId, setQuoteProjectId] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
@@ -217,14 +216,14 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
     if ((!text.trim() && !attachFile) || !channelId) return
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
 
-    // Excel skategoryzowany jako "Wycena" na czacie KLIENTA (nie zamówienia) —
-    // to jeden z czterech niezależnych sposobów przyjęcia wyceny (obok czatu
-    // zamówienia, panelu Pliki projektu i zakładki Wyceny). Ten czat nie jest
-    // przypisany do jednego zamówienia, więc trzeba wiedzieć, którego z nich
-    // dotyczy plik — jeśli klient ma więcej niż jedno, wybiera je w selektorze
-    // obok kategorii (patrz JSX niżej); jeśli nie ma żadnego, nie ma do czego
-    // przypisać wyceny i trzeba najpierw założyć zamówienie.
-    if (attachFile && attachCategory === 'Wycena' && isExcelFile(attachFile)) {
+    // Kategoria "Wycena CN"/"Wycena dla klienta" na czacie KLIENTA (nie
+    // zamówienia) to jedna z kilku niezależnych dróg wgrania karty wyceny.
+    // Ten czat nie jest przypisany do jednego zamówienia, więc trzeba
+    // wiedzieć, którego z nich dotyczy plik — jeśli klient ma więcej niż
+    // jedno, wybiera je w selektorze obok kategorii (patrz JSX niżej); jeśli
+    // nie ma żadnego, nie ma do czego przypisać wyceny i trzeba najpierw
+    // założyć zamówienie.
+    if (attachFile && QUOTE_CATEGORIES[attachCategory]) {
       if (!projects || projects.length === 0) {
         toast.error(t('Ten klient nie ma jeszcze żadnego zamówienia — najpierw utwórz zamówienie, do którego ma zostać przypisana ta wycena.'))
         return
@@ -233,20 +232,9 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
       const targetProject = projects.find(p => p.id === targetProjectId)
       if (!targetProject) { toast.error(t('Wybierz zamówienie, do którego należy ta wycena.')); return }
       setSending(true)
-      const plCheck = await checkPlTeamAssigned(targetProject)
-      if (!plCheck.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); return }
-      let parsedItems
-      try {
-        parsedItems = await parseQuoteExcel(attachFile)
-      } catch (e) {
-        setSending(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); return
-      }
+      const { value, itemCount } = await detectQuoteValue(attachFile)
       setSending(false)
-      if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
-      setPendingExcelFile(attachFile)
-      setPendingExcelProject(targetProject)
-      setPendingExcelText(text.trim())
-      setPreviewItems(parsedItems)
+      setPendingQuoteFile({ file: attachFile, side: QUOTE_CATEGORIES[attachCategory], project: targetProject, detectedValue: value, itemCount, text: text.trim() })
       return
     }
 
@@ -269,20 +257,21 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const handleCancelExcelPreview = () => { setPreviewItems(null); setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText('') }
+  const handleCancelQuoteValue = () => setPendingQuoteFile(null)
 
-  const handleConfirmExcelPreview = async (editedItems) => {
-    setPreviewItems(null)
+  const handleConfirmQuoteValue = async (value) => {
+    const { file, side, project, text: srcText } = pendingQuoteFile
     setSending(true)
-    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
-    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, pendingExcelProject, { id: clientId }, (quotesRows || []).map(q => q.quote_number))
-    if (!result.ok) { setSending(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText(''); return }
-    const actionLabel = result.overwritten ? t('Wycena nadpisana z Excela') : t('Wycena przyjęta z Excela')
-    const infoNote = `📊 ${actionLabel} (${pendingExcelProject?.order_label}): ${pendingExcelFile?.name} (${result.itemCount} ${t('pozycji')}, ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu PL')})`
-    const content = pendingExcelText ? `${pendingExcelText}\n\n${infoNote}` : infoNote
-    await sendChatMessage(content, null, pendingExcelText)
+    const result = await saveQuoteFile({ file, project, client: { id: clientId, name: clientName }, side, value, source: 'chat' })
+    if (!result.ok) { setSending(false); toast.error(t('Nie udało się zapisać wyceny: ') + result.error); setPendingQuoteFile(null); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana') : t('Wycena zapisana')
+    const sideLabel = side === 'cn' ? t('od zespołu CN') : t('dla klienta (z marżą)')
+    const notifyNote = side === 'cn' ? ` — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}` : ''
+    const infoNote = `📊 ${actionLabel} ${sideLabel} (${project?.order_label}): ${file?.name}${notifyNote}`
+    const content = srcText ? `${srcText}\n\n${infoNote}` : infoNote
+    await sendChatMessage(content, null, srcText)
     setSending(false)
-    setPendingExcelFile(null); setPendingExcelProject(null); setPendingExcelText('')
+    setPendingQuoteFile(null)
     setText(''); setAttachFile(null)
     if (fileRef.current) fileRef.current.value = ''
     // Wycena powstała/nadpisała się w bazie — rodzic (panel klienta) trzyma
@@ -388,7 +377,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
             <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5 }}>
               {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
             </select>
-            {attachCategory === 'Wycena' && isExcelFile(attachFile) && projects && projects.length > 1 && (
+            {QUOTE_CATEGORIES[attachCategory] && projects && projects.length > 1 && (
               <select value={quoteProjectId || ''} onChange={e => setQuoteProjectId(e.target.value)}
                 title={t("Do którego zamówienia należy ta wycena?")}
                 style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', fontSize: 10.5, maxWidth: 150 }}>
@@ -415,12 +404,15 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
           onCancel={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = '' }}
           onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
       )}
-      {previewItems && (
-        <ExcelImportPreview
-          rows={previewItems}
-          fileName={pendingExcelFile?.name}
-          onConfirm={handleConfirmExcelPreview}
-          onCancel={handleCancelExcelPreview}
+      {pendingQuoteFile && (
+        <QuoteValueModal
+          file={pendingQuoteFile.file}
+          side={pendingQuoteFile.side}
+          detectedValue={pendingQuoteFile.detectedValue}
+          itemCount={pendingQuoteFile.itemCount}
+          saving={sending}
+          onConfirm={handleConfirmQuoteValue}
+          onCancel={handleCancelQuoteValue}
         />
       )}
     </div>

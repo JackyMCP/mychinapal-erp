@@ -18,6 +18,10 @@ import AttachCategoryModal from '../components/ui/AttachCategoryModal'
 import MentionInput from '../components/czat/MentionInput'
 import MentionText from '../components/czat/MentionText'
 import { extractMentions } from '../lib/mentions'
+import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
+import QuoteValueModal from '../components/wyceny/QuoteValueModal'
+
+const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
@@ -72,6 +76,8 @@ export default function Czat() {
   const [showMentions, setShowMentions] = useState(false)
   const [myMentions, setMyMentions] = useState([])
   const [loadingMentions, setLoadingMentions] = useState(false)
+  const [quoteProjectId, setQuoteProjectId] = useState(null) // wybór zamówienia na kanale klienta (nieprzypisanym do jednego projektu)
+  const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, projectId, text }
   const activeIdRef = useRef(null)
   const myIdRef = useRef(null)
 
@@ -289,6 +295,10 @@ export default function Czat() {
     return () => { cancelled = true }
   }, [active?.id])
 
+  useEffect(() => {
+    setQuoteProjectId(clientOrderChannels.length ? clientOrderChannels[0].project_id : null)
+  }, [clientOrderChannels])
+
   const loadOlder = async () => {
     if (!activeId || loadingMore || !messages.length) return
     setLoadingMore(true)
@@ -303,9 +313,26 @@ export default function Czat() {
     setMessages(prev => [...older, ...prev])
   }
 
+  // Kategoria "Wycena CN"/"Wycena dla klienta" na kanale klienta/projektu w
+  // module Czat — jedna z kilku niezależnych dróg wgrania karty wyceny (obok
+  // czatu zamówienia, czatu klienta w panelu Klienci, panelu Plików projektu
+  // i zakładki Wyceny). Kanał "projekt" ma project_id wprost; kanał "klient"
+  // wymaga wyboru KTÓREGO zamówienia dotyczy plik (patrz selektor w JSX).
   const handleSend = async () => {
     if ((!text.trim() && !attachFile) || !activeId) return
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
+
+    if (attachFile && QUOTE_CATEGORIES[attachCategory]) {
+      if (!active?.client_id) { toast.error(t('Załączniki dostępne tylko na kanałach klienta/projektu.')); return }
+      const targetProjectId = active.project_id || quoteProjectId
+      if (!targetProjectId) { toast.error(t('Wybierz zamówienie, do którego należy ta wycena.')); return }
+      setSending(true)
+      const { value, itemCount } = await detectQuoteValue(attachFile)
+      setSending(false)
+      setPendingQuoteFile({ file: attachFile, side: QUOTE_CATEGORIES[attachCategory], projectId: targetProjectId, detectedValue: value, itemCount, text: text.trim() })
+      return
+    }
+
     setSending(true)
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -341,6 +368,32 @@ export default function Czat() {
     if (inserted) { triggerTranslation(inserted); triggerPushNotification(inserted) }
     setText('')
     setAttachFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleCancelQuoteValue = () => setPendingQuoteFile(null)
+
+  const handleConfirmQuoteValue = async (value) => {
+    const { file, side, projectId, text: srcText } = pendingQuoteFile
+    setSending(true)
+    const result = await saveQuoteFile({ file, project: { id: projectId, client_id: active.client_id }, client: { id: active.client_id }, side, value, source: 'chat' })
+    if (!result.ok) { setSending(false); toast.error(t('Nie udało się zapisać wyceny: ') + result.error); setPendingQuoteFile(null); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana') : t('Wycena zapisana')
+    const sideLabel = side === 'cn' ? t('od zespołu CN') : t('dla klienta (z marżą)')
+    const notifyNote = side === 'cn' ? ` — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}` : ''
+    const infoNote = `📊 ${actionLabel} ${sideLabel}: ${file?.name}${notifyNote}`
+    const content = srcText ? `${srcText}\n\n${infoNote}` : infoNote
+    const { data: { user } } = await supabase.auth.getUser()
+    const mentionIds = extractMentions(srcText, allProfiles)
+    const { data: inserted, error } = await supabase.from('chat_messages').insert({
+      channel_id: activeId, sender_id: user.id, content, attachment_document_id: null,
+      mentioned_user_ids: mentionIds.length ? mentionIds : null,
+    }).select(MSG_SELECT).single()
+    setSending(false)
+    if (error) { toast.error('Nie udało się wysłać wiadomości: ' + error.message) }
+    else if (inserted) { setMessages(prev => (prev.some(m => m.id === inserted.id) ? prev : [...prev, inserted])); triggerTranslation(inserted); triggerPushNotification(inserted) }
+    setPendingQuoteFile(null)
+    setText(''); setAttachFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -586,6 +639,13 @@ export default function Czat() {
                     <select value={attachCategory} onChange={e => setAttachCategory(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 6px', fontSize: 11, outline: 'none' }}>
                       {DOC_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
                     </select>
+                    {QUOTE_CATEGORIES[attachCategory] && activeType === 'klient' && clientOrderChannels.length > 0 && (
+                      <select value={quoteProjectId || ''} onChange={e => setQuoteProjectId(e.target.value)}
+                        title={t("Do którego zamówienia należy ta wycena?")}
+                        style={{ border: `1px solid ${C.border}`, borderRadius: 6, padding: '3px 6px', fontSize: 11, maxWidth: 140 }}>
+                        {clientOrderChannels.map(c => <option key={c.project_id} value={c.project_id}>{c.name}</option>)}
+                      </select>
+                    )}
                     <span onClick={() => { setAttachFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }} style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 11, color: C.muted }}>{t("✕ usuń")}</span>
                   </div>
                 )}
@@ -608,6 +668,17 @@ export default function Czat() {
             <AttachCategoryModal file={pendingFile} categories={DOC_CATEGORIES}
               onCancel={() => { setPendingFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
               onConfirm={(cat) => { setAttachFile(pendingFile); setAttachCategory(cat); setPendingFile(null) }} />
+          )}
+          {pendingQuoteFile && (
+            <QuoteValueModal
+              file={pendingQuoteFile.file}
+              side={pendingQuoteFile.side}
+              detectedValue={pendingQuoteFile.detectedValue}
+              itemCount={pendingQuoteFile.itemCount}
+              saving={sending}
+              onConfirm={handleConfirmQuoteValue}
+              onCancel={handleCancelQuoteValue}
+            />
           )}
         </div>
         {active && showFiles && (

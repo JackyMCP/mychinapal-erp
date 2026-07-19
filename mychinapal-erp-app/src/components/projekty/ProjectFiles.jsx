@@ -6,8 +6,10 @@ import { C } from '../../lib/theme'
 import { DOC_CATEGORIES } from './stageDefs'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
-import { checkPlTeamAssigned, parseQuoteExcel, createQuoteFromParsedItems, isExcelFile } from '../../lib/quoteIntake'
-import ExcelImportPreview from '../wyceny/ExcelImportPreview'
+import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
+import QuoteValueModal from '../wyceny/QuoteValueModal'
+
+const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 export default function ProjectFiles({ project, documents, onChanged }) {
   const { t } = useLang()
@@ -18,55 +20,44 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [previewItems, setPreviewItems] = useState(null)
-  const [pendingExcelFile, setPendingExcelFile] = useState(null)
+  const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, detectedValue, itemCount }
   const fileRef = useRef(null)
 
-  // Excel z kategorią "Wycena" to nowy przepływ: zespół CN wgrywa tu gotową
-  // wycenę zamiast wypełniać ją ręcznie w aplikacji. Zanim jednak cokolwiek
-  // trafi do bazy, plik jest parsowany i pokazany na ekranie szybkiego
-  // podglądu (ten sam, co w zakładce Wyceny) — tam da się poprawić
-  // nazwę/ilość/cenę i przeciągnąć zdjęcie na inną pozycję, jeśli parser
-  // dopasował je do złego wiersza. Dopiero zatwierdzenie tworzy wycenę i
-  // powiadamia cały zespół PL — dokładnie tak samo, jakby ktoś wgrał ten
-  // sam plik wprost w Wycenach.
-  const handleQuoteExcelUpload = async (file) => {
+  // Kategoria "Wycena CN"/"Wycena dla klienta" to jedyne dwa sloty na karcie
+  // wyceny tego zamówienia (tabela quotes, jeden wiersz na zamówienie) —
+  // żadnego rozbijania na pozycje, tylko plik + jedna wykryta/poprawiona
+  // wartość do szybkiej weryfikacji (patrz QuoteValueModal.jsx).
+  const handleQuoteFileUpload = async (file, side) => {
     setUploading(true)
-    const plCheck = await checkPlTeamAssigned(project)
-    if (!plCheck.ok) { setUploading(false); toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + plCheck.error); if (fileRef.current) fileRef.current.value = ''; return }
-    let parsedItems
-    try {
-      parsedItems = await parseQuoteExcel(file)
-    } catch (e) {
-      setUploading(false); toast.error(t('Nie udało się odczytać pliku Excel: ') + (e?.message || e)); if (fileRef.current) fileRef.current.value = ''; return
-    }
+    const { value, itemCount } = await detectQuoteValue(file)
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
-    if (!parsedItems.length) { toast.error(t('Nie rozpoznano żadnych pozycji w tym pliku Excel.')); return }
-    setPendingExcelFile(file)
-    setPreviewItems(parsedItems)
+    setPendingQuoteFile({ file, side, detectedValue: value, itemCount })
   }
 
-  const handleCancelPreview = () => { setPreviewItems(null); setPendingExcelFile(null) }
+  const handleCancelQuoteValue = () => setPendingQuoteFile(null)
 
-  const handleConfirmPreview = async (editedItems) => {
-    setPreviewItems(null)
+  const handleConfirmQuoteValue = async (value) => {
+    const { file, side } = pendingQuoteFile
     setUploading(true)
-    const { data: quotesRows } = await supabase.from('quotes').select('quote_number')
-    const result = await createQuoteFromParsedItems(editedItems, pendingExcelFile, project, { id: project.client_id }, (quotesRows || []).map(q => q.quote_number))
+    const result = await saveQuoteFile({ file, project, client: { id: project.client_id }, side, value, source: 'manual' })
     setUploading(false)
-    setPendingExcelFile(null)
-    if (!result.ok) { toast.error(t('Nie udało się przyjąć wyceny z Excela: ') + result.error); return }
-    const actionLabel = result.overwritten ? t('Wycena nadpisana nowymi danymi ✓') : t('Wycena przyjęta ✓')
-    toast.success(t(`${actionLabel} ${result.itemCount} pozycji — powiadomiono ${result.notified} os. z zespołu PL`))
-    if (result.notifyFailed) toast.error(t('Uwaga: część powiadomień do zespołu PL mogła się nie wysłać.'))
+    setPendingQuoteFile(null)
+    if (!result.ok) { toast.error(t('Nie udało się zapisać wyceny: ') + result.error); return }
+    const actionLabel = result.overwritten ? t('Wycena nadpisana ✓') : t('Wycena zapisana ✓')
+    if (side === 'cn') {
+      toast.success(t(`${actionLabel} — powiadomiono ${result.notified} os. z zespołu`))
+      if (result.notifyFailed) toast.error(t('Uwaga: część powiadomień mogła się nie wysłać.'))
+    } else {
+      toast.success(actionLabel)
+    }
     onChanged && onChanged()
   }
 
   const handleUpload = async (file) => {
     if (!file) return
     if (isFileTooBig(file)) { toast.error(`Plik jest za duży (max ${MAX_FILE_SIZE_MB}MB).`); return }
-    if (category === 'Wycena' && isExcelFile(file)) { await handleQuoteExcelUpload(file); return }
+    if (QUOTE_CATEGORIES[category]) { await handleQuoteFileUpload(file, QUOTE_CATEGORIES[category]); return }
     setUploading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const path = `${project.client_id}/${crypto.randomUUID()}-${safeFileName(file.name)}`
@@ -181,16 +172,16 @@ export default function ProjectFiles({ project, documents, onChanged }) {
               <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={e => handleUpload(e.target.files?.[0])} />
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
                 style={{ padding: '7px 13px', borderRadius: 7, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: C.blue, color: '#fff', opacity: uploading ? .6 : 1 }}>
-                {uploading ? t('Przetwarzanie…') : t(category === 'Wycena' ? '+ Wgraj Excel z wyceną' : '+ Wgraj plik')}
+                {uploading ? t('Przetwarzanie…') : t(QUOTE_CATEGORIES[category] ? '+ Wgraj plik wyceny' : '+ Wgraj plik')}
               </button>
             </>
           )}
         </div>
       </div>
 
-      {!selectMode && category === 'Wycena' && (
+      {!selectMode && QUOTE_CATEGORIES[category] && (
         <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, marginTop: -4 }}>
-          {t('Wgranie tu pliku Excel (.xlsx/.xls) automatycznie utworzy wycenę z pozycjami i zdjęciami oraz powiadomi zespół PL.')}
+          {t('Ten plik trafi na kartę wyceny tego zamówienia jako ' + (QUOTE_CATEGORIES[category] === 'cn' ? 'wycena od zespołu CN' : 'wycena dla klienta') + ' — poprosimy o potwierdzenie łącznej wartości.')}
         </div>
       )}
 
@@ -216,12 +207,15 @@ export default function ProjectFiles({ project, documents, onChanged }) {
         </div>
       ))}
 
-      {previewItems && (
-        <ExcelImportPreview
-          rows={previewItems}
-          fileName={pendingExcelFile?.name}
-          onConfirm={handleConfirmPreview}
-          onCancel={handleCancelPreview}
+      {pendingQuoteFile && (
+        <QuoteValueModal
+          file={pendingQuoteFile.file}
+          side={pendingQuoteFile.side}
+          detectedValue={pendingQuoteFile.detectedValue}
+          itemCount={pendingQuoteFile.itemCount}
+          saving={uploading}
+          onConfirm={handleConfirmQuoteValue}
+          onCancel={handleCancelQuoteValue}
         />
       )}
     </div>
