@@ -162,12 +162,22 @@ export async function saveQuoteFile({ file, project, client, side, value, source
           patchProject.est_zakup = Math.round(value * rate.mid * 100) / 100
           patchProject.est_zakup_nbp_rate = rate.mid
           patchProject.est_zakup_nbp_date = rate.effectiveDate
-        } catch { /* kurs NBP niedostępny teraz — sama kwota CNY i tak się zapisze */ }
-        await supabase.from('projects').update(patchProject).eq('id', project.id)
+        } catch (rateErr) {
+          // kurs NBP niedostępny teraz — sama kwota CNY i tak się zapisze,
+          // PLN można dociągnąć później przyciskiem "Zaktualizuj wg NBP"
+          console.warn('[quoteIntake] fetchNbpCnyRate failed:', rateErr)
+        }
+        const { error: projErr } = await supabase.from('projects').update(patchProject).eq('id', project.id)
+        if (projErr) console.error('[quoteIntake] projects update (CN sync) failed:', projErr)
       } else {
-        await supabase.from('projects').update({ value }).eq('id', project.id)
+        const { error: projErr } = await supabase.from('projects').update({ value }).eq('id', project.id)
+        if (projErr) console.error('[quoteIntake] projects update (PL sync) failed:', projErr)
       }
-    } catch { /* najlepszy wysiłek — wycena i tak zapisana poprawnie */ }
+    } catch (syncErr) {
+      // najlepszy wysiłek — wycena i tak zapisana poprawnie, tylko kafelek w
+      // tabelce zysku (ProfitTable.jsx) trzeba by było wtedy uzupełnić ręcznie
+      console.error('[quoteIntake] project profit-table sync failed:', syncErr)
+    }
 
     // Powiadomienie (zadanie w Centrum zadań) tylko przy stronie CN — to
     // zespół PL ma wtedy dodać marżę i wysłać gotową wycenę do klienta.
