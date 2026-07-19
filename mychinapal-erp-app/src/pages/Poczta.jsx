@@ -25,7 +25,8 @@ const FOLDER_META = {
   sentitems: { label: 'Elementy wysłane', icon: '📤', order: 2 },
   drafts: { label: 'Wersje robocze', icon: '📝', order: 3 },
   deleteditems: { label: 'Elementy usunięte', icon: '🗑️', order: 4 },
-  archive: { label: 'Archiwum', icon: '🗄️', order: 5 },
+  junkemail: { label: 'Wiadomości-śmieci', icon: '🚫', order: 5 },
+  archive: { label: 'Archiwum', icon: '🗄️', order: 6 },
 }
 
 function timeLabel(iso) {
@@ -55,6 +56,40 @@ function formatBytes(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Pole "Do"/"DW" z podpowiedziami adresów — filtruje po pierwszych znakach
+// nazwy LUB adresu (fragment tekstu po ostatnim przecinku), źródło
+// podpowiedzi: zapisane Kontakty + adresy z historii korespondencji.
+function AddressField({ value, onChange, placeholder, people }) {
+  const [open, setOpen] = useState(false)
+  const parts = value.split(',')
+  const fragment = parts[parts.length - 1].trim().toLowerCase()
+  const suggestions = fragment.length >= 1
+    ? people.filter(p => p.email.toLowerCase().startsWith(fragment) || (p.name || '').toLowerCase().startsWith(fragment)).slice(0, 6)
+    : []
+  const pick = (p) => {
+    const head = parts.slice(0, -1).map(s => s.trim()).filter(Boolean)
+    onChange([...head, p.email].join(', ') + ', ')
+    setOpen(false)
+  }
+  return (
+    <div style={{ position: 'relative' }}>
+      <input value={value} onChange={e => { onChange(e.target.value); setOpen(true) }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
+      {open && suggestions.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: C.white, border: `1px solid ${C.border}`, borderRadius: 8, boxShadow: '0 10px 24px rgba(0,0,0,.18)', marginTop: -6, marginBottom: 8, maxHeight: 180, overflowY: 'auto' }}>
+          {suggestions.map(p => (
+            <div key={p.email} onMouseDown={(e) => { e.preventDefault(); pick(p) }} style={{ padding: '7px 10px', cursor: 'pointer' }}>
+              <div style={{ fontWeight: 700, fontSize: 11.5 }}>{p.name}</div>
+              <div style={{ color: C.muted, fontSize: 10.5 }}>{p.email}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Poczta() {
@@ -301,13 +336,21 @@ export default function Poczta() {
       if (!th.all.some(x => x.id === m.id)) return m
       if (action === 'mark_read') return { ...m, is_read: true }
       if (action === 'mark_unread') return { ...m, is_read: false }
-      if (action === 'archive') return { ...m, folder: 'archive' }
+  if (action === 'archive') return { ...m, folder: 'archive' }
       if (action === 'trash') return { ...m, folder: 'deleteditems' }
+      if (action === 'spam') return { ...m, folder: 'junkemail' }
       if (action === 'restore') return { ...m, folder: 'inbox' }
+      if (action === 'flag') return { ...m, is_flagged: true }
+      if (action === 'unflag') return { ...m, is_flagged: false }
       return m
     }))
-    if (['archive', 'trash', 'restore'].includes(action) && th.key === selectedThreadId) setSelectedThreadId(null)
-    toast.success(t('Gotowe ✓'))
+    if (['archive', 'trash', 'spam', 'restore'].includes(action) && th.key === selectedThreadId) setSelectedThreadId(null)
+    if (!['flag', 'unflag'].includes(action)) toast.success(t('Gotowe ✓'))
+  }
+
+  const toggleThreadFlag = async (th) => {
+    const flagged = th.latest.is_flagged
+    await applyActionToThread(th, flagged ? 'unflag' : 'flag')
   }
 
   const deleteThreadPermanently = async (th) => {
@@ -388,7 +431,20 @@ export default function Poczta() {
     setView('contacts')
   }
 
-  const contactSuggestions = useMemo(() => contacts.map(c => c.email), [contacts])
+  // Lista "znanych osób" do podpowiedzi adresów: zapisane Kontakty + adresy
+  // wyciągnięte z historii korespondencji (nadawcy i odbiorcy wszystkich
+  // wiadomości), scalone i odfiltrowane po adresie e-mail.
+  const knownPeople = useMemo(() => {
+    const map = new Map()
+    for (const c of contacts) if (c.email) map.set(c.email.toLowerCase(), { name: c.name || c.email, email: c.email })
+    for (const m of messages) {
+      if (m.from_address && !map.has(m.from_address.toLowerCase())) map.set(m.from_address.toLowerCase(), { name: m.from_name || m.from_address, email: m.from_address })
+      for (const r of (m.to_addresses || [])) {
+        if (r.address && !map.has(r.address.toLowerCase())) map.set(r.address.toLowerCase(), { name: r.name || r.address, email: r.address })
+      }
+    }
+    return Array.from(map.values())
+  }, [contacts, messages])
 
   // --- AI podsumowanie ---
   const handleSummarize = async (msg) => {
@@ -435,6 +491,7 @@ export default function Poczta() {
 
   return (
     <div>
+      <style>{`.poczta-thread-row-actions { display: none; } .poczta-thread-row:hover .poczta-thread-row-actions { display: flex !important; }`}</style>
       <PageHeader title={t('Poczta')} subtitle={account.ms_account_email} right={
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={() => setView('mail')} style={{ ...btnStyle, background: view === 'mail' ? C.blight : C.white, color: view === 'mail' ? C.blue : C.text2, borderColor: view === 'mail' ? C.blue : C.border }}>📬 {t('Poczta')}</button>
@@ -584,15 +641,16 @@ export default function Poczta() {
               {threads.length === 0 && (
                 <div style={{ padding: 30, textAlign: 'center', color: C.muted, fontSize: 11.5 }}>{t('Brak wiadomości.')}</div>
               )}
-              {threads.map(th => {
+{threads.map(th => {
                 const unread = th.all.some(m => m.direction === 'inbound' && !m.is_read)
                 const active = th.key === selectedThreadId
                 const cats = categories.filter(c => (th.latest.category_ids || []).includes(c.id))
+                const flagged = !!th.latest.is_flagged
                 return (
-                  <div key={th.key} onClick={() => openThread(th)}
-                    style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: active ? C.blight : 'transparent' }}>
+                  <div key={th.key} onClick={() => openThread(th)} className="poczta-thread-row"
+                    style={{ padding: '11px 14px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: active ? C.blight : 'transparent', position: 'relative' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                      <span style={{ fontSize: 12, fontWeight: unread ? 800 : 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                      <span style={{ fontSize: 12, fontWeight: unread ? 800 : 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>
                         {th.latest.direction === 'outbound' ? (th.latest.to_addresses || []).map(a => a.address).join(', ') || t('(brak odbiorcy)') : (th.latest.from_name || th.latest.from_address || t('(nieznany nadawca)'))}
                       </span>
                       <span style={{ fontSize: 9.5, color: C.muted, flexShrink: 0 }}>{timeLabel(th.latest.received_at)}</span>
@@ -606,6 +664,18 @@ export default function Poczta() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                       {unread && <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.blue }} />}
                       {cats.map(c => <span key={c.id} style={{ width: 8, height: 8, borderRadius: 2, background: c.color }} title={c.name} />)}
+                    </div>
+                    {/* Szybkie akcje na wierszu — widoczne po najechaniu (desktop) lub zawsze (mobile) */}
+                    <div className="poczta-thread-row-actions" style={{ position: 'absolute', top: 8, right: 8, display: isMobile ? 'flex' : 'none', gap: 4, background: active ? C.blight : C.white, borderRadius: 6, padding: 2 }}>
+                      <span onClick={(e) => { e.stopPropagation(); toggleThreadFlag(th) }} title={flagged ? t('Odflaguj') : t('Oflaguj')}
+                        style={{ fontSize: 12, cursor: 'pointer', opacity: flagged ? 1 : 0.45 }}>🚩</span>
+                      <span onClick={(e) => { e.stopPropagation(); applyActionToThread(th, unread ? 'mark_read' : 'mark_unread') }} title={unread ? t('Oznacz jako przeczytane') : t('Oznacz jako nieprzeczytane')}
+                        style={{ fontSize: 12, cursor: 'pointer', opacity: 0.55 }}>{unread ? '📧' : '📩'}</span>
+                      {folder === 'deleteditems' ? (
+                        <span onClick={(e) => { e.stopPropagation(); deleteThreadPermanently(th) }} title={t('Usuń na stałe')} style={{ fontSize: 12, cursor: 'pointer', opacity: 0.55 }}>❌</span>
+                      ) : (
+                        <span onClick={(e) => { e.stopPropagation(); applyActionToThread(th, 'trash') }} title={t('Usuń')} style={{ fontSize: 12, cursor: 'pointer', opacity: 0.55 }}>🗑️</span>
+                      )}
                     </div>
                   </div>
                 )
@@ -629,10 +699,14 @@ export default function Poczta() {
                 <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700 }}>{selectedMessages[0]?.subject || t('(brak tematu)')}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {folder !== 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'archive')} style={btnStyle}>🗄️ {t('Archiwizuj')}</button>}
+{folder !== 'deleteditems' && folder !== 'archive' && <button onClick={() => applyActionToThread(selectedThread, 'archive')} style={btnStyle}>🗄️ {t('Archiwizuj')}</button>}
+                    {folder !== 'junkemail' && folder !== 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'spam')} style={btnStyle}>🚫 {t('To spam')}</button>}
                     {folder !== 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'trash')} style={btnStyle}>🗑️ {t('Usuń')}</button>}
-                    {folder === 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'restore')} style={btnStyle}>↩️ {t('Przywróć')}</button>}
+                    {(folder === 'deleteditems' || folder === 'junkemail') && <button onClick={() => applyActionToThread(selectedThread, 'restore')} style={btnStyle}>↩️ {t('Przywróć')}</button>}
                     {folder === 'deleteditems' && <button onClick={() => deleteThreadPermanently(selectedThread)} style={{ ...btnStyle, color: C.red }}>❌ {t('Usuń na stałe')}</button>}
+                    <button onClick={() => toggleThreadFlag(selectedThread)} style={{ ...btnStyle, color: selectedThread.latest.is_flagged ? '#D97706' : C.text2 }}>
+                      {selectedThread.latest.is_flagged ? '🚩 ' + t('Odflaguj') : '🚩 ' + t('Oflaguj')}
+                    </button>
                     <button onClick={() => applyActionToThread(selectedThread, lastInboundMessage?.is_read ? 'mark_unread' : 'mark_read')} style={btnStyle}>
                       {lastInboundMessage?.is_read ? '📩 ' + t('Nieprzeczytane') : '📧 ' + t('Przeczytane')}
                     </button>
@@ -739,13 +813,8 @@ export default function Poczta() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setComposeOpen(false)}>
           <div style={{ background: C.white, borderRadius: 14, padding: 20, width: 520, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{t('Nowa wiadomość')}</div>
-            <input value={compose.to} onChange={e => setCompose(c => ({ ...c, to: e.target.value }))} placeholder={t('Do (adresy oddzielone przecinkiem)')} list="poczta-kontakty"
-              style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
-            <datalist id="poczta-kontakty">
-              {contactSuggestions.map(email => <option key={email} value={email} />)}
-            </datalist>
-            <input value={compose.cc} onChange={e => setCompose(c => ({ ...c, cc: e.target.value }))} placeholder={t('DW (opcjonalnie)')}
-              style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
+            <AddressField value={compose.to} onChange={v => setCompose(c => ({ ...c, to: v }))} placeholder={t('Do (adresy oddzielone przecinkiem)')} people={knownPeople} />
+            <AddressField value={compose.cc} onChange={v => setCompose(c => ({ ...c, cc: v }))} placeholder={t('DW (opcjonalnie)')} people={knownPeople} />
             <input value={compose.subject} onChange={e => setCompose(c => ({ ...c, subject: e.target.value }))} placeholder={t('Temat')}
               style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
             <textarea value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))} placeholder={t('Treść wiadomości…')} rows={8}
