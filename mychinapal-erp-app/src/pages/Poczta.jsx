@@ -496,6 +496,8 @@ export default function Poczta() {
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={() => setView('mail')} style={{ ...btnStyle, background: view === 'mail' ? C.blight : C.white, color: view === 'mail' ? C.blue : C.text2, borderColor: view === 'mail' ? C.blue : C.border }}>📬 {t('Poczta')}</button>
           <button onClick={() => setView('contacts')} style={{ ...btnStyle, background: view === 'contacts' ? C.blight : C.white, color: view === 'contacts' ? C.blue : C.text2, borderColor: view === 'contacts' ? C.blue : C.border }}>👤 {t('Kontakty')} ({contacts.length})</button>
+          <button onClick={handleConnect} disabled={connecting} title={t('Ponownie połącz konto Outlook, żeby zaimportować kontakty z Outlooka (jednorazowa zgoda).')}
+            style={{ ...btnStyle, opacity: connecting ? .6 : 1 }}>🔄 {connecting ? t('Łączenie…') : t('Odśwież połączenie')}</button>
         </div>
       } />
 
