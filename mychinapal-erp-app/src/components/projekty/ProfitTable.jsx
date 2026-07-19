@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C, fmt } from '../../lib/theme'
 import { useUI } from '../../lib/ui'
+import { fetchNbpCnyRate } from '../../lib/quoteIntake'
 
 const labelStyle = { display: 'block', fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.2px', marginBottom: 6, lineHeight: 1.3, overflowWrap: 'break-word' }
 const fieldWrap = { display: 'flex', flexDirection: 'column' }
@@ -19,13 +20,24 @@ export default function ProfitTable({ project, onSaved }) {
   const [transport, setTransport] = useState(project.est_transport ?? '')
   const [clo, setClo] = useState(project.est_clo ?? '')
   const [saving, setSaving] = useState(false)
+  // Kwota CNY wykryta automatycznie z wgranej wyceny CN (patrz quoteIntake.js:
+  // saveQuoteFile) — tylko do podglądu, nieedytowalna. Pole PLN obok (zakup,
+  // wyżej) jest tym, co faktycznie liczy się do zysku, i przelicza się z tej
+  // kwoty wg kursu NBP — od razu po wgraniu wyceny, oraz ręcznie przyciskiem.
+  const [zakupCny, setZakupCny] = useState(project.est_zakup_cny ?? null)
+  const [nbpRate, setNbpRate] = useState(project.est_zakup_nbp_rate ?? null)
+  const [nbpDate, setNbpDate] = useState(project.est_zakup_nbp_date ?? null)
+  const [updatingRate, setUpdatingRate] = useState(false)
 
   useEffect(() => {
     setKoszt(project.value ?? '')
     setZakup(project.est_zakup ?? '')
     setTransport(project.est_transport ?? '')
     setClo(project.est_clo ?? '')
-  }, [project.id])
+    setZakupCny(project.est_zakup_cny ?? null)
+    setNbpRate(project.est_zakup_nbp_rate ?? null)
+    setNbpDate(project.est_zakup_nbp_date ?? null)
+  }, [project.id, project.est_zakup_cny, project.est_zakup, project.est_zakup_nbp_rate, project.est_zakup_nbp_date])
 
   const num = (v) => (v === '' || v === null ? 0 : Number(v))
   const zysk = num(koszt) - num(zakup) - num(transport) - num(clo)
@@ -44,6 +56,29 @@ export default function ProfitTable({ project, onSaved }) {
     onSaved && onSaved({ ...project, value: Number(koszt) || null, est_zakup: Number(zakup) || null, est_transport: Number(transport) || null, est_clo: Number(clo) || null })
   }
 
+  // Przelicza zapamiętaną kwotę CNY (z wgranej wyceny CN) na PLN wg
+  // aktualnego kursu średniego NBP — wywoływane automatycznie po wgraniu
+  // wyceny (patrz quoteIntake.js) oraz ręcznie tym przyciskiem, gdy kurs
+  // trzeba odświeżyć (np. wycena leżała kilka dni przed doliczeniem marży).
+  const handleUpdateNbp = async () => {
+    if (zakupCny === null || zakupCny === '') { toast.error(t('Brak wykrytej kwoty CNY z wyceny CN — wgraj najpierw wycenę w zakładce Wyceny.')); return }
+    setUpdatingRate(true)
+    try {
+      const rate = await fetchNbpCnyRate()
+      const plnValue = Math.round(Number(zakupCny) * rate.mid * 100) / 100
+      const { error } = await supabase.from('projects').update({
+        est_zakup: plnValue, est_zakup_nbp_rate: rate.mid, est_zakup_nbp_date: rate.effectiveDate,
+      }).eq('id', project.id)
+      if (error) throw error
+      setZakup(plnValue); setNbpRate(rate.mid); setNbpDate(rate.effectiveDate)
+      onSaved && onSaved({ ...project, est_zakup: plnValue, est_zakup_nbp_rate: rate.mid, est_zakup_nbp_date: rate.effectiveDate })
+      toast.success(t(`Zaktualizowano wg kursu NBP: 1 CNY = ${rate.mid} PLN (${rate.effectiveDate})`))
+    } catch (e) {
+      toast.error(t('Nie udało się pobrać kursu NBP: ') + (e.message || e))
+    }
+    setUpdatingRate(false)
+  }
+
   return (
     <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -52,7 +87,19 @@ export default function ProfitTable({ project, onSaved }) {
       </div>
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr)) 160px', gap: 16, alignItems: 'stretch', minWidth: 640 }}>
-        <div style={fieldWrap}><label style={labelStyle}>{t("Koszt zakupu towaru (Chiny)")}</label><input style={fieldStyle} type="number" value={zakup} onChange={e => setZakup(e.target.value)} onBlur={handleBlurSave} /></div>
+        <div style={fieldWrap}>
+          <label style={labelStyle}>{t("Koszt zakupu towaru (Chiny)")}</label>
+          <input style={fieldStyle} type="number" value={zakup} onChange={e => setZakup(e.target.value)} onBlur={handleBlurSave} />
+          {zakupCny !== null && zakupCny !== '' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 9.5, color: C.muted, flexWrap: 'wrap' }}>
+              <span>{fmt(zakupCny, 0)} CNY{nbpRate ? ` · NBP ${nbpRate}${nbpDate ? ' (' + new Date(nbpDate).toLocaleDateString('pl-PL') + ')' : ''}` : ''}</span>
+              <span onClick={updatingRate ? undefined : handleUpdateNbp} title={t('Przelicz ponownie z aktualnym kursem NBP')}
+                style={{ cursor: updatingRate ? 'default' : 'pointer', color: C.blue, fontWeight: 700, whiteSpace: 'nowrap', opacity: updatingRate ? .6 : 1 }}>
+                {updatingRate ? t('przeliczanie…') : t('🔄 Zaktualizuj wg NBP')}
+              </span>
+            </div>
+          )}
+        </div>
         <div style={fieldWrap}><label style={labelStyle}>{t("Koszt dla klienta (netto)")}</label><input style={fieldStyle} type="number" value={koszt} onChange={e => setKoszt(e.target.value)} onBlur={handleBlurSave} /></div>
         <div style={fieldWrap}><label style={labelStyle}>{t("Szac. koszt transportu")}</label><input style={fieldStyle} type="number" value={transport} onChange={e => setTransport(e.target.value)} onBlur={handleBlurSave} /></div>
         <div style={fieldWrap}><label style={labelStyle}>{t("Szac. cło")}</label><input style={fieldStyle} type="number" value={clo} onChange={e => setClo(e.target.value)} onBlur={handleBlurSave} /></div>

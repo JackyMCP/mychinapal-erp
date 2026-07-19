@@ -72,6 +72,22 @@ export async function previewQuoteFile(path, fileName) {
  * nikt nie dostaje zadania — to nie błąd.
  * @returns {Promise<{ok:boolean, plUserIds:string[], error:string|null}>}
  */
+/**
+ * Pobiera bieżący średni kurs NBP CNY->PLN (tabela A, bez prowizji banku).
+ * Używane do automatycznego przeliczenia „Koszt zakupu towaru (Chiny)” w
+ * tabelce zysku zamówienia (patrz ProfitTable.jsx) tuż po wgraniu wyceny CN,
+ * a także przez przycisk „Zaktualizuj wg NBP” do ręcznego odświeżenia kursu.
+ * @returns {Promise<{mid:number, effectiveDate:string}>}
+ */
+export async function fetchNbpCnyRate() {
+  const resp = await fetch('https://api.nbp.pl/api/exchangerates/rates/a/cny/?format=json')
+  if (!resp.ok) throw new Error('NBP API: ' + resp.status)
+  const data = await resp.json()
+  const rate = data?.rates?.[0]
+  if (!rate) throw new Error('Brak danych w odpowiedzi NBP')
+  return { mid: rate.mid, effectiveDate: rate.effectiveDate }
+}
+
 export async function checkPlTeamAssigned(project) {
   const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
     .select('user_id, role').eq('project_id', project.id).neq('role', 'glowny_cn')
@@ -131,6 +147,27 @@ export async function saveQuoteFile({ file, project, client, side, value, source
       quote = inserted
     }
     result.quoteId = quote.id
+
+    // Synchronizacja z tabelką "Podsumowanie — szacowany zysk" zamówienia
+    // (ProfitTable.jsx): CN -> "Koszt zakupu towaru (Chiny)" (CNY z pliku +
+    // od razu przeliczone na PLN wg bieżącego kursu NBP), PL -> "Koszt dla
+    // klienta (netto)" (wprost w PLN, bez przeliczania). Najlepszy wysiłek —
+    // niepowodzenie (np. brak zasięgu do NBP) nie blokuje zapisania wyceny;
+    // PLN można wtedy dociągnąć później przyciskiem "Zaktualizuj wg NBP".
+    try {
+      if (side === 'cn') {
+        const patchProject = { est_zakup_cny: value }
+        try {
+          const rate = await fetchNbpCnyRate()
+          patchProject.est_zakup = Math.round(value * rate.mid * 100) / 100
+          patchProject.est_zakup_nbp_rate = rate.mid
+          patchProject.est_zakup_nbp_date = rate.effectiveDate
+        } catch { /* kurs NBP niedostępny teraz — sama kwota CNY i tak się zapisze */ }
+        await supabase.from('projects').update(patchProject).eq('id', project.id)
+      } else {
+        await supabase.from('projects').update({ value }).eq('id', project.id)
+      }
+    } catch { /* najlepszy wysiłek — wycena i tak zapisana poprawnie */ }
 
     // Powiadomienie (zadanie w Centrum zadań) tylko przy stronie CN — to
     // zespół PL ma wtedy dodać marżę i wysłać gotową wycenę do klienta.
