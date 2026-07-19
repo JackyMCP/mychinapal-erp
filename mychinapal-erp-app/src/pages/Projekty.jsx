@@ -24,7 +24,7 @@ export default function Projekty() {
   } = useLang();
   const { toast, confirm } = useUI()
 
-  const { profile } = useAuth()
+  const { profile, isZarzad } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
   const [clients, setClients] = useState([])
@@ -111,6 +111,37 @@ export default function Projekty() {
     await loadAll()
   }
 
+  const handleDeleteProject = async (project) => {
+    const ok = await confirm(
+      t(`Usunąć zamówienie „${project.order_label}”? Usunie to też jego wyceny, czat zamówienia, zadania i wgrane dokumenty. Tej operacji nie da się cofnąć.`),
+      { confirmLabel: t('Usuń zamówienie') },
+    )
+    if (!ok) return
+    const { data, error } = await supabase.functions.invoke('delete-project', { body: { projectId: project.id } })
+    if (error) { toast.error(t('Nie udało się usunąć zamówienia: ') + error.message); return }
+    if (data?.needs_confirmation) {
+      const c = data.counts || {}
+      const parts = []
+      if (c.invoices) parts.push(`${t('faktur')}: ${c.invoices}`)
+      if (c.transactions) parts.push(`${t('transakcji')}: ${c.transactions}`)
+      if (c.transaction_splits) parts.push(`${t('podziałów transakcji')}: ${c.transaction_splits}`)
+      if (c.warehouse_documents) parts.push(`${t('dokumentów magazynowych')}: ${c.warehouse_documents}`)
+      const ok2 = await confirm(
+        t(`Uwaga: to zamówienie ma powiązane realne dane księgowe/magazynowe (${parts.join(', ')}). Zostaną zachowane, ale stracą powiązanie z tym zamówieniem. Kontynuować mimo to?`),
+        { confirmLabel: t('Usuń mimo to') },
+      )
+      if (!ok2) return
+      const { data: data2, error: error2 } = await supabase.functions.invoke('delete-project', { body: { projectId: project.id, force: true } })
+      if (error2 || !data2?.ok) { toast.error(t('Nie udało się usunąć zamówienia: ') + (data2?.error || error2?.message || '')); return }
+    } else if (!data?.ok) {
+      toast.error(t('Nie udało się usunąć zamówienia: ') + (data?.error || ''))
+      return
+    }
+    toast.success(t('Zamówienie usunięte ✓'))
+    if (selectedId === project.id) handleBack()
+    await loadAll()
+  }
+
   const handleProjectCreated = async (created) => {
     setShowNewProject(false)
     await loadAll()
@@ -191,7 +222,8 @@ export default function Projekty() {
           {filtered.map(p => (
             <ProjectTile key={p.id} project={p} clientName={clientNameById[p.client_id] || 'Nieznany klient'}
               progress={progressByProject[p.id]} marza={marzaByProject[p.id]} onClick={() => handleSelect(p)}
-              clients={clients} onAssignClient={handleAssignClient} />
+              clients={clients} onAssignClient={handleAssignClient}
+              canDelete={isZarzad} onDelete={handleDeleteProject} />
           ))}
         </div>
       </div>

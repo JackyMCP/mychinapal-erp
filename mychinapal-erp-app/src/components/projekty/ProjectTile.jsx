@@ -5,7 +5,7 @@ import { avatarColor, initials } from '../klienci/utils'
 import { STAGE_DEFS } from './stageDefs'
 import useIsMobile from '../../lib/useIsMobile'
 
-export default function ProjectTile({ project, clientName, progress, marza, onClick, clients, onAssignClient }) {
+export default function ProjectTile({ project, clientName, progress, marza, onClick, clients, onAssignClient, canDelete, onDelete }) {
   const {
     t
   } = useLang();
@@ -84,6 +84,10 @@ export default function ProjectTile({ project, clientName, progress, marza, onCl
           )}
           <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.35, marginTop: 1 }}>{project.order_label}</div>
         </div>
+        {canDelete && onDelete && (
+          <span onClick={(e) => { e.stopPropagation(); onDelete(project) }} title={t('Usuń zamówienie')}
+            style={{ fontSize: 13, color: C.muted, cursor: 'pointer', flexShrink: 0, padding: '2px 4px' }}>🗑️</span>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 3, margin: '10px 0 6px' }}>
         {STAGE_DEFS.map(s => (
