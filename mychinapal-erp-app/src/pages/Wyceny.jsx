@@ -140,6 +140,11 @@ export default function Wyceny() {
   const handleDelete = async (q, e) => {
     e.stopPropagation()
     if (!await confirm(t('Usunąć wycenę „' + q.quote_number + '”? Tej operacji nie da się cofnąć.'))) return
+    // Usuń też otwarte (nieukończone) zadania "Dodaj marżę i wyślij wycenę…"
+    // powiązane z tą wyceną — inaczej zostają w Centrum zadań na zawsze
+    // (klucz obcy tasks.quote_id ma ON DELETE SET NULL, więc same by nie
+    // zniknęły, tylko stały się nieaktualnym "widmem" bez powiązania).
+    await supabase.from('tasks').delete().eq('quote_id', q.id).neq('status', 'done')
     const { error } = await supabase.from('quotes').delete().eq('id', q.id)
     if (error) { toast.error(t('Nie udało się usunąć: ') + error.message); return }
     await loadAll()

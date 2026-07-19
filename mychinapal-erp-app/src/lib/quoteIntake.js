@@ -306,17 +306,33 @@ export async function createQuoteFromParsedItems(parsedItems, file, project, cli
       await Promise.all(newLinks.map(({ itemId, product_id }) => supabase.from('quote_items').update({ product_id }).eq('id', itemId)))
     } catch { /* najlepszy wysiłek */ }
 
-    // 7) Powiadom cały zespół PL (zadanie w Centrum zadań).
+    // 7) Powiadom cały zespół PL (zadanie w Centrum zadań) — jeśli ktoś ma
+    // już OTWARTE (nieukończone) zadanie dla TEJ SAMEJ wyceny (np. bo Excel
+    // był poprawiany i wgrywany kilka razy pod rząd, co nadpisuje tę samą
+    // wycenę — patrz krok 5 wyżej), tylko odśwież termin/opis istniejącego
+    // zadania zamiast tworzyć kolejny duplikat w Centrum zadań. Bez tego
+    // każde ponowne wgranie tego samego pliku mnożyło identyczne zadania.
     try {
-      const taskResults = await Promise.all(plUserIds.map(uid => supabase.from('tasks').insert({
-        title: `Dodaj marżę i wyślij wycenę ${quote_number} do klienta`,
-        description: `Zespół chiński przekazał wycenę ${quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj koszty transportu/odprawy/dostawy i marżę, sprawdź kursy NBP i wyślij do klienta.`,
-        project_id: project.id, client_id: client.id, quote_id: quote.id,
-        assigned_to: uid, assigned_by: user?.id,
-        due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
-      })))
-      result.notified = taskResults.filter(r => !r.error).length
-      result.notifyFailed = taskResults.some(r => r.error)
+      const { data: existingTasks } = await supabase.from('tasks')
+        .select('id, assigned_to, status').eq('quote_id', quote.id).in('assigned_to', plUserIds)
+      const openByUser = new Map((existingTasks || []).filter(t => t.status !== 'done').map(t => [t.assigned_to, t]))
+      const title = `Dodaj marżę i wyślij wycenę ${quote_number} do klienta`
+      const description = `Zespół chiński przekazał wycenę ${quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj koszty transportu/odprawy/dostawy i marżę, sprawdź kursy NBP i wyślij do klienta.`
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const toInsert = plUserIds.filter(uid => !openByUser.has(uid))
+      const toUpdate = plUserIds.filter(uid => openByUser.has(uid))
+
+      const [insertRes, updateResArr] = await Promise.all([
+        toInsert.length
+          ? supabase.from('tasks').insert(toInsert.map(uid => ({
+              title, description, project_id: project.id, client_id: client.id, quote_id: quote.id,
+              assigned_to: uid, assigned_by: user?.id, due_date: todayStr, status: 'todo', priority: 'pilne',
+            })))
+          : Promise.resolve({ error: null, count: 0 }),
+        Promise.all(toUpdate.map(uid => supabase.from('tasks').update({ title, description, due_date: todayStr }).eq('id', openByUser.get(uid).id))),
+      ])
+      result.notified = toInsert.length + toUpdate.length
+      result.notifyFailed = !!insertRes.error || updateResArr.some(r => r.error)
     } catch {
       result.notifyFailed = true
     }
