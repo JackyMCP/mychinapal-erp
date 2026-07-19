@@ -1048,14 +1048,28 @@ export default function QuoteEditor({ quoteId, onBack, onChanged }) {
     let taskFailCount = 0
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const results = await Promise.all(plUserIds.map(uid => supabase.from('tasks').insert({
-        title: `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`,
-        description: `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`,
-        project_id: quote.project_id, client_id: quote.client_id, quote_id: quote.id,
-        assigned_to: uid, assigned_by: user?.id,
-        due_date: new Date().toISOString().slice(0, 10), status: 'todo', priority: 'pilne',
-      })))
-      taskFailCount = results.filter(r => r.error).length
+      // Jeśli ktoś z zespołu PL ma już OTWARTE (nieukończone) zadanie dla
+      // TEJ SAMEJ wyceny (np. przycisk kliknięty drugi raz, albo wycena
+      // wcześniej trafiła tu przez import Excela — patrz quoteIntake.js),
+      // tylko odśwież termin/opis zamiast tworzyć duplikat w Centrum zadań.
+      const { data: existingTasks } = await supabase.from('tasks')
+        .select('id, assigned_to, status').eq('quote_id', quote.id).in('assigned_to', plUserIds)
+      const openByUser = new Map((existingTasks || []).filter(t => t.status !== 'done').map(t => [t.assigned_to, t]))
+      const title = `Dodaj marżę i wyślij wycenę ${quote.quote_number} do klienta`
+      const description = `Zespół chiński przekazał wycenę ${quote.quote_number}${client?.name ? ' (' + client.name + ')' : ''} — dodaj transport, marżę i VAT, sprawdź kursy NBP i wyślij do klienta.`
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const toInsert = plUserIds.filter(uid => !openByUser.has(uid))
+      const toUpdate = plUserIds.filter(uid => openByUser.has(uid))
+      const [insertRes, updateResArr] = await Promise.all([
+        toInsert.length
+          ? supabase.from('tasks').insert(toInsert.map(uid => ({
+              title, description, project_id: quote.project_id, client_id: quote.client_id, quote_id: quote.id,
+              assigned_to: uid, assigned_by: user?.id, due_date: todayStr, status: 'todo', priority: 'pilne',
+            })))
+          : Promise.resolve({ error: null }),
+        Promise.all(toUpdate.map(uid => supabase.from('tasks').update({ title, description, due_date: todayStr }).eq('id', openByUser.get(uid).id))),
+      ])
+      taskFailCount = (insertRes.error ? toInsert.length : 0) + updateResArr.filter(r => r.error).length
     } catch {
       taskFailCount = plUserIds.length
     }

@@ -147,6 +147,35 @@ export default function Wyceny() {
     await supabase.from('tasks').delete().eq('quote_id', q.id).neq('status', 'done')
     const { error } = await supabase.from('quotes').delete().eq('id', q.id)
     if (error) { toast.error(t('Nie udało się usunąć: ') + error.message); return }
+
+    // Jeśli to była OSTATNIA wycena tego zamówienia, samo zamówienie (razem
+    // z nazwą, którą ktoś mu nadał przy tworzeniu — np. "testowe") też nie
+    // ma już po co istnieć. Usuń je automatycznie, żeby puste zamówienia nie
+    // zaśmiecały panelu Projekty i listy rozwijalnej "Zamówienie" tutaj.
+    if (q.project_id) {
+      const { count } = await supabase.from('quotes').select('id', { count: 'exact', head: true }).eq('project_id', q.project_id)
+      if (!count) {
+        try {
+          const { data } = await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id } })
+          if (data?.needs_confirmation) {
+            const c = data.counts || {}
+            const parts = []
+            if (c.invoices) parts.push(`${t('faktur')}: ${c.invoices}`)
+            if (c.transactions) parts.push(`${t('transakcji')}: ${c.transactions}`)
+            if (c.transaction_splits) parts.push(`${t('podziałów transakcji')}: ${c.transaction_splits}`)
+            if (c.warehouse_documents) parts.push(`${t('dokumentów magazynowych')}: ${c.warehouse_documents}`)
+            const ok2 = await confirm(
+              t(`To była ostatnia wycena zamówienia „${data.order_label}”. Ma ono jednak powiązane realne dane księgowe/magazynowe (${parts.join(', ')}) — zostaną zachowane, ale stracą powiązanie z tym zamówieniem. Usunąć mimo to samo (teraz puste) zamówienie?`),
+              { confirmLabel: t('Usuń zamówienie') },
+            )
+            if (ok2) await supabase.functions.invoke('delete-project', { body: { projectId: q.project_id, force: true } })
+          }
+          // Brak uprawnień (nie-zarząd) lub inny błąd — zostawiamy puste
+          // zamówienie, da się je usunąć ręcznie w Projekty & Zamówienia.
+        } catch { /* najlepszy wysiłek — usunięcie samej wyceny i tak się udało */ }
+      }
+    }
+
     await loadAll()
   }
 
