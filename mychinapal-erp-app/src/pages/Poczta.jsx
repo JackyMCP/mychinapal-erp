@@ -101,9 +101,18 @@ export default function Poczta() {
 
   const handleConnect = async () => {
     setConnecting(true)
-    const { data, error } = await supabase.functions.invoke('outlook-oauth-start', { method: 'GET' })
+    // Uwaga: celowo BEZ { method: 'GET' } — supabase-js (2.45.4) w tej
+    // konfiguracji rzuca błędem klienta przy jawnym GET (fetch nie akceptuje
+    // body na GET/HEAD), więc żądanie nigdy nie docierało do Supabase (brak
+    // wpisu w logach edge-function). Domyślny POST działa identycznie, bo
+    // outlook-oauth-start i tak nie rozróżnia metody (poza OPTIONS).
+    const { data, error } = await supabase.functions.invoke('outlook-oauth-start')
     setConnecting(false)
-    if (error || !data?.ok) { toast.error(t('Nie udało się rozpocząć łączenia z Outlookiem.')); return }
+    if (error || !data?.ok) {
+      console.error('outlook-oauth-start failed:', error, data)
+      toast.error(t('Nie udało się rozpocząć łączenia z Outlookiem.'))
+      return
+    }
     window.location.href = data.url
   }
 
