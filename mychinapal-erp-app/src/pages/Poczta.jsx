@@ -58,6 +58,36 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// Graficzny podpis maila — doklejany automatycznie pod treścią KAŻDEJ nowej
+// wiadomości/odpowiedzi/przekazania (o ile signature_enabled !== false),
+// konfigurowalny przez każdego pracownika osobno w "⚙️ Ustawienia poczty"
+// (imię/nazwisko, stanowisko, telefon — e-mail zawsze z połączonego konta).
+// Logo to stały, publiczny plik z /public (bez hashowania nazwy przez Vite,
+// więc URL jest trwały między wdrożeniami) — musi być pełnym absolutnym URL,
+// żeby wyświetlił się u odbiorcy w Outlooku/Gmailu, a nie tylko lokalnie.
+const SIGNATURE_LOGO_URL = 'https://mychinapal-erp.vercel.app/logo-navy.png'
+
+function buildSignatureHtml({ fullName, title, phone, email, includeLogo }) {
+  if (!fullName && !title && !phone && !email) return ''
+  const rows = []
+  if (email) rows.push(`<div><b>E-mail:</b> ${email}</div>`)
+  if (phone) rows.push(`<div><b>Telefon:</b> ${phone}</div>`)
+  return `
+<table cellpadding="0" cellspacing="0" style="margin-top:18px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">
+  <tr>
+    <td style="vertical-align:top;padding-right:16px;">
+      <div style="font-size:14px;font-weight:700;color:#0A1628;">${fullName || ''}</div>
+      ${title ? `<div style="font-size:12px;color:#64748B;">${title}</div>` : ''}
+    </td>
+    <td style="border-left:2px solid #2563EB;padding-left:16px;vertical-align:top;">
+      <div style="font-size:12px;color:#0A1628;line-height:1.5;">${rows.join('')}</div>
+      <div style="font-size:12px;color:#64748B;">mychinapal.pl</div>
+    </td>
+  </tr>
+  ${includeLogo ? `<tr><td colspan="2" style="padding-top:12px;"><img src="${SIGNATURE_LOGO_URL}" alt="MyChinaPal" style="height:56px;" /></td></tr>` : ''}
+</table>`
+}
+
 // Pole "Do"/"DW" z podpowiedziami adresów — filtruje po pierwszych znakach
 // nazwy LUB adresu (fragment tekstu po ostatnim przecinku), źródło
 // podpowiedzi: zapisane Kontakty + adresy z historii korespondencji.
@@ -125,6 +155,9 @@ export default function Poczta() {
   const [profiles, setProfiles] = useState([])
   const [taskClients, setTaskClients] = useState([])
   const [taskProjects, setTaskProjects] = useState([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sigForm, setSigForm] = useState({ enabled: true, fullName: '', title: '', phone: '', includeLogo: true })
+  const [savingSig, setSavingSig] = useState(false)
   const [threadAttachments, setThreadAttachments] = useState({}) // message_id -> [rows]
   const [summarizing, setSummarizing] = useState(false)
   const [quickStepsOpen, setQuickStepsOpen] = useState(false)
@@ -187,6 +220,54 @@ export default function Poczta() {
       setTaskProjects(prjs || [])
     })()
   }, [])
+
+  // Otwiera "⚙️ Ustawienia poczty" wypełnione aktualnym stanem podpisu
+  // (z email_accounts), z rozsądnym domyślnym imieniem/nazwiskiem z profilu
+  // pracownika jeśli podpis jeszcze nie był nigdy skonfigurowany.
+  const openSignatureSettings = () => {
+    const myName = profiles.find(p => p.id === session?.user?.id)?.full_name || ''
+    setSigForm({
+      enabled: account?.signature_enabled !== false,
+      fullName: account?.signature_full_name ?? myName,
+      title: account?.signature_title ?? '',
+      phone: account?.signature_phone ?? '',
+      includeLogo: account?.signature_include_logo !== false,
+    })
+    setSettingsOpen(true)
+  }
+
+  const handleSaveSignature = async () => {
+    setSavingSig(true)
+    const patch = {
+      signature_enabled: sigForm.enabled,
+      signature_full_name: sigForm.fullName || null,
+      signature_title: sigForm.title || null,
+      signature_phone: sigForm.phone || null,
+      signature_include_logo: sigForm.includeLogo,
+    }
+    const { error } = await supabase.from('email_accounts').update(patch).eq('id', account.id)
+    setSavingSig(false)
+    if (error) { toast.error(t('Nie udało się zapisać podpisu: ') + error.message); return }
+    setAccount(prev => ({ ...prev, ...patch }))
+    toast.success(t('Podpis zapisany ✓ — będzie teraz doklejany automatycznie do wiadomości.'))
+    setSettingsOpen(false)
+  }
+
+  // Dokleja skonfigurowany podpis pod treścią, o ile pracownik go nie
+  // wyłączył — wołane tuż przed wysyłką z każdego z 3 miejsc (nowa
+  // wiadomość/odpowiedź/przekazanie), żeby zachowanie było identyczne
+  // wszędzie i nie trzeba było pamiętać o doklejaniu go ręcznie.
+  const withSignature = (html) => {
+    if (!account || account.signature_enabled === false) return html
+    const sig = buildSignatureHtml({
+      fullName: account.signature_full_name,
+      title: account.signature_title,
+      phone: account.signature_phone,
+      email: account.ms_account_email,
+      includeLogo: account.signature_include_logo !== false,
+    })
+    return html + sig
+  }
 
   // Na żywo: nowe/zmienione wiadomości (webhook Graph -> DB, w KAŻDYM
   // folderze) pojawiają się tu bez odświeżania strony.
@@ -316,7 +397,7 @@ export default function Poczta() {
     if (!to.length || !compose.subject.trim()) { toast.error(t('Podaj odbiorcę i temat.')); return }
     setSending(true)
     const { data, error } = await supabase.functions.invoke('outlook-send-mail', {
-      body: { to, cc, subject: compose.subject, bodyHtml: compose.body.replace(/\n/g, '<br/>'), attachments: compose.attachments },
+      body: { to, cc, subject: compose.subject, bodyHtml: withSignature(compose.body.replace(/\n/g, '<br/>')), attachments: compose.attachments },
     })
     setSending(false)
     if (error || !data?.ok) { toast.error(t('Nie udało się wysłać wiadomości.')); return }
@@ -332,7 +413,7 @@ export default function Poczta() {
       body: {
         replyToMessageId: lastInboundMessage.graph_message_id,
         replyAll,
-        bodyHtml: replyBody.replace(/\n/g, '<br/>'),
+        bodyHtml: withSignature(replyBody.replace(/\n/g, '<br/>')),
         subject: lastInboundMessage.subject,
         to: [lastInboundMessage.from_address].filter(Boolean),
         conversationId: lastInboundMessage.conversation_id,
@@ -370,7 +451,7 @@ export default function Poczta() {
       body: {
         forwardMessageId: m.graph_message_id,
         to, cc,
-        bodyHtml: forwardComment.replace(/\n/g, '<br/>'),
+        bodyHtml: withSignature(forwardComment.replace(/\n/g, '<br/>')),
         subject: 'Fwd: ' + (m.subject || ''),
         conversationId: m.conversation_id,
         hasAttachments: !!m.has_attachments,
@@ -577,6 +658,7 @@ export default function Poczta() {
           <button onClick={() => setView('contacts')} style={{ ...btnStyle, background: view === 'contacts' ? C.blight : C.white, color: view === 'contacts' ? C.blue : C.text2, borderColor: view === 'contacts' ? C.blue : C.border }}>👤 {t('Kontakty')} ({contacts.length})</button>
           <button onClick={handleConnect} disabled={connecting} title={t('Ponownie połącz konto Outlook, żeby zaimportować kontakty z Outlooka (jednorazowa zgoda).')}
             style={{ ...btnStyle, opacity: connecting ? .6 : 1 }}>🔄 {connecting ? t('Łączenie…') : t('Odśwież połączenie')}</button>
+          <button onClick={openSignatureSettings} style={btnStyle}>⚙️ {t('Ustawienia poczty')}</button>
         </div>
       } />
 
@@ -986,6 +1068,58 @@ export default function Poczta() {
               <button onClick={() => setForwardOpen(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t('Anuluj')}</button>
               <button onClick={handleForward} disabled={sending} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: sending ? .6 : 1 }}>
                 {sending ? t('Wysyłanie…') : t('↪ Prześlij dalej')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setSettingsOpen(false)}>
+          <div style={{ background: C.white, borderRadius: 14, padding: 20, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>⚙️ {t('Ustawienia poczty')}</div>
+            <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14 }}>{t('Podpis dołączany automatycznie do nowych wiadomości, odpowiedzi i przekazań.')}</div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, marginBottom: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={sigForm.enabled} onChange={e => setSigForm(f => ({ ...f, enabled: e.target.checked }))} />
+              {t('Dołączaj podpis automatycznie do wiadomości')}
+            </label>
+
+            <div style={{ opacity: sigForm.enabled ? 1 : .5, pointerEvents: sigForm.enabled ? 'auto' : 'none' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Imię i nazwisko')}</label>
+                  <input value={sigForm.fullName} onChange={e => setSigForm(f => ({ ...f, fullName: e.target.value }))}
+                    style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Stanowisko')}</label>
+                  <input value={sigForm.title} onChange={e => setSigForm(f => ({ ...f, title: e.target.value }))} placeholder={t('np. Co-founder')}
+                    style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Telefon')}</label>
+              <input value={sigForm.phone} onChange={e => setSigForm(f => ({ ...f, phone: e.target.value }))} placeholder="+48 ..."
+                style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 10, boxSizing: 'border-box' }} />
+              <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 10 }}>{t('E-mail w podpisie: ')}<b>{account.ms_account_email}</b> ({t('z połączonego konta, bez możliwości zmiany')})</div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, marginBottom: 14, cursor: 'pointer' }}>
+                <input type="checkbox" checked={sigForm.includeLogo} onChange={e => setSigForm(f => ({ ...f, includeLogo: e.target.checked }))} />
+                {t('Dołącz grafikę logo MyChinaPal')}
+              </label>
+
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 }}>{t('Podgląd')}</div>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', background: C.bg, marginBottom: 16 }}
+                dangerouslySetInnerHTML={{ __html: buildSignatureHtml({
+                  fullName: sigForm.fullName, title: sigForm.title, phone: sigForm.phone,
+                  email: account.ms_account_email, includeLogo: sigForm.includeLogo,
+                }) || `<span style="font-size:11px;color:${C.muted}">${t('Brak danych do podglądu.')}</span>` }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setSettingsOpen(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t('Anuluj')}</button>
+              <button onClick={handleSaveSignature} disabled={savingSig} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: savingSig ? .6 : 1 }}>
+                {savingSig ? t('Zapisywanie…') : t('Zapisz')}
               </button>
             </div>
           </div>
