@@ -22,6 +22,7 @@ import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 import ForwardModal from '../components/ForwardModal'
 import FilePreviewModal from '../components/ui/FilePreviewModal'
+import AttachmentCard from '../components/ui/AttachmentCard'
 import ForwardIconButton from '../components/ui/ForwardIconButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
@@ -404,7 +405,7 @@ export default function Czat() {
 
   const handleDownload = async (doc) => {
     if (!doc) return
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 300)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
@@ -623,10 +624,7 @@ export default function Czat() {
                           </div>
                         )}
                         {doc && !isImageFile(doc.file_name) && (
-                          <div onClick={() => handleDownload(doc)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: mine ? 'rgba(255,255,255,.15)' : C.bg, fontSize: 11 }}>
-                            📎 <span style={{ textDecoration: 'underline' }}>{doc.file_name}</span>
-                            <span style={{ fontSize: 9, opacity: 0.75 }}>({t(doc.category)})</span>
-                          </div>
+                          <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} mine={mine} />
                         )}
                       </div>
                       <div style={{ fontSize: 9, color: C.muted, marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', justifyContent: mine ? 'flex-end' : 'flex-start' }}>

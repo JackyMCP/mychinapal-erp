@@ -8,6 +8,7 @@ import { useUI } from '../../lib/ui'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 import FilePreviewModal from '../ui/FilePreviewModal'
+import AttachmentCard from '../ui/AttachmentCard'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -117,7 +118,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
 
   const handleDownload = async (m) => {
     if (!m.attachment_file_path) return
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 60)
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 300)
     if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
     setPreviewFile({ url: data.signedUrl, fileName: m.attachment_file_name })
   }
@@ -188,9 +189,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
                     </div>
                   )}
                   {m.attachment_file_path && !isImageFile(m.attachment_file_name) && (
-                    <div onClick={() => handleDownload(m)} style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '5px 8px', borderRadius: 6, background: C.bg, fontSize: 11 }}>
-                      📎 <span style={{ textDecoration: 'underline' }}>{m.attachment_file_name}</span>
-                    </div>
+                    <AttachmentCard fileName={m.attachment_file_name} onClick={() => handleDownload(m)} />
                   )}
                 </div>
               </div>

@@ -15,6 +15,7 @@ import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
 import FilePreviewModal from '../ui/FilePreviewModal'
+import AttachmentCard from '../ui/AttachmentCard'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -224,7 +225,7 @@ export default function ProjectChat({ project, onChanged }) {
 
   const handleDownload = async (doc) => {
     if (!doc) return
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 300)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
     setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
@@ -287,7 +288,7 @@ export default function ProjectChat({ project, onChanged }) {
                 <div style={{ marginTop: 6, width: 160, height: 110, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>{t("Ładowanie zdjęcia…")}</div>
               )}
               {doc && !isImageFile(doc.file_name) && (
-                <div onClick={() => handleDownload(doc)} style={{ fontSize: 11, color: C.blue, marginTop: 4, cursor: 'pointer', fontWeight: 600 }}>📎 {doc.file_name} <span style={{ color: C.muted, fontWeight: 400 }}>({t(doc.category)})</span></div>
+                <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} />
               )}
             </div>
           );

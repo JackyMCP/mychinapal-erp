@@ -18,6 +18,7 @@ import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
 import FilePreviewModal from '../ui/FilePreviewModal'
+import AttachmentCard from '../ui/AttachmentCard'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -372,7 +373,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
                     <div style={{ marginTop: 5, width: 160, height: 110, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>{t("Ładowanie zdjęcia…")}</div>
                   )}
                   {doc && !isImageFile(doc.file_name) && (
-                    <div onClick={() => handleDownload(doc)} style={{ fontSize: 11, color: C.blue, marginTop: 3, cursor: 'pointer', fontWeight: 600 }}>📎 {doc.file_name} <span style={{ color: C.muted, fontWeight: 400 }}>({t(doc.category)})</span></div>
+                    <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} />
                   )}
                 </div>
               </div>
