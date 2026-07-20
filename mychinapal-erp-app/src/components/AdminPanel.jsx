@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { C } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import { useAuth } from '../context/AuthContext'
+import TeamAssignments from './TeamAssignments'
 
 // Panel sterowania zarządu — dostępny dla KAŻDEGO członka zarządu (nie tylko
 // jednej osoby), klikalny z bloku imię/rola w Sidebarze (gated na isZarzad
@@ -19,6 +20,7 @@ export default function AdminPanel({ onClose }) {
   const { toast } = useUI()
   const { profile: myProfile } = useAuth()
 
+  const [section, setSection] = useState('accounts') // 'accounts' | 'assignments'
   const [loading, setLoading] = useState(true)
   const [profiles, setProfiles] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -67,12 +69,29 @@ export default function AdminPanel({ onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div style={{ background: C.white, borderRadius: 14, padding: 22, width: 620, maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: C.white, borderRadius: 14, padding: 22, width: 760, maxWidth: '95vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700 }}>{t("🛡️ Panel sterowania zarządu")}</div>
           <span onClick={onClose} style={{ fontSize: 13, fontWeight: 700, color: C.muted, cursor: 'pointer' }}>{t("✕ Zamknij")}</span>
         </div>
 
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16, borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
+          <span onClick={() => setSection('accounts')} style={{
+            fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+            background: section === 'accounts' ? C.blue : C.bg, color: section === 'accounts' ? '#fff' : C.text2,
+          }}>{t("🔑 Konta")}</span>
+          <span onClick={() => setSection('assignments')} style={{
+            fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+            background: section === 'assignments' ? C.blue : C.bg, color: section === 'assignments' ? '#fff' : C.text2,
+          }}>{t("🧑‍🤝‍🧑 Przypisania klient / projekt")}</span>
+        </div>
+
+        {section === 'assignments' ? (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <TeamAssignments />
+          </div>
+        ) : (
+        <>
         <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 14, lineHeight: 1.5 }}>
           {t("Zarządzanie kontami użytkowników aplikacji. Każdy członek zarządu może dodać nowe konto — hasło nadajesz od razu, bez potrzeby potwierdzania e-mailem.")}
         </div>
@@ -153,6 +172,8 @@ export default function AdminPanel({ onClose }) {
             </div>
           ))}
         </div>
+        </>
+        )}
       </div>
     </div>
   )
