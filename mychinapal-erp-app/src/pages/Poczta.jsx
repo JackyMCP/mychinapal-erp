@@ -117,6 +117,14 @@ export default function Poczta() {
   const [replyBody, setReplyBody] = useState('')
   const [replyAttachments, setReplyAttachments] = useState([])
   const [sending, setSending] = useState(false)
+  const [forwardOpen, setForwardOpen] = useState(false)
+  const [forwardTo, setForwardTo] = useState('')
+  const [forwardCc, setForwardCc] = useState('')
+  const [forwardComment, setForwardComment] = useState('')
+  const [forwardTask, setForwardTask] = useState({ create: false, assignedTo: '', clientId: '', projectId: '', dueDate: '', title: '', description: '' })
+  const [profiles, setProfiles] = useState([])
+  const [taskClients, setTaskClients] = useState([])
+  const [taskProjects, setTaskProjects] = useState([])
   const [threadAttachments, setThreadAttachments] = useState({}) // message_id -> [rows]
   const [summarizing, setSummarizing] = useState(false)
   const [quickStepsOpen, setQuickStepsOpen] = useState(false)
@@ -163,6 +171,22 @@ export default function Poczta() {
   }
 
   useEffect(() => { load() }, [session?.user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dane potrzebne tylko do opcjonalnego "Utwórz też zadanie" przy
+  // przekazywaniu maila dalej (picker osoby/klienta/zamówienia) — wczytywane
+  // raz, niezależnie od tego czy ktoś w ogóle skorzysta z tej opcji.
+  useEffect(() => {
+    (async () => {
+      const [{ data: profs }, { data: cls }, { data: prjs }] = await Promise.all([
+        supabase.from('profiles').select('id, full_name').order('full_name'),
+        supabase.from('clients').select('id, name').order('name'),
+        supabase.from('projects').select('id, client_id, order_label').order('created_at', { ascending: false }),
+      ])
+      setProfiles(profs || [])
+      setTaskClients(cls || [])
+      setTaskProjects(prjs || [])
+    })()
+  }, [])
 
   // Na żywo: nowe/zmienione wiadomości (webhook Graph -> DB, w KAŻDYM
   // folderze) pojawiają się tu bez odświeżania strony.
@@ -320,6 +344,61 @@ export default function Poczta() {
     toast.success(t('Odpowiedź wysłana ✓'))
     setReplyBody('')
     setReplyAttachments([])
+  }
+
+  const openForward = () => {
+    if (!selectedThread) return
+    const m = selectedThread.latest
+    setForwardTo(''); setForwardCc(''); setForwardComment('')
+    setForwardTask({ create: false, assignedTo: '', clientId: '', projectId: '', dueDate: '', title: t('Zapoznaj się: ') + (m.subject || ''), description: '' })
+    setForwardOpen(true)
+  }
+
+  // Przekazanie dalej (Forward) + opcjonalne utworzenie zadania dla wybranej
+  // osoby (niezależnie od tego, na jaki adres poszedł sam mail — np. mail
+  // idzie do klienta, a zadanie "ogarnij to" dostaje kolega z zespołu).
+  // Załączniki oryginalnej wiadomości Graph przekazuje dalej automatycznie —
+  // nie trzeba ich tu ponownie wgrywać (patrz komentarz w edge function).
+  const handleForward = async () => {
+    const m = selectedThread?.latest
+    const to = forwardTo.split(',').map(s => s.trim()).filter(Boolean)
+    const cc = forwardCc.split(',').map(s => s.trim()).filter(Boolean)
+    if (!m || !to.length) { toast.error(t('Podaj co najmniej jednego odbiorcę.')); return }
+    if (forwardTask.create && !forwardTask.assignedTo) { toast.error(t('Wybierz osobę, dla której ma powstać zadanie.')); return }
+    setSending(true)
+    const { data, error } = await supabase.functions.invoke('outlook-send-mail', {
+      body: {
+        forwardMessageId: m.graph_message_id,
+        to, cc,
+        bodyHtml: forwardComment.replace(/\n/g, '<br/>'),
+        subject: 'Fwd: ' + (m.subject || ''),
+        conversationId: m.conversation_id,
+        hasAttachments: !!m.has_attachments,
+      },
+    })
+    if (error || !data?.ok) {
+      setSending(false)
+      toast.error(t('Nie udało się przesłać wiadomości dalej.'))
+      return
+    }
+    let taskFailed = false
+    if (forwardTask.create) {
+      const { error: taskErr } = await supabase.from('tasks').insert({
+        title: forwardTask.title || (t('Zapoznaj się: ') + (m.subject || '')),
+        description: forwardTask.description || (t('Przekazany mail: ') + (m.subject || '') + (forwardComment ? ' — ' + forwardComment : '')),
+        assigned_to: forwardTask.assignedTo,
+        assigned_by: session?.user?.id,
+        client_id: forwardTask.clientId || null,
+        project_id: forwardTask.projectId || null,
+        due_date: forwardTask.dueDate || null,
+        status: 'todo',
+        priority: 'normalny',
+      })
+      taskFailed = !!taskErr
+    }
+    setSending(false)
+    toast.success(t('Wiadomość przesłana dalej ✓') + (forwardTask.create ? (taskFailed ? ' — ' + t('ale nie udało się utworzyć zadania') : ' + ' + t('zadanie utworzone')) : ''))
+    setForwardOpen(false)
   }
 
   // --- Akcje na wiadomościach (Graph + lokalny stan od razu) ---
@@ -701,6 +780,7 @@ export default function Poczta() {
                 <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700 }}>{selectedMessages[0]?.subject || t('(brak tematu)')}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button onClick={openForward} style={{ ...btnStyle, borderColor: C.blue, color: C.blue }}>↪ {t('Prześlij dalej')}</button>
 {folder !== 'deleteditems' && folder !== 'archive' && <button onClick={() => applyActionToThread(selectedThread, 'archive')} style={btnStyle}>🗄️ {t('Archiwizuj')}</button>}
                     {folder !== 'junkemail' && folder !== 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'spam')} style={btnStyle}>🚫 {t('To spam')}</button>}
                     {folder !== 'deleteditems' && <button onClick={() => applyActionToThread(selectedThread, 'trash')} style={btnStyle}>🗑️ {t('Usuń')}</button>}
@@ -839,6 +919,74 @@ export default function Poczta() {
                   {sending ? t('Wysyłanie…') : t('Wyślij')}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forwardOpen && selectedThread && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,22,40,.55)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setForwardOpen(false)}>
+          <div style={{ background: C.white, borderRadius: 14, padding: 20, width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>↪ {t('Prześlij dalej')}</div>
+            <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Fwd: {selectedThread.latest.subject || t('(brak tematu)')}
+            </div>
+            <AddressField value={forwardTo} onChange={setForwardTo} placeholder={t('Do (adresy oddzielone przecinkiem)')} people={knownPeople} />
+            <AddressField value={forwardCc} onChange={setForwardCc} placeholder={t('DW (opcjonalnie)')} people={knownPeople} />
+            <textarea value={forwardComment} onChange={e => setForwardComment(e.target.value)} placeholder={t('Dodaj komentarz (opcjonalnie)…')} rows={4}
+              style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 14 }}>
+              {t('Załączniki oryginalnej wiadomości zostaną przekazane odbiorcy automatycznie.')}
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, marginBottom: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={forwardTask.create} onChange={e => setForwardTask(ft => ({ ...ft, create: e.target.checked }))} />
+              {t('Utwórz też zadanie dla…')}
+            </label>
+
+            {forwardTask.create && (
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Przypisz do')}</label>
+                <select value={forwardTask.assignedTo} onChange={e => setForwardTask(ft => ({ ...ft, assignedTo: e.target.value }))}
+                  style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12, marginBottom: 10, boxSizing: 'border-box' }}>
+                  <option value="">{t('— wybierz osobę —')}</option>
+                  {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}{p.id === session?.user?.id ? ' ' + t('(ja)') : ''}</option>)}
+                </select>
+
+                <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Tytuł zadania')}</label>
+                <input value={forwardTask.title} onChange={e => setForwardTask(ft => ({ ...ft, title: e.target.value }))}
+                  style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12, marginBottom: 10, boxSizing: 'border-box' }} />
+
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Klient (opcjonalnie)')}</label>
+                    <select value={forwardTask.clientId} onChange={e => setForwardTask(ft => ({ ...ft, clientId: e.target.value, projectId: '' }))}
+                      style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12, boxSizing: 'border-box' }}>
+                      <option value="">{t('— brak —')}</option>
+                      {taskClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Zamówienie (opcjonalnie)')}</label>
+                    <select value={forwardTask.projectId} onChange={e => setForwardTask(ft => ({ ...ft, projectId: e.target.value }))} disabled={!forwardTask.clientId}
+                      style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12, boxSizing: 'border-box' }}>
+                      <option value="">{t('— brak —')}</option>
+                      {taskProjects.filter(p => p.client_id === forwardTask.clientId).map(p => <option key={p.id} value={p.id}>{p.order_label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <label style={{ fontSize: 10.5, fontWeight: 700, display: 'block', marginBottom: 4 }}>{t('Termin (opcjonalnie)')}</label>
+                <input type="date" value={forwardTask.dueDate} onChange={e => setForwardTask(ft => ({ ...ft, dueDate: e.target.value }))}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setForwardOpen(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t('Anuluj')}</button>
+              <button onClick={handleForward} disabled={sending} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: sending ? .6 : 1 }}>
+                {sending ? t('Wysyłanie…') : t('↪ Prześlij dalej')}
+              </button>
             </div>
           </div>
         </div>
