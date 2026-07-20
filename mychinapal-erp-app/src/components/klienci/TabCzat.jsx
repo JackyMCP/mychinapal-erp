@@ -16,6 +16,7 @@ import { extractMentions } from '../../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
+import ForwardIconButton from '../ui/ForwardIconButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -352,10 +353,12 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
               <div key={m.id} style={{ display: 'flex', gap: 9, padding: '8px 0' }}>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff', background: avatarColor(name) }}>{initials(name)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span> <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>{' '}
-                    <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
-                      title={t('Prześlij dalej')} style={{ fontSize: 10, color: C.muted, cursor: 'pointer' }}>↪</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span>
+                    <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
+                    <ForwardIconButton size={18}
+                      onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                      title={t('Prześlij dalej')} />
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 1 }}><MentionText text={m.content} profiles={profiles} /></div>
                   {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}

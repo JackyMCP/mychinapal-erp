@@ -85,10 +85,19 @@ export default function ForwardModal({ payload, onClose }) {
 
   const handleShare = async () => {
     setSharing(true)
-    if (payload.documentId || payload.filePath) {
-      await shareFile({ filePath: payload.filePath, fileName: payload.fileName, text: payload.text, title: payload.fileName, toast, t })
+    // payload.filePath jest znane od razu tylko tam, gdzie wywołujący ma je
+    // pod ręką bez zapytania (np. kafelek Wyceny). Wiadomości czatu i wpisy
+    // Dokumentów/Plików projektu przekazują tylko documentId — trzeba
+    // doszukać file_path w tabeli documents, inaczej nie ma czego udostępnić.
+    let filePath = payload.filePath
+    if (!filePath && payload.documentId) {
+      const { data } = await supabase.from('documents').select('file_path').eq('id', payload.documentId).maybeSingle()
+      filePath = data?.file_path || null
+    }
+    if (filePath) {
+      await shareFile({ filePath, fileName: payload.fileName, text: payload.text, title: payload.fileName, toast, t })
     } else {
-      await shareText({ text: payload.text || '', toast, t })
+      await shareText({ text: payload.text || payload.fileName || '', toast, t })
     }
     setSharing(false)
   }

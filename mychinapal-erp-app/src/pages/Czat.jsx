@@ -21,6 +21,7 @@ import { extractMentions } from '../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 import ForwardModal from '../components/ForwardModal'
+import ForwardIconButton from '../components/ui/ForwardIconButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -626,10 +627,11 @@ export default function Czat() {
                           </div>
                         )}
                       </div>
-                      <div style={{ fontSize: 9, color: C.muted, marginTop: 2, textAlign: mine ? 'right' : 'left', display: 'flex', gap: 8, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                      <div style={{ fontSize: 9, color: C.muted, marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                         <span>{fmtTime(m.created_at)}</span>
-                        <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
-                          title={t('Prześlij dalej')} style={{ cursor: 'pointer' }}>↪</span>
+                        <ForwardIconButton size={20}
+                          onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                          title={t('Prześlij dalej')} />
                       </div>
                     </div>
                   );

@@ -13,6 +13,7 @@ import { extractMentions } from '../../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
+import ForwardIconButton from '../ui/ForwardIconButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -265,12 +266,13 @@ export default function ProjectChat({ project, onChanged }) {
           const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
           return (
             <div key={m.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
-                <span>
-                  <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>{' '}
-                  <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
-                    title={t('Prześlij dalej')} style={{ fontSize: 10.5, color: C.muted, cursor: 'pointer' }}>↪</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
+                  <ForwardIconButton size={18}
+                    onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                    title={t('Prześlij dalej')} />
                 </span>
               </div>
               <div style={{ fontSize: 12, marginTop: 2 }}><MentionText text={m.content} profiles={profiles} /></div>
