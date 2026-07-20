@@ -15,6 +15,7 @@ import UnreadBadge from '../czat/UnreadBadge'
 import { extractMentions } from '../../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
+import ForwardModal from '../ForwardModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -48,6 +49,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   // dodatkowo wybrać, którego zamówienia dotyczy plik.
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, project, detectedValue, itemCount, text }
   const [quoteProjectId, setQuoteProjectId] = useState(null)
+  const [forwardPayload, setForwardPayload] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
   const profiles = profilesProp && profilesProp.length ? profilesProp : ownProfiles
@@ -350,7 +352,11 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
               <div key={m.id} style={{ display: 'flex', gap: 9, padding: '8px 0' }}>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff', background: avatarColor(name) }}>{initials(name)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div><span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span> <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span></div>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span> <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>{' '}
+                    <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                      title={t('Prześlij dalej')} style={{ fontSize: 10, color: C.muted, cursor: 'pointer' }}>↪</span>
+                  </div>
                   <div style={{ fontSize: 12.5, marginTop: 1 }}><MentionText text={m.content} profiles={profiles} /></div>
                   {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
                   {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
@@ -415,6 +421,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
           onCancel={handleCancelQuoteValue}
         />
       )}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   )
 }

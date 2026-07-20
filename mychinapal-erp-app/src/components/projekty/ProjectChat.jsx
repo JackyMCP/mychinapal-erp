@@ -12,6 +12,7 @@ import MentionText from '../czat/MentionText'
 import { extractMentions } from '../../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
+import ForwardModal from '../ForwardModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -41,6 +42,7 @@ export default function ProjectChat({ project, onChanged }) {
   const [scrollTick, setScrollTick] = useState(0)
   const [profiles, setProfiles] = useState([])
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, detectedValue, itemCount, text }
+  const [forwardPayload, setForwardPayload] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
 
@@ -265,7 +267,11 @@ export default function ProjectChat({ project, onChanged }) {
             <div key={m.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
-                <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
+                <span>
+                  <span style={{ fontSize: 9.5, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>{' '}
+                  <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                    title={t('Prześlij dalej')} style={{ fontSize: 10.5, color: C.muted, cursor: 'pointer' }}>↪</span>
+                </span>
               </div>
               <div style={{ fontSize: 12, marginTop: 2 }}><MentionText text={m.content} profiles={profiles} /></div>
               {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
@@ -322,6 +328,7 @@ export default function ProjectChat({ project, onChanged }) {
           onCancel={handleCancelQuoteValue}
         />
       )}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   );
 }

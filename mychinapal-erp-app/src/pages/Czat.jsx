@@ -20,6 +20,7 @@ import MentionText from '../components/czat/MentionText'
 import { extractMentions } from '../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
+import ForwardModal from '../components/ForwardModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -78,6 +79,7 @@ export default function Czat() {
   const [loadingMentions, setLoadingMentions] = useState(false)
   const [quoteProjectId, setQuoteProjectId] = useState(null) // wybór zamówienia na kanale klienta (nieprzypisanym do jednego projektu)
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, projectId, text }
+  const [forwardPayload, setForwardPayload] = useState(null) // { text, documentId, fileName } — patrz ForwardModal
   const activeIdRef = useRef(null)
   const myIdRef = useRef(null)
 
@@ -624,7 +626,11 @@ export default function Czat() {
                           </div>
                         )}
                       </div>
-                      <div style={{ fontSize: 9, color: C.muted, marginTop: 2, textAlign: mine ? 'right' : 'left' }}>{fmtTime(m.created_at)}</div>
+                      <div style={{ fontSize: 9, color: C.muted, marginTop: 2, textAlign: mine ? 'right' : 'left', display: 'flex', gap: 8, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                        <span>{fmtTime(m.created_at)}</span>
+                        <span onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                          title={t('Prześlij dalej')} style={{ cursor: 'pointer' }}>↪</span>
+                      </div>
                     </div>
                   );
                 })}
@@ -704,6 +710,7 @@ export default function Czat() {
       </div>
       )}
       {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); openChannel(ch.id) }} />}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   );
 }

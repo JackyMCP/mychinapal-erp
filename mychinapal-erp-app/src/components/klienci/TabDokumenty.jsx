@@ -3,6 +3,8 @@ import { C } from '../../lib/theme'
 import { supabase } from '../../lib/supabaseClient'
 import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
+import ForwardModal from '../ForwardModal'
+import { useState } from 'react'
 
 const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }
 
@@ -23,6 +25,7 @@ const CAT_STYLE = {
 export default function TabDokumenty({ documents, projects, onChanged }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
+  const [forwardPayload, setForwardPayload] = useState(null)
   const projectLabelById = Object.fromEntries((projects || []).map(p => [p.id, p.order_label]))
 
   const handleDownload = async (doc) => {
@@ -62,6 +65,11 @@ export default function TabDokumenty({ documents, projects, onChanged }) {
               <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{projLabel ? `${projLabel} · ` : ''}{new Date(d.created_at).toLocaleDateString('pl-PL')}{d.source === 'chat' ? ` · ${t('z czatu')}` : ''}</div>
             </div>
             <span style={{ fontSize: 9.5, color: C.muted, background: C.bg, padding: '2px 8px', borderRadius: 10, whiteSpace: 'nowrap' }}>{t(d.category)}</span>
+            <span onClick={(e) => { e.stopPropagation(); setForwardPayload({ text: d.file_name, documentId: d.id, fileName: d.file_name }) }} title={t('Prześlij dalej')}
+              style={{ fontSize: 13, color: C.muted, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.blight; e.currentTarget.style.color = C.blue }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
+            >↪</span>
             <span onClick={(e) => handleDelete(d, e)} title={t('Usuń plik')}
               style={{ fontSize: 13, color: C.muted, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
               onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
@@ -70,6 +78,7 @@ export default function TabDokumenty({ documents, projects, onChanged }) {
           </div>
         )
       })}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
 import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
+import ForwardModal from '../ForwardModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -21,6 +22,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, detectedValue, itemCount }
+  const [forwardPayload, setForwardPayload] = useState(null)
   const fileRef = useRef(null)
 
   // Kategoria "Wycena CN"/"Wycena dla klienta" to jedyne dwa sloty na karcie
@@ -199,6 +201,11 @@ export default function ProjectFiles({ project, documents, onChanged }) {
             <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.file_name}</div>
             <div style={{ fontSize: 9.5, color: C.muted, marginTop: 1 }}>{t(doc.category)} · {new Date(doc.created_at).toLocaleDateString('pl-PL')}{doc.source === 'chat' ? ` · ${t('z czatu')}` : ''}</div>
           </div>
+          {!selectMode && <span onClick={(e) => { e.stopPropagation(); setForwardPayload({ text: doc.file_name, documentId: doc.id, fileName: doc.file_name }) }} title={t('Prześlij dalej')}
+            style={{ fontSize: 13, color: C.muted, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.blight; e.currentTarget.style.color = C.blue }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}
+          >↪</span>}
           {!selectMode && <span onClick={(e) => handleDelete(doc, e)} title={t('Usuń plik')}
             style={{ fontSize: 13, color: C.muted, padding: '4px 6px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}
             onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
@@ -218,6 +225,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
           onCancel={handleCancelQuoteValue}
         />
       )}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   )
 }

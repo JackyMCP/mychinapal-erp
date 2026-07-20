@@ -9,6 +9,7 @@ import NewProjectModal from '../components/projekty/NewProjectModal'
 import { detectQuoteValue, saveQuoteFile, previewQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 import QuotePreviewModal from '../components/wyceny/QuotePreviewModal'
+import ForwardModal from '../components/ForwardModal'
 
 // Wyceny to teraz po prostu moduł do wgrywania GOTOWYCH plików Excel — jedna
 // "karta wyceny" na zamówienie, z dwoma slotami: plik od zespołu CN (surowa
@@ -297,6 +298,24 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
   const hasCn = !!q.source_excel_path
   const hasPl = !!q.client_excel_path
   const [preview, setPreview] = useState(null) // { fileName, rows, total, loading, error }
+  const [forwardPayload, setForwardPayload] = useState(null)
+
+  // Pliki wyceny nie mają wprost zapisanego documents.id na wierszu quotes —
+  // przy wgraniu zawsze powstaje jednak sparowany wiersz documents (kategoria
+  // "Wycena CN"/"Wycena dla klienta", patrz quoteIntake.js), więc doszukujemy
+  // go tu, żeby "Prześlij dalej" mogło wysłać go jako prawdziwy załącznik
+  // czatu (attachment_document_id), a nie tylko sam link.
+  const handleForward = async (side, e) => {
+    e.stopPropagation()
+    const path = side === 'cn' ? q.source_excel_path : q.client_excel_path
+    const fileName = side === 'cn' ? q.source_excel_name : q.client_excel_name
+    if (!path) return
+    const category = side === 'cn' ? 'Wycena CN' : 'Wycena dla klienta'
+    const { data } = await supabase.from('documents').select('id')
+      .eq('project_id', q.project_id).eq('category', category)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    setForwardPayload({ text: fileName, documentId: data?.id || null, fileName, filePath: path })
+  }
 
   const handleDownload = async (path, e) => {
     e.stopPropagation()
@@ -351,6 +370,12 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
             👁
           </span>
         )}
+        {hasCn && (
+          <span onClick={(e) => handleForward('cn', e)} title={t('Prześlij dalej')}
+            style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: C.white, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            ↪
+          </span>
+        )}
       </div>
 
       <div onClick={hasPl ? (e) => handleDownload(q.client_excel_path, e) : undefined}
@@ -362,6 +387,12 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
             {hasPl ? `${q.client_excel_name || ''} · ${fmt(q.client_value_pln, 0)} PLN` : t('brak — nie dodano marży')}
           </div>
         </div>
+        {hasPl && (
+          <span onClick={(e) => handleForward('pl', e)} title={t('Prześlij dalej')}
+            style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: C.white, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            ↪
+          </span>
+        )}
         <label onClick={e => e.stopPropagation()} title={t(hasPl ? 'Wgraj ponownie (nadpisz)' : 'Wgraj wycenę dla klienta')}
           style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 7, border: `1px solid ${C.blue}`, background: C.white, color: C.blue, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
           ⬆ {t('Wgraj')}
@@ -384,6 +415,7 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
           onClose={() => setPreview(null)}
         />
       )}
+      {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
     </div>
   )
 }
