@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader'
 import useIsMobile from '../lib/useIsMobile'
 import FilePreviewModal from '../components/ui/FilePreviewModal'
 import AttachFromAppModal from '../components/poczta/AttachFromAppModal'
+import AttachmentCard from '../components/ui/AttachmentCard'
 
 // Moduł Poczta — każdy pracownik łączy WŁASNĄ skrzynkę Outlook (Microsoft
 // Graph OAuth, patrz outlook-oauth-start/outlook-oauth-callback). Nowe maile
@@ -58,6 +59,27 @@ function formatBytes(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Obrazki osadzone w treści/podpisie maila (logo firmy, ikony social media w
+// stopce itp.) mają w Graph API flagę isInline=true + contentId, i treść HTML
+// odwołuje się do nich przez `cid:XXX` — przeglądarka nie umie wczytać takiego
+// URI bezpośrednio (to schemat tylko dla klientów pocztowych), więc podmieniamy
+// każde wystąpienie na prawdziwy (podpisany) URL Supabase Storage, DOKŁADNIE
+// tak jak robi to pod maską Outlook, żeby logo/ikonki wyświetliły się w treści
+// zamiast trafiać na listę załączników jako osobne pliki do pobrania.
+async function resolveInlineImages(html, attachments) {
+  const inline = (attachments || []).filter(a => a.is_inline && a.content_id)
+  if (!html || !inline.length) return html || ''
+  let out = html
+  for (const a of inline) {
+    const { data: signed } = await supabase.storage.from('dokumenty').createSignedUrl(a.storage_path, 3600)
+    if (signed?.signedUrl) {
+      const cid = a.content_id.replace(/[<>]/g, '')
+      out = out.split(`cid:${cid}`).join(signed.signedUrl)
+    }
+  }
+  return out
 }
 
 // Graficzny podpis maila — doklejany automatycznie pod treścią KAŻDEJ nowej
@@ -176,6 +198,7 @@ export default function Poczta() {
   const [newCategory, setNewCategory] = useState({ name: '', color: '#2563EB' })
   const [contactForm, setContactForm] = useState(null) // {id?, name, email, company, phone, notes}
   const [previewFile, setPreviewFile] = useState(null)
+  const [resolvedBodyHtml, setResolvedBodyHtml] = useState({}) // message_id -> body_html z podmienionymi cid: na realne URL-e
   const [attachFromAppTarget, setAttachFromAppTarget] = useState(null) // 'compose' | 'reply' | null
   const listRef = useRef(null)
   const composeFileRef = useRef(null)
@@ -380,12 +403,21 @@ export default function Poczta() {
     const byMsg = {}
     for (const a of (atts || [])) { (byMsg[a.message_id] = byMsg[a.message_id] || []).push(a) }
     setThreadAttachments(byMsg)
+
+    // Podmień cid:XXX w treści na realne URL-e (logo/ikonki podpisu) — tak,
+    // żeby wyświetliły się w treści wiadomości zamiast na liście załączników.
+    const bodies = {}
+    for (const m of th.all) { bodies[m.id] = await resolveInlineImages(m.body_html, byMsg[m.id]) }
+    setResolvedBodyHtml(bodies)
+
     const missing = th.all.filter(m => m.has_attachments && !(byMsg[m.id]?.length))
     for (const m of missing) {
       const { data } = await supabase.functions.invoke('outlook-sync-attachments', { body: { messageId: m.id } })
       if (data?.synced) {
         const { data: fresh } = await supabase.from('email_attachments').select('*').eq('message_id', m.id)
         setThreadAttachments(prev => ({ ...prev, [m.id]: fresh || [] }))
+        const html = await resolveInlineImages(m.body_html, fresh)
+        setResolvedBodyHtml(prev => ({ ...prev, [m.id]: html }))
       }
     }
 
@@ -932,7 +964,10 @@ export default function Poczta() {
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
                   {selectedMessages.map(m => {
-                    const atts = threadAttachments[m.id] || []
+                    // Obrazki osadzone w podpisie/treści (isInline=true w Graph) NIE
+                    // pokazujemy jako załączniki do pobrania — dokładnie jak Outlook,
+                    // który renderuje je wewnątrz treści maila (patrz resolveInlineImages).
+                    const atts = (threadAttachments[m.id] || []).filter(a => !a.is_inline)
                     return (
                       <div key={m.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${C.border}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -980,16 +1015,13 @@ export default function Poczta() {
                             {m.translated_body}
                           </div>
                         ) : (
-                          <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: m.body_html || m.body_preview || '' }} />
+                          <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: resolvedBodyHtml[m.id] || m.body_html || m.body_preview || '' }} />
                         )}
 
                         {atts.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                             {atts.map(a => (
-                              <div key={a.id} onClick={() => downloadAttachment(a)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, cursor: 'pointer', fontSize: 11 }}>
-                                📎 <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.filename}</span>
-                                <span style={{ color: C.muted }}>{formatBytes(a.size_bytes)}</span>
-                              </div>
+                              <AttachmentCard key={a.id} fileName={a.filename} subtitle={formatBytes(a.size_bytes)} onClick={() => downloadAttachment(a)} />
                             ))}
                           </div>
                         )}
