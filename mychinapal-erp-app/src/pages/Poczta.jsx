@@ -8,6 +8,7 @@ import { C } from '../lib/theme'
 import PageHeader from '../components/PageHeader'
 import useIsMobile from '../lib/useIsMobile'
 import FilePreviewModal from '../components/ui/FilePreviewModal'
+import AttachFromAppModal from '../components/poczta/AttachFromAppModal'
 
 // Moduł Poczta — każdy pracownik łączy WŁASNĄ skrzynkę Outlook (Microsoft
 // Graph OAuth, patrz outlook-oauth-start/outlook-oauth-callback). Nowe maile
@@ -175,6 +176,7 @@ export default function Poczta() {
   const [newCategory, setNewCategory] = useState({ name: '', color: '#2563EB' })
   const [contactForm, setContactForm] = useState(null) // {id?, name, email, company, phone, notes}
   const [previewFile, setPreviewFile] = useState(null)
+  const [attachFromAppTarget, setAttachFromAppTarget] = useState(null) // 'compose' | 'reply' | null
   const listRef = useRef(null)
   const composeFileRef = useRef(null)
   const replyFileRef = useRef(null)
@@ -417,6 +419,14 @@ export default function Poczta() {
     const files = Array.from(fileList || [])
     const encoded = await Promise.all(files.map(async f => ({ filename: f.name, contentType: f.type || 'application/octet-stream', base64: await fileToBase64(f), size: f.size })))
     setAttachmentsFn(prev => [...prev, ...encoded])
+  }
+
+  // Druga opcja załączania (obok wgrywania z dysku) — wybór spośród plików
+  // już wgranych gdziekolwiek w aplikacji (Dokumenty/Wyceny/czaty), patrz
+  // components/poczta/AttachFromAppModal.jsx.
+  const handleAttachFromApp = (encoded) => {
+    if (attachFromAppTarget === 'reply') setReplyAttachments(prev => [...prev, ...encoded])
+    else if (attachFromAppTarget === 'compose') setCompose(c => ({ ...c, attachments: [...c.attachments, ...encoded] }))
   }
 
   const handleSendCompose = async () => {
@@ -1003,7 +1013,10 @@ export default function Poczta() {
                     )}
                     <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'space-between', alignItems: 'center' }}>
                       <input ref={replyFileRef} type="file" multiple style={{ display: 'none' }} onChange={e => { addFilesTo(e.target.files, setReplyAttachments); e.target.value = '' }} />
-                      <button onClick={() => replyFileRef.current?.click()} style={btnStyle}>📎 {t('Załącz plik')}</button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => replyFileRef.current?.click()} style={btnStyle}>📎 {t('Załącz plik')}</button>
+                        <button onClick={() => setAttachFromAppTarget('reply')} style={btnStyle}>🗂 {t('Z aplikacji')}</button>
+                      </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={() => handleReply(false)} disabled={sending || !replyBody.trim()}
                           style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: (sending || !replyBody.trim()) ? .5 : 1 }}>
@@ -1045,7 +1058,10 @@ export default function Poczta() {
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
               <input ref={composeFileRef} type="file" multiple style={{ display: 'none' }} onChange={e => { addFilesTo(e.target.files, (fn) => setCompose(c => ({ ...c, attachments: fn(c.attachments) }))); e.target.value = '' }} />
-              <button onClick={() => composeFileRef.current?.click()} style={btnStyle}>📎 {t('Załącz plik')}</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => composeFileRef.current?.click()} style={btnStyle}>📎 {t('Załącz plik')}</button>
+                <button onClick={() => setAttachFromAppTarget('compose')} style={btnStyle}>🗂 {t('Z aplikacji')}</button>
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setComposeOpen(false)} style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: C.text2 }}>{t('Anuluj')}</button>
                 <button onClick={handleSendCompose} disabled={sending} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: C.blue, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: sending ? .6 : 1 }}>
@@ -1202,6 +1218,9 @@ export default function Poczta() {
         </div>
       )}
       {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
+      {attachFromAppTarget && (
+        <AttachFromAppModal onClose={() => setAttachFromAppTarget(null)} onAttach={handleAttachFromApp} />
+      )}
     </div>
   )
 }
