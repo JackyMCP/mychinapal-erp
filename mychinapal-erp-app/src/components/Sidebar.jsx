@@ -166,6 +166,7 @@ export default function Sidebar() {
   }
 
   return (
+    <>
     <div style={{ width: collapsed ? 58 : 214, transition: 'width .15s ease', background: C.navy, color: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
       <div style={{ padding: collapsed ? '18px 10px 16px' : '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 40 }}>
@@ -248,7 +249,8 @@ export default function Sidebar() {
         <div onClick={signOut} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.6)' }}>{t('Wyloguj')}</div>
         <div onClick={() => setCollapsed(c => !c)} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.4)', marginTop: 6 }}>{collapsed ? '»' : `« ${t('Zwiń')}`}</div>
       </div>
-      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
     </div>
+    {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
+    </>
   );
 }
