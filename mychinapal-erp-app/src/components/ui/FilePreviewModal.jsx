@@ -3,6 +3,44 @@ import { useEffect, useState } from 'react'
 import { C } from '../../lib/theme'
 import { parseExcelGeneric, parseDocx } from '../../lib/genericFilePreview'
 
+// Litera(y) kolumny Excela z numeru 1-indeksowanego (1->A, 27->AA...) — do
+// nagłówka kolumn w podglądzie arkusza, dokładnie jak w prawdziwym Excelu.
+function excelColLetter(n) {
+  let s = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    s = String.fromCharCode(65 + rem) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
+
+// Style pojedynczej komórki wyliczone przez genericFilePreview.js (kolor,
+// pogrubienie, obramowanie, wyrównanie...) -> obiekt CSS dla <td>. Domyślna
+// jasnoszara siatka, gdy plik nie definiuje własnego obramowania — dzięki
+// temu arkusz zawsze wygląda jak "prawdziwy Excel", nawet dla pustych komórek.
+function excelCellStyle(cell) {
+  return {
+    fontWeight: cell.bold ? 700 : 400,
+    fontStyle: cell.italic ? 'italic' : 'normal',
+    textDecoration: [cell.underline && 'underline', cell.strike && 'line-through'].filter(Boolean).join(' ') || 'none',
+    fontSize: cell.size || 11,
+    color: cell.color || '#1F2937',
+    background: cell.bg || '#fff',
+    textAlign: cell.align || 'left',
+    verticalAlign: cell.valign === 'middle' ? 'middle' : cell.valign === 'top' ? 'top' : 'bottom',
+    whiteSpace: cell.wrap ? 'normal' : 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    borderTop: cell.borderTop || '1px solid #E2E8F0',
+    borderRight: cell.borderRight || '1px solid #E2E8F0',
+    borderBottom: cell.borderBottom || '1px solid #E2E8F0',
+    borderLeft: cell.borderLeft || '1px solid #E2E8F0',
+    padding: '3px 7px',
+    boxSizing: 'border-box',
+  }
+}
+
 // Podgląd pliku W APLIKACJI zamiast wyskakującej nowej karty przeglądarki —
 // obsługuje wszystkie najczęstsze formaty tak, żeby NIKT nie musiał pobierać
 // pliku na dysk tylko po to, żeby zobaczyć co w nim jest (zgłoszenie
@@ -54,7 +92,7 @@ export default function FilePreviewModal({ url, fileName, onClose }) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status)
         const blob = await resp.blob()
         if (kind === 'excel') {
-          const parsed = await parseExcelGeneric(blob)
+          const parsed = await parseExcelGeneric(blob, fileName)
           if (!cancelled) { setSheets(parsed); setActiveSheet(0) }
         } else if (kind === 'docx') {
           const html = await parseDocx(blob)
@@ -107,17 +145,34 @@ export default function FilePreviewModal({ url, fileName, onClose }) {
             ) : error ? (
               <div style={{ margin: 'auto', fontSize: 12, color: C.red, padding: 30, textAlign: 'center' }}>{t('Nie udało się wczytać podglądu: ')}{error}</div>
             ) : sheets && sheets[activeSheet] ? (
-              <div style={{ width: '100%', overflow: 'auto', padding: 4 }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11.5 }}>
+              <div style={{ width: '100%', overflow: 'auto', padding: 4, background: '#fff', borderRadius: 6 }}>
+                <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: 'Calibri, Arial, sans-serif' }}>
+                  <colgroup>
+                    <col style={{ width: 42 }} />
+                    {sheets[activeSheet].colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th style={{ position: 'sticky', top: 0, left: 0, zIndex: 3, background: '#E9EDF3', border: '1px solid #C7CFDB' }} />
+                      {sheets[activeSheet].colWidths.map((_, i) => (
+                        <th key={i} style={{ position: 'sticky', top: 0, zIndex: 2, background: '#E9EDF3', color: '#475569', fontSize: 10.5, fontWeight: 700, padding: '4px 6px', border: '1px solid #C7CFDB', whiteSpace: 'nowrap' }}>
+                          {excelColLetter(i + 1)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody>
                     {sheets[activeSheet].rows.map((row, ri) => (
-                      <tr key={ri} style={{ background: ri === 0 ? C.white : (ri % 2 ? C.white : '#FAFBFE') }}>
-                        {row.map((cell, ci) => (
-                          ri === 0 ? (
-                            <th key={ci} style={{ position: 'sticky', top: 0, background: C.bg, color: C.muted, fontSize: 10, fontWeight: 700, textAlign: 'left', padding: '7px 9px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{cell}</th>
-                          ) : (
-                            <td key={ci} style={{ padding: '6px 9px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{cell}</td>
-                          )
+                      <tr key={ri} style={row.height ? { height: row.height } : undefined}>
+                        <th style={{ position: 'sticky', left: 0, zIndex: 1, background: '#E9EDF3', color: '#475569', fontSize: 10.5, fontWeight: 700, padding: '3px 6px', border: '1px solid #C7CFDB', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                          {ri + 1}
+                        </th>
+                        {row.cells.map((cell, ci) => (
+                          <td key={ci} colSpan={cell.colSpan} rowSpan={cell.rowSpan} style={excelCellStyle(cell)}>
+                            {cell.image ? (
+                              <img src={cell.image} alt="" style={{ display: 'block', maxWidth: '100%', maxHeight: 90, objectFit: 'contain', margin: '0 auto' }} />
+                            ) : cell.value}
+                          </td>
                         ))}
                       </tr>
                     ))}
