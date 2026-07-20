@@ -5,6 +5,7 @@ import { useUI } from '../../lib/ui'
 import EmptyState from '../ui/EmptyState'
 import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
+import FilePreviewModal from '../ui/FilePreviewModal'
 import { useState } from 'react'
 
 const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }
@@ -27,12 +28,13 @@ export default function TabDokumenty({ documents, projects, onChanged }) {
   const { t } = useLang()
   const { toast, confirm } = useUI()
   const [forwardPayload, setForwardPayload] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
   const projectLabelById = Object.fromEntries((projects || []).map(p => [p.id, p.order_label]))
 
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   const handleDelete = async (doc, e) => {
@@ -78,6 +80,7 @@ export default function TabDokumenty({ documents, projects, onChanged }) {
         )
       })}
       {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

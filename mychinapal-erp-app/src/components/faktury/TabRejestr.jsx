@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
 import { paymentStatus, daysOverdue } from './utils'
 import { useUI } from '../../lib/ui'
+import FilePreviewModal from '../ui/FilePreviewModal'
 
 const chip = (active) => ({ padding: '7px 13px', borderRadius: 8, border: `1px solid ${active ? C.navy : C.border}`, fontSize: 11, fontWeight: 600, cursor: 'pointer', background: active ? C.navy : '#fff', color: active ? '#fff' : C.text2 })
 
@@ -13,6 +14,7 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef, 
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
   const rowRefs = useRef({})
 
   // Przyjście z linku "🧾 numer PI" na kafelku transakcji (Kasa & Bank) — nie
@@ -35,7 +37,7 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef, 
     if (!inv.pdf_path) { toast.error('Ta faktura nie ma jeszcze wygenerowanego PDF.'); return }
     const { data, error } = await supabase.storage.from('faktury').createSignedUrl(inv.pdf_path, 300)
     if (error) { toast.error('Nie udało się pobrać PDF: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: `${inv.number || 'faktura'}.pdf` })
   }
 
   const handleRetry = async (inv) => {
@@ -112,6 +114,7 @@ export default function TabRejestr({ invoices, loading, onChanged, onRetryKsef, 
         </tbody>
       </table>
       </div>
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

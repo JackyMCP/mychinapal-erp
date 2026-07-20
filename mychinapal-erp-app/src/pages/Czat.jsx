@@ -21,6 +21,7 @@ import { extractMentions } from '../lib/mentions'
 import { detectQuoteValue, saveQuoteFile } from '../lib/quoteIntake'
 import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 import ForwardModal from '../components/ForwardModal'
+import FilePreviewModal from '../components/ui/FilePreviewModal'
 import ForwardIconButton from '../components/ui/ForwardIconButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
@@ -81,6 +82,7 @@ export default function Czat() {
   const [quoteProjectId, setQuoteProjectId] = useState(null) // wybór zamówienia na kanale klienta (nieprzypisanym do jednego projektu)
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, projectId, text }
   const [forwardPayload, setForwardPayload] = useState(null) // { text, documentId, fileName } — patrz ForwardModal
+  const [previewFile, setPreviewFile] = useState(null) // { url, fileName } — podgląd pliku w aplikacji zamiast nowej karty
   const activeIdRef = useRef(null)
   const myIdRef = useRef(null)
 
@@ -404,7 +406,7 @@ export default function Czat() {
     if (!doc) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   // Przeciągnij-i-upuść plik wprost na okno czatu — od razu pyta o kategorię
@@ -713,6 +715,7 @@ export default function Czat() {
       )}
       {showNew && <NewChannelModal onClose={() => setShowNew(false)} onCreated={(ch) => { setShowNew(false); loadChannels(); openChannel(ch.id) }} />}
       {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   );
 }

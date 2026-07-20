@@ -31,7 +31,7 @@ async function copyToClipboard(str) {
 // czytelną informację co się stało (skopiowano / brak wsparcia itd.).
 export async function shareFile({ filePath, fileName, title, text, toast, t = (s) => s }) {
   const url = await getSignedFileUrl(filePath)
-  if (!url) { toast?.error(t('Nie udało się przygotować pliku do udostępnienia — plik mógł zostać usunięty albo zastąpiony nowszą wersją.')); return }
+  if (!url) { toast?.error(t('Nie udało się przygotować pliku do udostępnienia — plik mógł zostać usunięty albo zastąpiony nowszą wersją.')); return { ok: false } }
 
   // Próba udostępnienia PRAWDZIWEGO pliku (nie tylko linku) — działa tylko
   // tam, gdzie przeglądarka wspiera Web Share API z plikami (głównie telefony).
@@ -42,10 +42,10 @@ export async function shareFile({ filePath, fileName, title, text, toast, t = (s
       const file = new File([blob], fileName || 'plik', { type: blob.type || 'application/octet-stream' })
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: title || fileName, text: text || undefined })
-        return
+        return { ok: true }
       }
     } catch (e) {
-      if (e?.name === 'AbortError') return // użytkownik anulował okno udostępniania
+      if (e?.name === 'AbortError') return { ok: true } // użytkownik anulował okno udostępniania — nie pokazujemy fallbacku
       // spadamy do fallbacku poniżej
     }
   }
@@ -55,23 +55,22 @@ export async function shareFile({ filePath, fileName, title, text, toast, t = (s
   if (navigator.share) {
     try {
       await navigator.share({ title: title || fileName, text: text || fileName, url })
-      return
+      return { ok: true }
     } catch (e) {
-      if (e?.name === 'AbortError') return
+      if (e?.name === 'AbortError') return { ok: true }
     }
   }
 
-  // Fallback 2: kopiuj link do schowka — na desktopowym Safari/Chrome
-  // navigator.clipboard bywa jednak kapryśny (wymaga "świeżego" gestu
-  // użytkownika, a kilka await-ów wcześniej po drodze go "zużywa"), więc
-  // NIE polegamy tylko na nim. Zawsze też otwieramy plik w nowej karcie —
-  // to działa niezawodnie wszędzie, a stamtąd przeglądarka ma WŁASNĄ,
-  // natywną ikonę "Udostępnij" (widoczną w toolbarze Safari) — dużo
-  // pewniejszą niż nasza próba z JS.
+  // Fallback 2: żadne z powyższych nie zadziałało (desktop bez Web Share API,
+  // albo Safari z kapryśnym navigator.clipboard — wymaga "świeżego" gestu
+  // użytkownika, a kilka await-ów wcześniej po drodze go "zużywa"). Zamiast
+  // otwierać plik w nowej karcie przeglądarki (wyrywa z aplikacji), zwracamy
+  // sygnał do komponentu wywołującego, żeby pokazał podgląd W APLIKACJI
+  // (patrz FilePreviewModal) z linkiem skopiowanym do schowka, jeśli się udało.
   const copied = await copyToClipboard(url)
-  window.open(url, '_blank')
-  if (copied) toast?.success(t('Otworzyliśmy plik w nowej karcie i skopiowaliśmy link do schowka — możesz go wkleić w WhatsApp/Messenger/WeChat, albo użyć ikony „Udostępnij” w przeglądarce.'))
-  else toast?.success(t('Otworzyliśmy plik w nowej karcie — użyj tam ikony „Udostępnij” w przeglądarce, albo zapisz plik i wyślij go ręcznie.'))
+  if (copied) toast?.success(t('Skopiowano link do schowka — możesz go wkleić w WhatsApp/Messenger/WeChat. Otwieramy też podgląd pliku.'))
+  else toast?.success(t('Otwieramy podgląd pliku — stamtąd możesz go pobrać i wysłać ręcznie.'))
+  return { ok: false, fallbackUrl: url, fallbackFileName: fileName }
 }
 
 // Udostępnia sam tekst (np. treść wiadomości z czatu, bez załącznika).

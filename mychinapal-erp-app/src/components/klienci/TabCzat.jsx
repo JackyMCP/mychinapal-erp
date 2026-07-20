@@ -17,6 +17,7 @@ import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
+import FilePreviewModal from '../ui/FilePreviewModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -51,6 +52,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, project, detectedValue, itemCount, text }
   const [quoteProjectId, setQuoteProjectId] = useState(null)
   const [forwardPayload, setForwardPayload] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
   const profiles = profilesProp && profilesProp.length ? profilesProp : ownProfiles
@@ -287,7 +289,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
     if (!doc) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   // Przeciągnij-i-upuść plik (np. z Findera/Eksploratora albo z WeChat, jeśli
@@ -425,6 +427,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
         />
       )}
       {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

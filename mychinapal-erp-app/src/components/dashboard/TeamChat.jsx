@@ -7,6 +7,7 @@ import VoiceChannel from './VoiceChannel'
 import { useUI } from '../../lib/ui'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
+import FilePreviewModal from '../ui/FilePreviewModal'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
@@ -29,6 +30,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   const [attachFile, setAttachFile] = useState(null)
   const [attachPreviewUrl, setAttachPreviewUrl] = useState(null)
   const [imgUrls, setImgUrls] = useState({})
+  const [previewFile, setPreviewFile] = useState(null)
   const bottomRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -117,7 +119,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     if (!m.attachment_file_path) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 60)
     if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: m.attachment_file_name })
   }
 
   const handleSend = async () => {
@@ -219,6 +221,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
           </div>
         </>
       )}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   );
 }

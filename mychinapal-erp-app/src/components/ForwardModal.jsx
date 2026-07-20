@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { C } from '../lib/theme'
 import { useUI } from '../lib/ui'
 import { shareFile, shareText } from '../lib/share'
+import FilePreviewModal from './ui/FilePreviewModal'
 
 // Modal "Prześlij dalej" — wspólny dla wiadomości czatu, wycen i plików
 // (Czat wewnętrzny, czat klienta, czat zamówienia, Pliki projektu, Dokumenty
@@ -53,6 +54,7 @@ export default function ForwardModal({ payload, onClose }) {
   const [sentIds, setSentIds] = useState(() => new Set())
   const [sendingId, setSendingId] = useState(null)
   const [sharing, setSharing] = useState(false)
+  const [previewFile, setPreviewFile] = useState(null) // fallback: podgląd w aplikacji zamiast nowej karty przeglądarki
 
   useEffect(() => {
     supabase.from('chat_channels').select('*, clients(name), projects(order_label)')
@@ -95,7 +97,13 @@ export default function ForwardModal({ payload, onClose }) {
       filePath = data?.file_path || null
     }
     if (filePath) {
-      await shareFile({ filePath, fileName: payload.fileName, text: payload.text, title: payload.fileName, toast, t })
+      const result = await shareFile({ filePath, fileName: payload.fileName, text: payload.text, title: payload.fileName, toast, t })
+      // Web Share API/schowek się nie udały (np. desktop bez wsparcia) —
+      // zamiast otwierać plik w nowej karcie przeglądarki, pokazujemy podgląd
+      // od razu tutaj, w aplikacji (patrz FilePreviewModal).
+      if (result && result.ok === false && result.fallbackUrl) {
+        setPreviewFile({ url: result.fallbackUrl, fileName: result.fallbackFileName || payload.fileName })
+      }
     } else {
       await shareText({ text: payload.text || payload.fileName || '', toast, t })
     }
@@ -165,6 +173,7 @@ export default function ForwardModal({ payload, onClose }) {
           })}
         </div>
       </div>
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

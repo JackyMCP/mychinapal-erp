@@ -10,6 +10,7 @@ import { detectQuoteValue, saveQuoteFile } from '../../lib/quoteIntake'
 import QuoteValueModal from '../wyceny/QuoteValueModal'
 import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
+import FilePreviewModal from '../ui/FilePreviewModal'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
@@ -24,6 +25,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [pendingQuoteFile, setPendingQuoteFile] = useState(null) // { file, side, detectedValue, itemCount }
   const [forwardPayload, setForwardPayload] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
   const fileRef = useRef(null)
 
   // Kategoria "Wycena CN"/"Wycena dla klienta" to jedyne dwa sloty na karcie
@@ -91,7 +93,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   const handleDelete = async (doc, e) => {
@@ -225,6 +227,7 @@ export default function ProjectFiles({ project, documents, onChanged }) {
         />
       )}
       {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

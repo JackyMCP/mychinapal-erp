@@ -11,6 +11,7 @@ import QuoteValueModal from '../components/wyceny/QuoteValueModal'
 import QuotePreviewModal from '../components/wyceny/QuotePreviewModal'
 import ForwardModal from '../components/ForwardModal'
 import ForwardIconButton from '../components/ui/ForwardIconButton'
+import FilePreviewModal from '../components/ui/FilePreviewModal'
 
 // Wyceny to teraz po prostu moduł do wgrywania GOTOWYCH plików Excel — jedna
 // "karta wyceny" na zamówienie, z dwoma slotami: plik od zespołu CN (surowa
@@ -300,6 +301,7 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
   const hasPl = !!q.client_excel_path
   const [preview, setPreview] = useState(null) // { fileName, rows, total, loading, error }
   const [forwardPayload, setForwardPayload] = useState(null)
+  const [previewFile, setPreviewFile] = useState(null)
 
   // Pliki wyceny nie mają wprost zapisanego documents.id na wierszu quotes —
   // przy wgraniu zawsze powstaje jednak sparowany wiersz documents (kategoria
@@ -318,12 +320,12 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
     setForwardPayload({ text: fileName, documentId: data?.id || null, fileName, filePath: path })
   }
 
-  const handleDownload = async (path, e) => {
+  const handleDownload = async (path, e, fileName) => {
     e.stopPropagation()
     if (!path) return
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(path, 3600)
     if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: fileName || path.split('/').pop() })
   }
 
   // Podgląd wyceny chińskiej wprost z kafelka — bez pobierania pliku, tylko
@@ -356,7 +358,7 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
       </div>
       <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 14 }}>{q.clients?.name || '—'}</div>
 
-      <div onClick={hasCn ? (e) => handleDownload(q.source_excel_path, e) : undefined}
+      <div onClick={hasCn ? (e) => handleDownload(q.source_excel_path, e, q.source_excel_name) : undefined}
         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, marginBottom: 8, background: hasCn ? C.glight : C.rlight, cursor: hasCn ? 'pointer' : 'default' }}>
         <span style={{ fontSize: 13 }}>{hasCn ? '✓' : '✗'}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -374,7 +376,7 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
         {hasCn && <ForwardIconButton size={24} onClick={(e) => handleForward('cn', e)} title={t('Prześlij dalej')} />}
       </div>
 
-      <div onClick={hasPl ? (e) => handleDownload(q.client_excel_path, e) : undefined}
+      <div onClick={hasPl ? (e) => handleDownload(q.client_excel_path, e, q.client_excel_name) : undefined}
         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, marginBottom: 10, background: hasPl ? C.glight : C.rlight, cursor: hasPl ? 'pointer' : 'default' }}>
         <span style={{ fontSize: 13 }}>{hasPl ? '✓' : '✗'}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -402,11 +404,12 @@ function QuoteTile({ q, i, highlighted, tileRef, onDelete, onQuickUpload, t, toa
           total={preview.total}
           loading={preview.loading}
           error={preview.error}
-          onDownload={(e) => handleDownload(q.source_excel_path, e)}
+          onDownload={(e) => handleDownload(q.source_excel_path, e, q.source_excel_name)}
           onClose={() => setPreview(null)}
         />
       )}
       {forwardPayload && <ForwardModal payload={forwardPayload} onClose={() => setForwardPayload(null)} />}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }

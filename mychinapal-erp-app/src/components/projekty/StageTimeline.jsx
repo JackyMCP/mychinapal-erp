@@ -6,6 +6,7 @@ import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB } from '../../lib/files'
 import { C } from '../../lib/theme'
 import { STAGE_DEFS, computeStageProgress } from './stageDefs'
 import { useUI } from '../../lib/ui'
+import FilePreviewModal from '../ui/FilePreviewModal'
 
 const pill = (bg, fg) => ({ fontSize: 9.5, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: bg, color: fg })
 
@@ -17,6 +18,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteSe
   const [uploading, setUploading] = useState(false)
   const [category, setCategory] = useState(stage.categories[0])
   const [dragOver, setDragOver] = useState(false)
+  const [previewFile, setPreviewFile] = useState(null)
   const fileRef = useRef(null)
   // Etap "Wycena od zespołu CN" nie ma żadnej kategorii dokumentu do wgrania
   // — jest spełniony automatycznie, jak tylko dla zamówienia w ogóle istnieje
@@ -67,7 +69,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteSe
   const handleDownload = async (doc) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 3600)
     if (error) { toast.error('Nie udało się pobrać pliku: ' + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   const isLocked = status === 'locked'
@@ -199,6 +201,7 @@ function StageCard({ stage, status, docsByCategory, project, onUploaded, quoteSe
           </div>
         </div>
       </div>
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   );
 }

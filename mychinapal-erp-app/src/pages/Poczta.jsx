@@ -7,6 +7,7 @@ import { useUI } from '../lib/ui'
 import { C } from '../lib/theme'
 import PageHeader from '../components/PageHeader'
 import useIsMobile from '../lib/useIsMobile'
+import FilePreviewModal from '../components/ui/FilePreviewModal'
 
 // Moduł Poczta — każdy pracownik łączy WŁASNĄ skrzynkę Outlook (Microsoft
 // Graph OAuth, patrz outlook-oauth-start/outlook-oauth-callback). Nowe maile
@@ -173,6 +174,7 @@ export default function Poczta() {
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [newCategory, setNewCategory] = useState({ name: '', color: '#2563EB' })
   const [contactForm, setContactForm] = useState(null) // {id?, name, email, company, phone, notes}
+  const [previewFile, setPreviewFile] = useState(null)
   const listRef = useRef(null)
   const composeFileRef = useRef(null)
   const replyFileRef = useRef(null)
@@ -408,7 +410,7 @@ export default function Poczta() {
   const downloadAttachment = async (att) => {
     const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(att.storage_path, 120)
     if (error) { toast.error(t('Nie udało się pobrać załącznika: ') + error.message); return }
-    window.open(data.signedUrl, '_blank')
+    setPreviewFile({ url: data.signedUrl, fileName: att.filename })
   }
 
   const addFilesTo = async (fileList, setAttachmentsFn) => {
@@ -1199,6 +1201,7 @@ export default function Poczta() {
           </div>
         </div>
       )}
+      {previewFile && <FilePreviewModal url={previewFile.url} fileName={previewFile.fileName} onClose={() => setPreviewFile(null)} />}
     </div>
   )
 }
