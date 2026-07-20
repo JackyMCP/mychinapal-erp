@@ -61,10 +61,17 @@ export async function shareFile({ filePath, fileName, title, text, toast, t = (s
     }
   }
 
-  // Fallback 2: komputer / brak wsparcia Web Share API — kopiuj link.
-  const ok = await copyToClipboard(url)
-  if (ok) toast?.success(t('Skopiowano link do pliku — wklej go w WhatsApp, Messenger, WeChat itd.'))
-  else toast?.error(t('Nie udało się skopiować linku. Otwórz plik i udostępnij go ręcznie: ') + url)
+  // Fallback 2: kopiuj link do schowka — na desktopowym Safari/Chrome
+  // navigator.clipboard bywa jednak kapryśny (wymaga "świeżego" gestu
+  // użytkownika, a kilka await-ów wcześniej po drodze go "zużywa"), więc
+  // NIE polegamy tylko na nim. Zawsze też otwieramy plik w nowej karcie —
+  // to działa niezawodnie wszędzie, a stamtąd przeglądarka ma WŁASNĄ,
+  // natywną ikonę "Udostępnij" (widoczną w toolbarze Safari) — dużo
+  // pewniejszą niż nasza próba z JS.
+  const copied = await copyToClipboard(url)
+  window.open(url, '_blank')
+  if (copied) toast?.success(t('Otworzyliśmy plik w nowej karcie i skopiowaliśmy link do schowka — możesz go wkleić w WhatsApp/Messenger/WeChat, albo użyć ikony „Udostępnij” w przeglądarce.'))
+  else toast?.success(t('Otworzyliśmy plik w nowej karcie — użyj tam ikony „Udostępnij” w przeglądarce, albo zapisz plik i wyślij go ręcznie.'))
 }
 
 // Udostępnia sam tekst (np. treść wiadomości z czatu, bez załącznika).
@@ -78,6 +85,8 @@ export async function shareText({ title, text, toast, t = (s) => s }) {
     }
   }
   const ok = await copyToClipboard(text)
-  if (ok) toast?.success(t('Skopiowano treść — wklej ją w WhatsApp, Messenger, WeChat itd.'))
-  else toast?.error(t('Nie udało się skopiować treści.'))
+  if (ok) { toast?.success(t('Skopiowano treść — wklej ją w WhatsApp, Messenger, WeChat itd.')); return }
+  // Fallback bez schowka: natywne okno przeglądarki z tekstem zaznaczonym do
+  // ręcznego skopiowania (Cmd/Ctrl+C) — działa zawsze, bez żadnych uprawnień.
+  window.prompt(t('Skopiuj tekst poniżej (Cmd/Ctrl+C):'), text)
 }
