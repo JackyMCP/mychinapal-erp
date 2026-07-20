@@ -31,7 +31,7 @@ async function copyToClipboard(str) {
 // czytelną informację co się stało (skopiowano / brak wsparcia itd.).
 export async function shareFile({ filePath, fileName, title, text, toast, t = (s) => s }) {
   const url = await getSignedFileUrl(filePath)
-  if (!url) { toast?.error(t('Nie udało się przygotować pliku do udostępnienia.')); return }
+  if (!url) { toast?.error(t('Nie udało się przygotować pliku do udostępnienia — plik mógł zostać usunięty albo zastąpiony nowszą wersją.')); return }
 
   // Próba udostępnienia PRAWDZIWEGO pliku (nie tylko linku) — działa tylko
   // tam, gdzie przeglądarka wspiera Web Share API z plikami (głównie telefony).
