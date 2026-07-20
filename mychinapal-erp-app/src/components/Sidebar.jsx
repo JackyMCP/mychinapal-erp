@@ -7,6 +7,7 @@ import InstallAppButton from './InstallAppButton'
 import NotificationsButton from './NotificationsButton'
 import useIsMobile from '../lib/useIsMobile'
 import { supabase } from '../lib/supabaseClient'
+import AdminPanel from './AdminPanel'
 
 export const MOBILE_TOPBAR_HEIGHT = 52
 
@@ -43,6 +44,7 @@ export default function Sidebar() {
   const navRefs = useRef({})
   const [pill, setPill] = useState({ top: 0, height: 0, opacity: 0 })
   const [unreadMail, setUnreadMail] = useState(0)
+  const [adminOpen, setAdminOpen] = useState(false)
 
   // Nieprzeczytane maile (Odebrane) — czerwona plakietka na "Poczta", tak jak
   // czerwone kółko z licznikiem na czacie. Odświeżane na żywo przez Realtime,
@@ -145,14 +147,20 @@ export default function Sidebar() {
             <NotificationsButton collapsed={false} />
             <InstallAppButton collapsed={false} />
             {profile && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontWeight: 700, fontSize: 12.5 }}>{profile.full_name}</div>
+              <div onClick={isZarzad ? () => setAdminOpen(true) : undefined}
+                title={isZarzad ? t('Panel sterowania zarządu') : undefined}
+                style={{ marginBottom: 8, cursor: isZarzad ? 'pointer' : 'default' }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {profile.full_name}
+                  {isZarzad && <span style={{ fontSize: 10, opacity: .6 }}>⚙️</span>}
+                </div>
                 <div style={{ color: 'rgba(255,255,255,.5)' }}>{profile.role === 'zarzad' ? t('Zarząd') : t('Pracownik')}</div>
               </div>
             )}
             <div onClick={signOut} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.6)', padding: '4px 0' }}>{t('Wyloguj')}</div>
           </div>
         </div>
+        {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
       </>
     )
   }
@@ -227,14 +235,20 @@ export default function Sidebar() {
         <NotificationsButton collapsed={collapsed} />
         <InstallAppButton collapsed={collapsed} />
         {!collapsed && profile && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontWeight: 700 }}>{profile.full_name}</div>
+          <div onClick={isZarzad ? () => setAdminOpen(true) : undefined}
+            title={isZarzad ? t('Panel sterowania zarządu') : undefined}
+            style={{ marginBottom: 8, cursor: isZarzad ? 'pointer' : 'default' }}>
+            <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+              {profile.full_name}
+              {isZarzad && <span style={{ fontSize: 9.5, opacity: .6 }}>⚙️</span>}
+            </div>
             <div style={{ color: 'rgba(255,255,255,.5)' }}>{profile.role === 'zarzad' ? t('Zarząd') : t('Pracownik')}</div>
           </div>
         )}
         <div onClick={signOut} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.6)' }}>{t('Wyloguj')}</div>
         <div onClick={() => setCollapsed(c => !c)} style={{ cursor: 'pointer', color: 'rgba(255,255,255,.4)', marginTop: 6 }}>{collapsed ? '»' : `« ${t('Zwiń')}`}</div>
       </div>
+      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
     </div>
   );
 }
