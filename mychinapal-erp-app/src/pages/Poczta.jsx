@@ -122,8 +122,15 @@ function AddressField({ value, onChange, placeholder, people }) {
   )
 }
 
+// Tekst zawiera znaki chińskie? Używane do auto-wykrycia języka oryginału
+// maila (dokładnie ten sam wzorzec co w tłumaczeniu czatu — patrz
+// translate-chat-message) — dzięki temu wiemy, czy dany mail trzeba
+// przetłumaczyć, żeby pasował do aktualnie wybranego języka interfejsu.
+const CJK_RE = /[一-鿿]/
+function isChineseText(str) { return CJK_RE.test(str || '') }
+
 export default function Poczta() {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const { session } = useAuth()
   const { toast, confirm } = useUI()
   const isMobile = useIsMobile()
@@ -376,6 +383,25 @@ export default function Poczta() {
         const { data: fresh } = await supabase.from('email_attachments').select('*').eq('message_id', m.id)
         setThreadAttachments(prev => ({ ...prev, [m.id]: fresh || [] }))
       }
+    }
+
+    // Auto-tłumaczenie treści (temat+treść) — tylko dla wiadomości, których
+    // język oryginału NIE zgadza się z aktualnie wybranym językiem interfejsu
+    // (PL/ZH), i tylko jeśli jeszcze nie mamy zapisanego tłumaczenia (kolumny
+    // translated_subject/translated_body pełnią rolę trwałego cache'a —
+    // patrz translate-email-message). Wynik przychodzi z powrotem przez już
+    // istniejący kanał Realtime na email_messages, więc nic więcej nie trzeba
+    // tu robić po stronie stanu.
+    const wantZh = lang === 'zh'
+    const needsTranslation = th.all.filter(m => {
+      if (m.translated_subject || m.translated_body) return false
+      const isZhOriginal = isChineseText((m.subject || '') + ' ' + (m.body_preview || ''))
+      return wantZh !== isZhOriginal
+    })
+    for (const m of needsTranslation) {
+      supabase.functions.invoke('translate-email-message', {
+        body: { message_id: m.id, subject: m.subject, body: m.body_html || m.body_preview || '' },
+      }).catch(err => console.error('translate-email-message invoke failed', err))
     }
   }
 
@@ -649,6 +675,22 @@ export default function Poczta() {
   const showReading = !isMobile || !!selectedThreadId
   const btnStyle = { padding: '7px 11px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.white, color: C.text2, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }
 
+  // Wyświetla temat/treść w języku dopasowanym do aktualnie wybranego języka
+  // interfejsu (PL/ZH) — jeśli oryginał jest w innym języku i mamy już gotowe
+  // tłumaczenie (patrz openThread -> translate-email-message), pokazujemy je
+  // zamiast oryginału. Dopóki tłumaczenie jeszcze nie wróciło (albo dla
+  // wiadomości, które i tak już są w oczekiwanym języku), pokazujemy oryginał.
+  const wantsTranslation = (m) => {
+    const isZhOriginal = isChineseText((m?.subject || '') + ' ' + (m?.body_preview || ''))
+    return (lang === 'zh') !== isZhOriginal
+  }
+  const displaySubject = (m) => (m && wantsTranslation(m) && m.translated_subject) ? m.translated_subject : (m?.subject || '')
+  const displayPreview = (m) => {
+    if (!m) return ''
+    if (wantsTranslation(m) && m.translated_body) return m.translated_body.slice(0, 100)
+    return m.body_preview || stripHtml(m.body_html).slice(0, 100)
+  }
+
   return (
     <div>
       <style>{`.poczta-thread-row-actions { display: none; } .poczta-thread-row:hover .poczta-thread-row-actions { display: flex !important; }`}</style>
@@ -819,10 +861,10 @@ export default function Poczta() {
                       <span style={{ fontSize: 9.5, color: C.muted, flexShrink: 0 }}>{timeLabel(th.latest.received_at)}</span>
                     </div>
                     <div style={{ fontSize: 11.5, fontWeight: unread ? 700 : 500, color: C.text2, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {th.latest.has_attachments && '📎 '}{th.latest.subject || t('(brak tematu)')}
+                      {th.latest.has_attachments && '📎 '}{displaySubject(th.latest) || t('(brak tematu)')}
                     </div>
                     <div style={{ fontSize: 10.5, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {th.latest.body_preview || stripHtml(th.latest.body_html).slice(0, 100)}
+                      {displayPreview(th.latest)}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                       {unread && <div style={{ width: 7, height: 7, borderRadius: '50%', background: C.blue }} />}
@@ -860,7 +902,7 @@ export default function Poczta() {
                   <div onClick={() => setSelectedThreadId(null)} style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700, color: C.blue, cursor: 'pointer' }}>{t('← Wróć do listy')}</div>
                 )}
                 <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                  <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700 }}>{selectedMessages[0]?.subject || t('(brak tematu)')}</div>
+                  <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700 }}>{displaySubject(selectedMessages[0]) || t('(brak tematu)')}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <button onClick={openForward} style={{ ...btnStyle, borderColor: C.blue, color: C.blue }}>↪ {t('Prześlij dalej')}</button>
 {folder !== 'deleteditems' && folder !== 'archive' && <button onClick={() => applyActionToThread(selectedThread, 'archive')} style={btnStyle}>🗄️ {t('Archiwizuj')}</button>}
@@ -920,7 +962,14 @@ export default function Poczta() {
                           </div>
                         )}
 
-                        <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: m.body_html || m.body_preview || '' }} />
+                        {wantsTranslation(m) && m.translated_body ? (
+                          <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>🌐 {t('Przetłumaczono automatycznie')}</div>
+                            {m.translated_body}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: m.body_html || m.body_preview || '' }} />
+                        )}
 
                         {atts.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
@@ -1011,7 +1060,7 @@ export default function Poczta() {
           <div style={{ background: C.white, borderRadius: 14, padding: 20, width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>↪ {t('Prześlij dalej')}</div>
             <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Fwd: {selectedThread.latest.subject || t('(brak tematu)')}
+              Fwd: {displaySubject(selectedThread.latest) || t('(brak tematu)')}
             </div>
             <AddressField value={forwardTo} onChange={setForwardTo} placeholder={t('Do (adresy oddzielone przecinkiem)')} people={knownPeople} />
             <AddressField value={forwardCc} onChange={setForwardCc} placeholder={t('DW (opcjonalnie)')} people={knownPeople} />
