@@ -299,9 +299,9 @@ Przycisk "→ Utwórz zamówienie z tego przetargu" na zakwalifikowanym przetarg
 4. `tenders-daily-digest` o 6:30.
 
 **Faza 2:**
-5. `tenders-ai-classify` (warstwa 3) + `tenders-ai-extract` (warstwa 4, w tym pobieranie i analiza załączników).
-6. Integracja z ISZTAR (cła antydumpingowe) i flagowanie "local content"/Lex China.
-7. e-Zamówienia/BZP: pobrać Załącznik 3, dopisać `tenders-ingest-bzp`.
+5. ✅ **Wdrożone (21.07.2026):** `tenders-ai-classify` (warstwa 3) + `tenders-ai-extract` (warstwa 4). Ważna decyzja architektoniczna podjęta przy wdrożeniu: warstwa 4 NIE pobiera binarnych załączników (PDF/DOCX) — okazało się, że ustrukturyzowane pola już zwracane przez `/api/announcements/{id}` (`participation_conditions[]`, `evaluation_criteria[]`, pełny `description` zapytania ofertowego, `warranty_period`) zawierają praktycznie wszystko, co warstwa 4 miała wyciągać z załączników. Pobieranie/OCR faktycznych plików PDF/DOCX zostaje jako możliwe rozszerzenie, gdyby ta uproszczona wersja czegoś nie domykała. Harmonogram: klasyfikacja co 20 min (10,30,50 * * * *), ekstrakcja co godzinę.
+6. Integracja z ISZTAR (cła antydumpingowe) i flagowanie "local content"/Lex China — jeszcze do zrobienia.
+7. e-Zamówienia/BZP: pobrać Załącznik 3, dopisać `tenders-ingest-bzp` — jeszcze do zrobienia.
 
 **Faza 3 (opcjonalnie, po walidacji wolumenu z fazy 1–2):**
 8. TED dla przetargów >930 960 zł.

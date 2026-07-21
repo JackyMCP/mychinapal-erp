@@ -24,7 +24,7 @@ const fieldBox = { fontSize: 12.5, color: C.text, marginBottom: 14 }
 export default function TenderDetailsModal({ tenderId, onClose, onChanged }) {
   const { t } = useLang()
   const { profile } = useAuth()
-  const { toast } = useUI()
+  const { toast, confirm } = useUI()
 
   const [tender, setTender] = useState(null)
   const [notes, setNotes] = useState([])
@@ -74,6 +74,23 @@ export default function TenderDetailsModal({ tenderId, onClose, onChanged }) {
     load()
   }
 
+  // Soft-delete (dismissed=true) zamiast twardego DELETE — ingest robi upsert
+  // co 20 min, więc fizycznie usunięty, ale wciąż aktywny na źródle przetarg
+  // wróciłby przy kolejnym cyklu. Ukrycie przez dismissed jest trwałe.
+  const handleDismiss = async () => {
+    const ok = await confirm(t('Usunąć ten przetarg z panelu? Nie będzie już widoczny na kanbanie ani w powiadomieniach.'), { confirmLabel: t('Usuń') })
+    if (!ok) return
+    const { error } = await supabase.from('tenders').update({
+      dismissed: true,
+      dismissed_at: new Date().toISOString(),
+      dismissed_by: profile?.id || null,
+    }).eq('id', tenderId)
+    if (error) { toast.error(t('Nie udało się usunąć przetargu: ') + error.message); return }
+    toast.success(t('Przetarg usunięty z panelu.'))
+    onChanged?.()
+    onClose?.()
+  }
+
   if (loading || !tender) {
     return (
       <div style={overlayStyle} onClick={onClose}>
@@ -111,6 +128,10 @@ export default function TenderDetailsModal({ tenderId, onClose, onChanged }) {
               {t('🔗 Otwórz źródło')}
             </a>
           )}
+          <button onClick={handleDismiss}
+            style={{ fontSize: 11.5, padding: '7px 12px', borderRadius: 8, background: C.rlight, color: C.red, fontWeight: 700, border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>
+            {t('🗑️ Usuń przetarg')}
+          </button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 4 }}>

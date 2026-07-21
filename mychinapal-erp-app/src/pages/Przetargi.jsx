@@ -52,6 +52,7 @@ export default function Przetargi() {
     const [tRes, nRes] = await Promise.all([
       supabase.from('tenders').select('*')
         .neq('category', '(brak dopasowania)').not('category', 'is', null)
+        .eq('dismissed', false)
         .order('created_at', { ascending: false }),
       supabase.from('tender_notifications').select('*').order('created_at', { ascending: false }).limit(50),
     ])
