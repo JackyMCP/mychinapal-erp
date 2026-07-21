@@ -1,155 +1,333 @@
-# Panel Przetargów — plan modułu (research + specyfikacja)
+# Panel Przetargów — pełna specyfikacja techniczna i plan budowy (v2)
 
-*Dokument roboczy, planowanie przed budową. Ostatnia aktualizacja: lipiec 2026.*
+*Dokument roboczy — plan przed budową. v1: lipiec 2026 (profil firmy + wstępna koncepcja). v2 — ten dokument: pogłębiony, zweryfikowany na żywo research realnych API/platform przetargowych, potwierdzony z użytkownikiem zakres kategorii, pełna architektura, UX i plan fazowania. Traktuj to jako "prompt do samego siebie" na moment rozpoczęcia budowy — wszystko poniżej ma być wystarczające, żeby zacząć kodować bez dalszych pytań badawczych.*
 
-## 1. Punkt wyjścia — poprawiony profil firmy
+## 0. Skrót decyzji podjętych z użytkownikiem (21 lipca 2026)
 
-Wcześniej błędnie założyłem, że core biznesem MyChinaPal są domki modułowe. Po sprawdzeniu mychinapal.pl to nieprawda — realny profil firmy to:
+- **Start fazy 1: tylko Baza Konkurencyjności.** e-Zamówienia i TED wchodzą w fazie 2 — Baza Konkurencyjności jest już w 100% przetestowana na żywo (patrz sekcja 4.1), więc daje najszybszy, najpewniejszy start.
+- **Powiadomienia: w samej zakładce Panelu Przetargów, mocno wyeksponowane, z ładnym odznaczaniem** — nie e-mail, nie generyczny push (użytkownik dał mi wolną rękę na pomysł, patrz sekcja 7.2 — Centrum Sygnałów).
+- **Codzienny digest o 6:30**, spójnie z istniejącym porannym rytuałem ("Minerva"/brief).
+- **Kategorie na start:** maszyny, BESS, sprzęt medyczny (3.1 ogólnie), sprzęt sieciowy/akcesoria (3.2 — ale NIE flagowe komputery/laptopy marek, patrz downgrade z wcześniejszej rundy researchu), edukacja (3.4), odzież BHP (3.5), infrastruktura komunalna (3.6) — **plus nowo zaakceptowane dziś:** oświetlenie solarne uliczne, stacje ładowania EV, pompy ciepła, przemysłowe drukarki 3D, roboty/AGV magazynowe, elektronarzędzia warsztatowe.
+- **Wykluczone na pewno:** wyposażenie biurowe (3.3), środki czystości/chemia gospodarcza, systemy monitoringu CCTV, znaki drogowe, sprzęt przeciwpożarowy.
+- Użytkownik poprosił też, żebym **sam dopisał kategorie, o których mógł zapomnieć** — patrz sekcja 2.3.
 
-- **OZE / energetyka**: magazyny energii (BESS) — komercyjne/przemysłowe (systemy kontenerowe, integracja z PV/siecią) i dla budynków/prosumentów (zestawy all-in-one 5–20 kWh); farmy i instalacje fotowoltaiczne (dachy hal, carporty, wielkoskalowe); systemy ładowania EV (AC, DC dużej mocy, huby); przenośne magazyny energii / power station / off-grid; oświetlenie solarne; pompy ciepła; małe turbiny wiatrowe; komponenty (inwertery, PCS, BMS, moduły PV).
-- **Maszyny**: CNC/obrabiarki do metalu, maszyny do drewna/mebli, przetwórstwo tworzyw sztucznych, systemy laserowe (cięcie/znakowanie/grawerowanie), kompaktowe maszyny budowlane/drogowe, przemysłowe drukarki 3D, automatyka/robotyka przemysłowa, maszyny i linie pakujące, maszyny rolnicze/ogrodnicze, maszyny do recyklingu, linie produkcyjne.
-- **Ogólny import na zamówienie** — praktycznie dowolna kategoria, plus dotychczasowe kanały (armatura, dom i ogród, elektronika, e-commerce).
+## 1. Profil firmy i model biznesowy (skrót — bez zmian względem v1)
 
-Ten profil jest podstawą do budowy silnika dopasowania przetargów (sekcja 3).
+MyChinaPal: import z Chin. Core: **OZE/energetyka** (magazyny energii/BESS, PV, ładowarki EV, pompy ciepła, oświetlenie solarne) i **maszyny** (CNC/obrabiarki, drewno/meble, tworzywa, lasery, roboty/automatyka, linie produkcyjne). Plus ogólny import na zamówienie.
 
-## 2. Co opłaca się importować z Chin pod przetargi — analiza rynku
+Dwa tryby pracy z przetargiem:
+1. **Tryb projektowy** (BESS/maszyny) — wycena od zera pod specyfikację, tak jak dziś działa moduł Wyceny.
+2. **Tryb katalogowy** (towary standaryzowane: BHP, sprzęt IT/akcesoria, edukacja, komunalna) — raz zweryfikowany produkt (kod CN/HS, certyfikat CE, cena) automatycznie dopasowywany do wielu ogłoszeń naraz — "wyceń raz, wyślij do wielu przetargów".
 
-### 2.1. Kategorie z realnym popytem w polskich zamówieniach publicznych
+## 2. Zakres kategorii — finalna wersja
 
-Sprawdziłem rzeczywiste przetargi i newsy branżowe (nie tylko teorię):
+### 2.1 Tier 1 — priorytet najwyższy
 
-- **BESS / magazyny energii** — bardzo aktywny rynek. Przykłady z 2025/2026: gminne przetargi na "dostawę i montaż magazynów energii elektrycznej dla mieszkańców" (np. Gmina Koziegłowy), przemysłowe BESS finansowane z NFOŚiGW (program 1.15 "Transformacja energetyczna"), oraz duże projekty grid-scale (Greenvolt–BYD w Siedlcach, 600 MW/2,4 GWh; PGE Gryfino, do 400 MW/800 MWh). To pokazuje, że **skala popytu jest ogromna, ale dzieli się na dwie zupełnie różne ligi** — patrz ryzyko "local content" niżej.
-- **Fotowoltaika komercyjna/gminna** — cło antydumpingowe na panele PV zostało zniesione przez UE, więc to bezpieczna, aktywnie kupowana kategoria (dachy urzędów, szkół, oczyszczalni, hal produkcyjnych).
-- **Stacje ładowania EV** — gminy i spółki komunalne regularnie kupują ładowarki AC/DC (parkingi publiczne, floty, MZK) — częste, średniej wartości przetargi.
-- **Maszyny i urządzenia przemysłowe** — szkoły zawodowe/branżowe, warsztaty, spółki komunalne (np. maszyny do utrzymania dróg, recyklingu, obróbki) regularnie kupują sprzęt przez przetargi — mniejsza rozpoznawalność medialna niż BESS, ale bardzo regularny wolumen.
-- **Pompy ciepła** — masowo kupowane przez gminy w programach termomodernizacji budynków publicznych.
+| Kategoria | Uwagi |
+|---|---|
+| Maszyny przemysłowe | CNC/obrabiarki metalu, drewna, tworzywa, lasery, linie produkcyjne, maszyny rolnicze/ogrodnicze/recyklingu |
+| BESS / magazyny energii | Kontenerowe komercyjne, all-in-one 5–20 kWh, przenośne power station. Uwaga: dla bardzo dużych przetargów grid-scale ze spółkami Skarbu Państwa (PGE/PSE/Tauron/Enea) — flaga ryzyka "local content/TSUE" (patrz 2.4 starego researchu, wciąż aktualne) |
+| Sprzęt medyczny (3.1, ogólnie) | Urządzenia + materiały/wyposażenie jednorazowe (rękawice/maseczki/fartuchy — pilnować certyfikatu MDR/PPE 2016/425) |
+| Sprzęt sieciowy i akcesoria (3.2, węziej niż wcześniej) | Switche, routery, okablowanie, UTM/firewall, akcesoria komputerowe (myszy/klawiatury/stacje dokujące/monitory zwykłe) — **NIE** flagowe laptopy marek (te wygrywają autoryzowani dystrybutorzy, nie niezależni importerzy — ustalone w poprzedniej rundzie) |
 
-### 2.2. Kategorie ryzykowne (cła antydumpingowe) — do unikania lub jawnego flagowania
+### 2.2 Tier 2 — włączone dziś
 
-Sprawdziłem aktualne stawki: **stal i wyroby stalowe** mają cła antydumpingowe 50,3–66,4% (28 z 52 unijnych środków ochronnych dotyczy Chin), **profile aluminiowe** 21,2–32,1%, do tego **rowery elektryczne**, **ceramika wykończeniowa**, **folia aluminiowa**. Te kategorie należy z automatu oznaczać w systemie jako wysokiego ryzyka, niezależnie od tego, czy przetarg wygląda atrakcyjnie.
+| Kategoria | Uwagi |
+|---|---|
+| Edukacja i przedszkola (3.4) | Tablice interaktywne, pracownie STEM, sprzęt sportowy szkolny — napędzane programami rządowymi (Laboratoria Przyszłości, Kompas Jutra, Cyfrowy Uczeń) |
+| Odzież BHP (3.5) | Bardzo powtarzalne specyfikacje rok do roku — dobry kandydat do katalogu standaryzowanego |
+| Infrastruktura komunalna (3.6) | Kosiarki, sprzęt do utrzymania zieleni |
+| Oświetlenie solarne uliczne | **Nowe dziś.** Uwaga z v1: większość przetargów to "budowa/modernizacja" z montażem, nie czysta dostawa — filtrować pod tym kątem |
+| Stacje ładowania EV | **Nowe dziś.** Gminy/spółki komunalne, floty, parkingi publiczne — regularny, średniej wartości wolumen |
+| Pompy ciepła | **Nowe dziś.** Masowo kupowane w programach termomodernizacji budynków publicznych |
+| Przemysłowe drukarki 3D | **Nowe dziś.** Naturalne rozszerzenie kategorii maszyn |
+| Roboty/AGV magazynowe | **Nowe dziś.** j.w. |
+| Elektronarzędzia warsztatowe | **Nowe dziś.** j.w., często te same przetargi co obrabiarki |
 
-**Panele fotowoltaiczne — dobra wiadomość**: cło antydumpingowe zostało zniesione i nie przedłużone, więc to już bezpieczna kategoria (w przeciwieństwie do stanu sprzed paru lat).
+### 2.3 Propozycje dodatkowe ode mnie (do potwierdzenia przy starcie budowy)
 
-### 2.3. Ryzyko "local content" / TSUE — realne dla DUŻYCH przetargów energetycznych
+Użytkownik poprosił, żebym dopisał, co mogło zostać pominięte. Z dotychczasowego researchu (v1) i profilu firmy, kandydaci z potwierdzonym realnym wolumenem:
 
-To ważne odkrycie z researchu: w marcu 2026 PGE **wykluczyło z przetargu na magazyn energii w Gryfinie** (do 400 MW / 800 MWh) konsorcjum z udziałem chińskiej spółki Jiangsu Linyang Energy Storage Technology. Artykuł branżowy (WysokieNapiecie.pl) tłumaczy to głównie skutkami **wyroku TSUE**, a nie jeszcze formalną polityką "local content" rządu — ale efekt jest ten sam: **duże przetargi na infrastrukturę sieciową dla spółek Skarbu Państwa (PGE, PSE, Tauron, Enea, Energa) niosą realne ryzyko wykluczenia ofert z chińskim pochodzeniem sprzętu**, szczególnie przy skali grid-scale (dziesiątki/setki MW).
+- **Meble (szkolne/biurowe/medyczne)** — potwierdzony wolumen: ~21 830 ogłoszeń/rok wg Atlas Przetargów (~484/miesiąc). Filtrować pod kątem "dostawa" bez montażu na miejscu.
+- **Wyposażenie medyczne jednorazowe jako osobna podkategoria katalogowa** (rękawice/maseczki/fartuchy/przyłbice/dezynfekcja) — bardzo częste, stałe zamówienia szpitali/DPS/szkół; wart wydzielenia z ogólnego "sprzętu medycznego", bo to inny model sprzedaży (katalogowy, nie projektowy).
+- **Sprzęt gastronomiczny nierdzewny** (piece konwekcyjno-parowe, zmywarki przemysłowe, stoły/szafy ze stali nierdzewnej) dla stołówek szkolnych/szpitalnych — regularna kategoria modernizacyjna, wymaga CE gastronomicznego.
+- **Regały magazynowe / systemy składowania** — naturalne dopełnienie kategorii AGV/roboty magazynowe.
+- **Wyposażenie placów zabaw i siłowni zewnętrznych** — regularne przetargi gminne (jeden dostawca wygrał 118 przetargów w tej branży w jednym roku wg starego researchu) — zwykle dostawa+montaż małej architektury, ale sam sprzęt można sourcingować z Chin.
 
-To ryzyko **nie dotyczy** mniejszych przetargów gminnych/komercyjnych (magazyny 5–20 kWh dla mieszkańców, kontenerowe BESS 1–5 MW dla firm prywatnych, PV na dachach, stacje ładowania, maszyny) — to zdecydowana większość tego, czym realnie zajmuje się MyChinaPal. System powinien to rozróżniać automatycznie (patrz `risk_flags` w schemacie niżej): flaga "ryzyko local content" pojawia się tylko przy bardzo dużych przetargach energetycznych ze spółkami Skarbu Państwa jako zamawiającym.
+Rekomendacja: dodać te 5 jako **Tier 3 (obserwacyjne)** od pierwszego dnia silnika dopasowania (tanie: to tylko dodatkowe słowa kluczowe/CPV), nawet jeśli UI na start pokazuje tylko Tier 1+2 domyślnie w filtrach.
 
-### 2.4. Wolumen rynku — czy 5-10 przetargów dziennie >100 000 zł jest realne
+### 2.4 Wykluczone na pewno
 
-W Polsce publikowanych jest **ponad 2000 nowych ogłoszeń przetargowych dziennie w dni robocze** (509 185 ogłoszeń w całym 2025 roku, wzrost 14,6% rok do roku). Przy dobrze zbudowanym filtrze kodów CPV + słów kluczowych + progu wartości 100 000 zł, znalezienie 5–10 trafionych ogłoszeń dziennie w niszy BESS/OZE/maszyny/import ogólny jest w pełni realistyczne — to bardzo mały wycinek ogromnego strumienia danych.
+Wyposażenie biurowe (3.3), środki czystości i chemia gospodarcza, systemy monitoringu CCTV (ryzyko Lex China/DWR — patrz prospekt sekcja 4), znaki drogowe, sprzęt przeciwpożarowy (bariery formalne).
 
-## 2.5. Drugi model biznesowy: towary standaryzowane — "wyceń raz, wyślij do wielu przetargów"
+## 3. Kody CPV — zweryfikowane dziś (żywe źródła, lipiec 2026)
 
-BESS i maszyny to projekty **bespoke** — każdy przetarg ma inną specyfikację, więc wymaga osobnej wyceny. Jest jednak druga, uzupełniająca ścieżka: **towary standaryzowane (komodytyzowane)**, gdzie ten sam produkt o tej samej specyfikacji pasuje do dziesiątek/setek różnych ogłoszeń — tu naprawdę można przygotować jedną wycenę/katalog i składać oferty seryjnie. Sprawdziłem realny wolumen kilku takich kategorii:
+| Kategoria | Kody CPV |
+|---|---|
+| Maszyny/obrabiarki | `42600000-2` Obrabiarki, `42632000-5` Obrabiarki CNC do metalu, `42640000-4` Obrabiarki do tworzyw, `42670000-3` Części/akcesoria do obrabiarek |
+| BESS/magazyny energii | `31154000-0` Bezprzestojowe źródła energii (najbliższy odpowiednik — **ale patrz zastrzeżenie niżej**), pomocniczo `31420000-6` Baterie galwaniczne, `51112200-2` Usługi instalowania sprzętu sterowania energią elektryczną |
+| Sprzęt medyczny | `33100000-1` Urządzenia medyczne, `33190000-8` Różne urządzenia i produkty medyczne, `33140000-3` Materiały medyczne, `33196000-0` Pomoce medyczne |
+| Sprzęt sieciowy | `32420000-3` Urządzenia sieciowe, `32424000-1` Infrastruktura sieciowa |
+| Edukacja | `30231320-6` Monitory dotykowe (potwierdzone żywym przykładem dziś — patrz 4.1), dodatkowo szukać w kategorii `39162100` pomoce dydaktyczne |
+| Odzież BHP | `18100000-0` Odzież branżowa/specjalna/dodatki, `18110000-3`, `18113000-4`, `18130000-9` |
+| Kosiarki/komunalna | `16311000-8` Kosiarki do trawników |
 
-- **Wyposażenie medyczne jednorazowe (rękawiczki, maseczki, fartuchy, przyłbice, środki dezynfekcyjne)** — bardzo częsta i regularna kategoria: szpitale, DPS-y, szkoły kupują to stale (znalazłem aktualne ogłoszenia z lipca 2026 z Legionowa, Milicza, Łodzi, Katowic, Gdańska, Wrocławia — to tylko wycinek). Kluczowe zastrzeżenie: rękawiczki/maseczki **medyczne** wymagają oznaczenia zgodnego z unijnym rozporządzeniem o wyrobach medycznych (MDR) lub o środkach ochrony indywidualnej (PPE 2016/425) — trzeba dopilnować, żeby dostawca miał certyfikat CE we właściwej klasie. To standardowy, znany wymóg (nie bariera nie do przejścia), ale system powinien to weryfikować per-produkt w katalogu.
-- **Sprzęt komputerowy dla szkół/urzędów (laptopy, tablety, monitory, projektory, tablice interaktywne)** — ogromny, systemowy popyt napędzany programami rządowymi/KPO. Konkretny przykład: przetarg Ministerstwa Cyfryzacji na **735 000 laptopów/tabletów za ~1,7 mld zł**, rozbity na **73 osobne części regionalne (NUTS3)** — to podręcznikowy przykład modelu "jedna specyfikacja, wiele powtarzalnych zamówień". Do tego dochodzi stały strumień mniejszych przetargów "Cyfrowa Gmina" w pojedynczych gminach.
-- **Meble (szkolne, biurowe, medyczne)** — potwierdzony realny wolumen: Atlas Przetargów notuje **21 830 ogłoszeń w tej branży, ok. 484 miesięcznie (~5 800 rocznie)**. Uwaga: część przetargów łączy dostawę z montażem — dla modelu "gotowa wycena" najlepiej pasują te czysto "dostawa" (bez usług na miejscu).
-- **Odzież robocza i BHP (odzież ochronna, obuwie, rękawice robocze, kaski, środki ochrony indywidualnej)** — regularne, cykliczne zamówienia (urzędy, zakłady komunalne, spółki jak PGNiG, instytuty badawcze) — bardzo powtarzalne specyfikacje z roku na rok.
-- **Wyposażenie placów zabaw i siłowni zewnętrznych** — regularne przetargi gminne; jeden z dostawców w samym 2014 roku wygrał 118 przetargów w tej branży, co dobrze pokazuje skalę powtarzalności. Zwykle łączy dostawę z montażem (mała architektura), ale sam sprzęt (urządzenia zabawowe, siłownie plenerowe) można sourcingować z Chin, a montaż podzlecać lokalnie.
-- **Sprzęt gastronomiczny dla stołówek szkolnych/szpitalnych** (piece konwekcyjno-parowe, zmywarki przemysłowe, meble ze stali nierdzewnej) — regularna kategoria w modernizacjach stołówek, wymaga oznaczeń CE dla urządzeń gastronomicznych.
-- **Oświetlenie uliczne LED** — bardzo częste ogłoszenia (Piotrków Trybunalski, Łącko, Dzikowiec i wiele innych w samym 2026), ale **większość to "budowa/modernizacja" z projektowaniem i montażem, nie czysta dostawa opraw** — słabiej pasuje do modelu "jedna wycena", chyba że uda się namierzyć te nieliczne przetargi na samą dostawę lamp.
-- **Systemy monitoringu miejskiego (kamery CCTV)** — regularna kategoria w programach bezpieczeństwa gmin, podobny profil do sprzętu IT.
+**Ważne zastrzeżenie:** dla nowych/niszowych kategorii (zwłaszcza BESS) zamawiający w praktyce używają **niespójnych kodów CPV** — w realnych przykładach widziałem tenże sam typ zamówienia pod `31154000-0`, `09300000-2` (energia), a nawet bez żadnego dedykowanego kodu, tylko generyczne "roboty budowlane" gdy magazyn energii jest częścią większej instalacji PV. **Wniosek architektoniczny: CPV to filtr wstępny, NIGDY jedyne kryterium — silnik musi łączyć CPV + słowa kluczowe w tytule/treści + (docelowo) klasyfikację AI.** Patrz sekcja 5.
 
-### Co to oznacza dla systemu
+Kody CPV, progi i kursy euro do zamówień publicznych są **rewidowane biennalnie (co 2 lata)** — obecne wartości (progi UE, kurs euro 4,31) obowiązują na lata 2026–2027. To trzeba odświeżyć w systemie na przełomie 2027/2028.
 
-Warto rozdzielić w aplikacji dwa tryby pracy z przetargiem:
+## 4. Źródła danych — zweryfikowany na żywo stan na 21.07.2026
 
-1. **Tryb projektowy (BESS/maszyny)** — wycena budowana od zera pod konkretną specyfikację (tak jak dziś działa moduł Wyceny).
-2. **Tryb katalogowy (towary standaryzowane)** — firma utrzymuje **katalog produktów gotowych do przetargów**: nazwa, specyfikacja, kod CN/HS (zweryfikowany raz przez ISZTAR), certyfikat CE/MDR, cena jednostkowa, czas dostawy. Gdy system znajdzie pasujący przetarg, automatycznie proponuje dopasowanie z katalogu i generuje gotową ofertę w kilka sekund zamiast liczyć wszystko od nowa — to jest właśnie mechanizm "wyceniamy raz, wysyłamy do wielu ogłoszeń".
+### 4.1 Baza Konkurencyjności — ŹRÓDŁO FAZY 1, w pełni przetestowane
 
-## 3. Źródła danych
+Baza: `bazakonkurencyjnosci.funduszeeuropejskie.gov.pl`. Zapytania ofertowe firm prywatnych realizujących projekty z dotacją UE, próg **80 000 zł netto** (zasada konkurencyjności, próg podniesiony z 50 000 zł 25.03.2025 — bez zmian od poprzedniego researchu).
 
-Zgodnie z ustaleniami: **polskie przetargi publiczne + prywatne zapytania ofertowe** (bez TED/UE na razie).
+**Publiczne, nieautoryzowane REST API — potwierdzone dziś trzema żywymi zapytaniami:**
 
-| Źródło | Co daje | Dostęp |
-|---|---|---|
-| **e-Zamówienia / BZP** (Urząd Zamówień Publicznych) | Wszystkie krajowe przetargi publiczne (gminy, spółki Skarbu Państwa, urzędy) | Oficjalne API REST (OAuth2 Client Credentials, wymaga rejestracji jako integrator) — dokumentacja na ezamowienia.gov.pl/pl/integracja/ |
-| **dane.gov.pl** (Otwarte Dane) | Ten sam zbiór ogłoszeń BZP, bez uwierzytelniania | Prostszy start, ale wolniejsze aktualizacje niż API |
-| **Baza Konkurencyjności** (funduszeeuropejskie.gov.pl) | Zapytania ofertowe firm PRYWATNYCH realizujących projekty z dotacją UE (bardzo częste przy zakupach BESS/PV/maszyn — to jest nasza "prywatna" część zakresu) | Publiczny, bez uwierzytelniania |
+1. **Wyszukiwanie** (potwierdzone, zwraca poprawny JSON):
+   ```
+   GET /api/announcements/search?page=1&limit=N&sort=default&query=...&status[0]=PUBLISHED
+   ```
+   Zwraca `data.advertisements[]` (id, title, content — skrót, advertiser_name, publication_date, submission_deadline, fulfillment_place, favorite) + `data.meta.total` (dokładna liczba wyników — dziś: 1168 aktywnych ogłoszeń ogółem, 436 dla frazy "dostawa sprzętu").
 
-Rekomendacja: zacząć od **dane.gov.pl + Baza Konkurencyjności** (brak biurokracji rejestracyjnej, szybki start), a po walidacji pomysłu wdrożyć oficjalne API e-Zamówienia dla świeższych/pełniejszych danych.
+2. **Szczegóły pojedynczego ogłoszenia** (NOWO potwierdzone dziś — nie było w v1):
+   ```
+   GET /api/announcements/{id}
+   ```
+   Zwraca KOMPLETNE dane: pełny tytuł, `order_items[].cpv_items[]` (kody CPV), `estimated_value`, `warranty_period`, `participation_conditions[]` (warunki udziału — kluczowe dla oceny barier formalnych!), `evaluation_criteria[]` (kryteria oceny ofert z wagami), `fulfillment_places[]`, `contact_persons[]`, `terms_of_contract_change`, **`attachments[]`** (lista załączników z metadanymi).
 
-## 4. Architektura techniczna
+3. **Pobieranie załączników** (NOWO potwierdzone dziś, żywy przykład):
+   ```
+   GET /api/files/{file_id}
+   ```
+   Sprawdzone na realnym ogłoszeniu z dziś (id 285084, "DOSTAWA MONITORÓW INTERAKTYWNYCH", Stowarzyszenie Dobra Edukacja, wartość 84 000 zł, CPV `30231320-6`) — 4 załączniki: Zapytanie ofertowe (PDF), Formularz ofertowy (XLSX), Oświadczenie o warunkach (PDF), Wzór umowy (PDF). **To otwiera drogę do pełnej automatycznej ekstrakcji AI (sekcja 5, warstwa 4) — możemy pobrać i przeanalizować każdy dokument programowo, bez ręcznego wchodzenia na stronę.**
 
-### 4.1. Schemat bazy (Supabase / Postgres)
+**Limity/throttling:** brak oficjalnie udokumentowanych limitów zapytań — rekomendacja: polling co 15–30 minut, żądania sekwencyjne z ~300–500ms odstępu (uprzejmość wobec publicznej infrastruktury rządowej, nie tylko dla uniknięcia blokady).
+
+### 4.2 e-Zamówienia / BZP — ŹRÓDŁO FAZY 2
+
+**Istotna korekta względem v1** (tam błędnie napisałem, że wymaga rejestracji integratora): platforma oficjalnie deklaruje wprost (ezamowienia.gov.pl/pl/integracja/):
+
+> *"Odczyt ogłoszeń i statystyk dot. ogłoszeń krajowych publikowanych w BZP **nie wymaga przejścia procedury integracyjnej**. Informacje z BZP udostępnione są przez API dostępne pod adresem: `ezamowienia.gov.pl/mo-board/api/v1/notice`."*
+
+Znalazłem też potwierdzony wzorzec pobierania pojedynczego ogłoszenia jako PDF: `mo-board/api/v1/Board/GetNoticePdfById?noticeId={guid}`. Pełna dokumentacja dokładnych parametrów zapytań (paginacja, filtrowanie po CPV/dacie/progu) jest w **Załączniku 3 – Instrukcja integracji z API BZP** (plik ZIP, `media.ezamowienia.gov.pl/pod/2022/08/Zalącznik-3-Instrukcja-integracji-z-API-BZP.zip`) — **pierwszy konkretny krok fazy 2: pobrać i przeczytać ten ZIP przed pisaniem kodu integracji**, żeby nie zgadywać nazw parametrów.
+
+Pozostałe API platformy (MO/PP/MMIA/CRD — publikowanie ogłoszeń, plany postępowań, sprawozdania) wymagają pełnej procedury integracyjnej z testami — **nie są nam potrzebne** (tylko odczyt, nie publikujemy niczego na platformie).
+
+**Próg ustawy Pzp od 1.01.2026:** 170 000 zł (podniesiony z ok. 130 000 zł).
+
+### 4.3 TED (Tenders Electronic Daily) — opcjonalne, faza 2/3
+
+Dla bardzo dużych przetargów (BESS grid-scale, duże kontrakty szpitalne) powyżej progów unijnych, które trafiają też do TED oprócz BZP. **Potwierdzone: anonimowy odczyt bez uwierzytelnienia**, dokumentacja `docs.ted.europa.eu`, wszystkie endpointy w `api.ted.europa.eu/swagger`.
+
+**Progi unijne 2026–2027** (kurs euro 4,31 zł, rewidowane co 2 lata):
+- Roboty budowlane: 5 404 000 € (23 291 240 zł)
+- Dostawy/usługi, administracja centralna: 140 000 € (603 400 zł)
+- Dostawy/usługi, poniżej szczebla centralnego (gminy, spółki komunalne — **to nasz główny segment**): 216 000 € (930 960 zł)
+- Usługi społeczne: 750 000 € (3 232 500 zł)
+
+Warto dodać w fazie 2/3 głównie dla monitorowania **dużych BESS/kontraktów szpitalnych** (powyżej ~930 tys. zł) — mniejsze przetargi komunalne i tak nie osiągają progu unijnego i żyją tylko w BZP.
+
+### 4.4 Inne platformy zakupowe — faza 3+, opcjonalnie
+
+Pogłębiony dziś research pokazał, że **znaczna część polskiego rynku przetargowego (zwłaszcza sektor prywatny/komunalny) w ogóle nie przechodzi przez BZP ani Bazę Konkurencyjności**, tylko przez komercyjne platformy zakupowe:
+
+| Platforma | Skala | API/dostęp | Ocena |
+|---|---|---|---|
+| **platformazakupowa.pl** (Open Nexus) | Największa — firma deklaruje ok. 1/3 wszystkich polskich przetargów, >3200 klientów instytucjonalnych | Brak publicznego API. `robots.txt`: dozwolone crawlowanie, ale **`Crawl-delay: 900`** (15 min między żądaniami) — twardy sygnał prawny/techniczny. Nowy regulamin od 10.12.2025 — **do sprawdzenia prawnie przed scrapowaniem**. | Najwyższy priorytet wg skali rynku, ale wymaga wolnego, uprzejmego crawlera zgodnego z Crawl-delay — realistycznie da się zbierać tylko ograniczoną liczbę stron dziennie |
+| **Marketplanet OnePlace / eZamawiający** | Ministerstwa, agencje, szpitale — każdy zamawiający ma osobną subdomenę | `robots.txt` permisywny, pełny sitemap | Technicznie łatwe do scrapowania, ale architektonicznie trudniejsze (trzeba enumerować dziesiątki subdomen zamiast jednego źródła) |
+| **SmartPZP** | Sieci szpitalne/podmioty lecznicze (istotne dla kategorii medycznej!) | Nieznane, do zbadania w fazie 3 | Priorytet jeśli kategoria medyczna okaże się zbyt uboga z Bazy Konkurencyjności/BZP |
+| **Logintrade** | Przemysł/energetyka (Orlen, JSW, Grupa Azoty) — pasuje do profilu maszyn/BESS | Brak API, per-klient instancje | Niski priorytet, obserwacyjnie |
+| **e-ProPublico** | Uczelnie/instytucje akademickie | Brak API | Niski priorytet, chyba że kategoria edukacyjna z uczelni stanie się ważna |
+
+**Agregatorzy płatni** (Ofertis, SellWith, Atlas Przetargów, BZP Monitor/Klevio) już monitorują zbiorczo BZP+TED — mogą być **tanim stopgapem na czas budowy własnego silnika**, ale generalnie NIE indeksują głęboko dokumentacji z platform powyżej (to jest realna luka rynkowa/przewaga, którą możemy zbudować).
+
+**Rekomendacja fazowania źródeł:** Faza 1 = Baza Konkurencyjności. Faza 2 = + e-Zamówienia/BZP. Faza 3 = + TED (dla progu >930k zł) + ocena czy platformazakupowa.pl/SmartPZP wnoszą wystarczająco dużo unikalnego wolumenu żeby uzasadnić scraper.
+
+## 5. Silnik dopasowania — 4 warstwy ("panel musi sprawdzać wszystko")
+
+1. **Warstwa 1 — CPV whitelist.** Szybki, tani filtr wstępny na podstawie tabeli z sekcji 3. Nie odrzuca ostatecznie — tylko przyspiesza pierwsze sito.
+2. **Warstwa 2 — słowa kluczowe (tytuł + treść).** Lista synonimów PL per kategoria + **lista słów wykluczających** (np. "monitoring" w kontekście CCTV ma być odrzucane, "czyszczenie"/"środki czystości" ma być odrzucane nawet jeśli inne słowo pasuje). Edytowalna w Ustawieniach (tabela `tender_profile`), żeby zespół mógł samodzielnie dostrajać bez zmiany kodu.
+3. **Warstwa 3 — klasyfikacja AI (Claude).** Dla ogłoszeń, które przeszły warstwy 1–2, ale są niejednoznaczne (np. CPV pasuje, ale tytuł brzmi ogólnie) — Claude ocenia dopasowanie 0–100, przypisuje kategorię z listy w sekcji 2, i **krótko uzasadnia dlaczego** (widoczne w karcie przetargu — buduje zaufanie do systemu zamiast być czarną skrzynką).
+4. **Warstwa 4 — ekstrakcja warunków z załączników.** Dla ogłoszeń zakwalifikowanych (score powyżej progu) — pobranie załączników (patrz 4.1, `/api/files/{id}`), przekazanie do Claude z promptem ekstrakcyjnym, wyciągnięcie ustrukturyzowanie:
+   - termin składania ofert, planowany termin podpisania umowy,
+   - **warunki udziału** (referencje, doświadczenie, potencjał finansowy, wadium) → automatyczna flaga "bariery formalne: niskie/średnie/wysokie" (dokładnie to, co użytkownik kazał sprawdzać w poprzedniej rundzie przy komputerach/znakach drogowych/ppoż),
+   - kryteria oceny ofert (cena vs. jakość — % wagi),
+   - okres gwarancji, kary umowne,
+   - waluta rozliczenia,
+   - czy jest wzmianka o wymogu pochodzenia UE / "dostawca wysokiego ryzyka" (Lex China — istotne dla kategorii sieciowej, patrz prospekt sekcja 4),
+   - automatyczne sprawdzenie kodu CN/HS przez już istniejący mechanizm ISZTAR (z modułu Wyceny) — jeśli kategoria produktu ma cło antydumpingowe, dolicza flagę ryzyka (stal, aluminium, rowery elektryczne, ceramika — z v1).
+
+## 6. Architektura techniczna
+
+### 6.1 Schemat SQL (Supabase/Postgres) — v2, rozszerzony
 
 ```sql
--- Konfiguracja dopasowania (profil firmy) — edytowalna w Ustawieniach
+-- Konfiguracja silnika dopasowania — edytowalna w Ustawieniach przez zespół,
+-- bez potrzeby zmiany kodu przy dostrajaniu.
 tender_profile (
-  id, cpv_codes text[], keywords text[], excluded_keywords text[],
-  min_value numeric default 100000, buyer_type_blocklist text[], -- np. blokada PGE/PSE dla dużych BESS
-  updated_at
+  id, category text, -- z listy w sekcji 2
+  cpv_codes text[], keywords text[], excluded_keywords text[],
+  tier smallint, -- 1|2|3
+  active boolean default true,
+  updated_at, updated_by uuid
 )
 
--- Surowe dopasowane ogłoszenia
+-- Surowe/dopasowane ogłoszenia, wspólne dla wszystkich źródeł
 tenders (
-  id, source text, -- 'bzp' | 'baza_konkurencyjnosci'
-  external_id text, title, buyer_name, buyer_type text, -- 'gmina'|'spolka_sp'|'prywatna'|...
-  cpv_codes text[], estimated_value numeric, currency,
-  submission_deadline timestamptz, published_at timestamptz,
-  category text, match_score numeric, -- 0-100, z silnika dopasowania
-  risk_flags text[], -- 'clo_antydumpingowe' | 'local_content' | ...
-  status text default 'new', -- new|reviewed|applying|submitted|won|lost|ignored
-  source_url text, raw_data jsonb,
+  id uuid primary key default gen_random_uuid(),
+  source text not null, -- 'baza_konkurencyjnosci' | 'bzp' | 'ted' (faza 2/3)
+  external_id text not null, -- np. numer ogłoszenia w źródle
+  source_url text,
+  title text, buyer_name text, buyer_nip text,
+  cpv_codes text[], estimated_value numeric, currency text default 'PLN',
+  submission_deadline timestamptz, publication_date timestamptz,
+  fulfillment_place text,
+  category text, match_score numeric, match_reasoning text, -- warstwa 3
+  formal_barrier_level text, -- 'niskie'|'srednie'|'wysokie' — warstwa 4
+  risk_flags text[], -- 'clo_antydumpingowe' | 'local_content' | 'dostawca_wysokiego_ryzyka' | ...
+  status text not null default 'nowy',
+    -- 'nowy' | 'do_oceny' | 'zakwalifikowany' | 'w_przygotowaniu' | 'zlozona_oferta'
+    -- | 'wygrany' | 'przegrany' | 'uniewazniony' | 'odrzucony'
+  assigned_to uuid references profiles(id),
+  raw_data jsonb, -- pełna odpowiedź źródła, do audytu/debugowania
+  last_seen_at timestamptz, -- do wykrywania aneksów/zmian (modified_at źródła)
+  created_at timestamptz default now(),
+  unique(source, external_id)
+)
+
+tender_documents (
+  id, tender_id references tenders(id) on delete cascade,
+  file_name text, storage_path text, source_file_url text,
+  extracted_text text, -- do ewentualnego pełnotekstowego wyszukiwania
   created_at
 )
 
-tender_documents ( id, tender_id, file_name, storage_path, extracted_text )
-
 tender_ai_analysis (
-  id, tender_id, summary text, requirements text[], risks text[],
-  evaluation_criteria text, recommended boolean, analyzed_at
+  id, tender_id references tenders(id) on delete cascade,
+  summary text, requirements text[], evaluation_criteria jsonb,
+  warranty_period text, penalty_clauses text,
+  submission_deadline_confirmed timestamptz,
+  recommended boolean, confidence numeric,
+  analyzed_at timestamptz default now()
 )
 
-tender_applications (
-  id, tender_id, assigned_to uuid, status text, notes text,
-  generated_document_path text, updated_at
+tender_notes (
+  id, tender_id references tenders(id) on delete cascade,
+  author_id uuid references profiles(id), content text, created_at
 )
 
--- Katalog towarów standaryzowanych (model B — patrz sekcja 2.5): raz
--- zweryfikowany produkt gotowy do automatycznego dopasowania do wielu przetargów
+tender_status_history (
+  id, tender_id references tenders(id) on delete cascade,
+  from_status text, to_status text, changed_by uuid, changed_at
+)
+
+-- Katalog towarów standaryzowanych (tryb B, sekcja 1) — reużywalny między
+-- wieloma dopasowanymi przetargami
 tender_product_catalog (
-  id, name, specification text, cn_hs_code text, isztar_checked_at timestamptz,
+  id, name, specification text, category text,
+  cn_hs_code text, isztar_checked_at timestamptz,
   ce_mdr_certificate boolean, certificate_notes text,
   unit_price_pln numeric, lead_time_days int, min_order_qty int,
-  category text, keywords text[], active boolean default true
+  keywords text[], active boolean default true
+)
+
+-- Powiadomienia w panelu (Centrum Sygnałów, sekcja 7.2)
+tender_notifications (
+  id, tender_id references tenders(id) on delete cascade,
+  type text, -- 'nowy_dopasowany' | 'zmiana_terminu' | 'blisko_terminu' | 'aneks'
+  seen_by uuid[], -- kto już to widział — do liczenia odznaki nieprzeczytanych
+  created_at timestamptz default now()
 )
 ```
 
-### 4.2. Codzienny pipeline (Edge Function + pg_cron, wzorem `outlook-renew-subscriptions`)
+RLS: `tenders`/`tender_documents`/`tender_ai_analysis`/`tender_notes` dostępne dla całego zespołu PL (nie per-klient jak reszta apki — przetargi to wspólna pula szans sprzedażowych), edycja `tender_profile` tylko dla zarządu.
 
-1. **`tenders-daily-sync`** (uruchamiane w nocy, np. 4:00) — pobiera nowe ogłoszenia od ostatniego uruchomienia z BZP/dane.gov.pl i Bazy Konkurencyjności.
-2. **Filtr wstępny** — dopasowanie po kodach CPV z `tender_profile` + słowach kluczowych w tytule/opisie + próg `estimated_value >= 100000`.
-3. **`tenders-ai-analyze`** — dla każdego dopasowanego ogłoszenia: pobranie dokumentacji (SWZ/specyfikacja), Claude czyta i wyciąga: przedmiot zamówienia, kluczowe wymagania techniczne, kryteria oceny ofert, termin, potencjalne ryzyka. Automatyczne sprawdzenie kodu CN/HS przez już istniejący mechanizm ISZTAR (z modułu Wyceny) — jeśli trafi na kategorię z cłem antydumpingowym, dolicza flagę ryzyka.
-4. **Ranking i selekcja top 5–10** — sortowanie po `match_score` i wartości, z odrzuceniem tych z krytycznymi flagami ryzyka (opcjonalnie: pokazane, ale wyraźnie oznaczone).
-5. **Powiadomienie poranne** — o 6:30 (dokładnie jak Minerva) trafia do centrum powiadomień w aplikacji + osobny widget na Dashboardzie, wzorem istniejącego systemu zadań/powiadomień.
+### 6.2 Edge functions + harmonogram pg_cron (wzorem `outlook-renew-subscriptions`/`translate-backfill`)
 
-### 4.3. UI — nowa zakładka "Przetargi" w Sidebarze
+| Funkcja | Harmonogram | Zadanie |
+|---|---|---|
+| `tenders-ingest-bazakonkurencyjnosci` | co 20 min (pg_cron) | Pobiera nowe/zmienione ogłoszenia od `last_seen_at`, zapisuje do `tenders` (upsert po `source`+`external_id`) |
+| `tenders-match` | po każdym ingest (albo co 20 min) | Warstwy 1–2 (CPV+słowa kluczowe) na nowych rekordach, ustawia `match_score` wstępny |
+| `tenders-ai-classify` | co godzinę, tylko dla niejednoznacznych | Warstwa 3 — Claude klasyfikuje graniczne przypadki |
+| `tenders-ai-extract` | po zakwalifikowaniu (`status = 'zakwalifikowany'`) | Warstwa 4 — pobiera załączniki, ekstrakcja Claude, zapis do `tender_ai_analysis` |
+| `tenders-daily-digest` | 6:30 rano (pg_cron, zgodnie z decyzją) | Buduje podsumowanie dnia, tworzy wiersze w `tender_notifications`, generuje treść Centrum Sygnałów |
+| `tenders-deadline-watch` | co godzinę | Sprawdza `submission_deadline` zbliżające się w ciągu 48h dla niezłożonych ofert → alert priorytetowy |
 
-- **Lista** — kafelki (jak w Wycenach/Zamówieniach): tytuł, zamawiający, wartość, termin, dopasowanie %, flagi ryzyka kolorowe.
-- **Szczegóły przetargu** — pełny opis, wyciągnięte przez AI kluczowe fakty, lista dokumentów z podglądem w aplikacji (już mamy `FilePreviewModal` dla PDF/Excel/Word — zero dodatkowej pracy), link źródłowy.
-- **Zgłoszenie/oferta** — przycisk generujący dokument wypełniony danymi firmy (NIP/REGON/KRS z `company_settings`, tak jak przy fakturach/wycenach), z sekcjami pod wymagania z SWZ; edytowalny w przeglądarce (ten sam edytor TipTap co w Wycenach), eksport do docx/PDF.
+### 6.3 Deduplikacja
 
-### 4.4. Ważne zastrzeżenie prawne
+Klucz unikalności `(source, external_id)` w obrębie jednego źródła. Między źródłami (np. duży BESS w BZP i TED jednocześnie) — dopasowanie fuzzy po (nazwa zamawiającego + wartość szacunkowa ± 5% + data publikacji ± 3 dni), z ręcznym potwierdzeniem "to ten sam przetarg" w UI zamiast automatycznego scalania (bezpieczniej — fałszywe scalenie gorsze niż duplikat na liście).
 
-Złożenie **wiążącej** oferty w polskim przetargu publicznym wymaga podpisu kwalifikowanego/zaufanego i przejścia przez oficjalny portal (miniPortal/Platforma e-Zamówienia). Aplikacja może w pełni zautomatyzować **przygotowanie** kompletnego dokumentu oferty — ale samo **złożenie** musi pozostać ręcznym krokiem osoby z uprawnionym podpisem elektronicznym. To nie jest ograniczenie techniczne, tylko wymóg prawny dotyczący każdego narzędzia tego typu (Minerva też tego nie robi automatycznie).
+### 6.4 Wykrywanie aneksów/zmian
 
-## 5. Koszt AI (przypomnienie z wcześniejszej rozmowy)
+Pole `modified_at` w Bazie Konkurencyjności (potwierdzone w danych) pokazuje, że ogłoszenia bywają edytowane po publikacji (zmiana terminu, dodatkowe załączniki). `last_seen_at` + porównanie `raw_data` przy każdym ingest → jeśli zmiana wykryta na zakwalifikowanym przetargu, tworzy `tender_notifications` typu `aneks` i **podbija go na start listy**, nawet jeśli był już oceniony.
 
-Przy 10–30 dopasowanych przetargach dziennie i pełnej analizie AI dokumentacji: rząd wielkości **40–150 zł/miesiąc** (Sonnet) lub **kilkanaście-kilkadziesiąt zł/miesiąc** (Haiku) — dla użytku jednej firmy to koszt pomijalny względem wartości informacji.
+## 7. UX Panelu Przetargów
 
-## 6. Sugerowana kolejność budowy (fazowanie)
+### 7.1 Nowa zakładka w Sidebarze: "🎯 Przetargi"
 
-1. SQL: schemat (`tender_profile`, `tenders`, `tender_documents`, `tender_ai_analysis`, `tender_applications`).
-2. Edge function pobierania z **dane.gov.pl + Baza Konkurencyjności** (najprostszy start, bez rejestracji API) + prosty filtr CPV/słowa kluczowe/wartość.
-3. UI: lista + szczegóły przetargu (bez AI na start — samo ustrukturyzowane dane z ogłoszenia).
-4. Powiadomienie poranne / widget Dashboard.
-5. Dołożenie analizy AI (Claude czyta dokumentację, wyciąga fakty, flaguje ryzyka CN/HS przez ISZTAR i "local content").
-6. Generator zgłoszenia/oferty (reużycie edytora z Wycen).
-7. Opcjonalnie później: rejestracja w oficjalnym API e-Zamówienia dla świeższych danych, rozszerzenie o TED/UE.
+Odznaka z liczbą nieprzeczytanych (dokładnie jak istniejące czerwone kółka na Czacie) — liczona z `tender_notifications` gdzie `auth.uid()` nie jest jeszcze w `seen_by`.
+
+### 7.2 Centrum Sygnałów — codzienny digest, "ładnie wyeksponowany" (zgodnie z życzeniem)
+
+Górny pasek zakładki, zawsze widoczny, w stylu hero-banera (podobny ton do gry "rozbij złotą rudę" na Dashboardzie — firma lubi taki żywy, gamifikowany styl UI):
+
+- **Duża liczba dnia**: "🎯 7 nowych dopasowanych ogłoszeń dziś" z animowanym licznikiem (CountUp — już używany w apce).
+- Pod spodem **rząd kolorowych "chipów" per kategoria** z liczbą (np. "⚙️ Maszyny: 3", "🔋 BESS: 2", "🏥 Medyczne: 2") — klik filtruje listę.
+- **Pasek pilności**: jeśli jakiś zakwalifikowany przetarg ma termin < 48h, czerwony baner "⏰ 2 przetargi z terminem w ciągu 48h — sprawdź teraz" ponad wszystkim innym.
+- Osobna, mniejsza sekcja "📝 Aneksy/zmiany" — jeśli któryś ZAKWALIFIKOWANY wcześniej przetarg się zmienił.
+- Wszystko odznaczane jako przeczytane pojedynczo (klik w kartę) albo zbiorczo ("Oznacz wszystkie jako przeczytane").
+
+### 7.3 Tablica kanban wg statusu
+
+Kolumny: Nowy → Do oceny → Zakwalifikowany → W przygotowaniu oferty → Złożona oferta → (rozgałęzienie) Wygrany / Przegrany / Unieważniony / Odrzucony. Kafelek = jak w Projektach/Wycenach (spójny język wizualny): tytuł, zamawiający, wartość, dni do terminu (kolor: zielony >14 dni, pomarańczowy 3–14, czerwony <3), dopasowanie % w formie małego paska, ikony flag ryzyka.
+
+### 7.4 Karta szczegółów przetargu
+
+Pełny opis + wszystko wyciągnięte przez AI (warunki udziału, kryteria oceny, gwarancja, kary) w czytelnych sekcjach + lista dokumentów z podglądem **w aplikacji** (zero dodatkowej pracy — `FilePreviewModal` już obsługuje PDF/Excel/Word) + link źródłowy + `tender_notes` (prosty czat/log notatek zespołu, wzorem istniejących komponentów czatu) + selektor przypisanej osoby.
+
+### 7.5 Integracja z istniejącymi modułami
+
+Przycisk "→ Utwórz zamówienie z tego przetargu" na zakwalifikowanym przetargu — tworzy nowy rekord w `projects` wstępnie wypełniony danymi (nazwa, wartość, klient = zamawiający jeśli już istnieje w bazie klientów, albo tworzy nowego), i przechodzi do istniejącego flow Wycen. To spina "znalezienie szansy" z "wyceną i realizacją" w jeden ciągły proces, zamiast dwóch osobnych światów.
+
+## 8. Plan wdrożenia fazami
+
+**Faza 1 (start budowy):**
+1. SQL: pełny schemat z sekcji 6.1.
+2. Edge function `tenders-ingest-bazakonkurencyjnosci` (polling co 20 min) + `tenders-match` (CPV+słowa kluczowe, warstwy 1–2).
+3. UI: zakładka Sidebar + kanban (bez AI na start — same ustrukturyzowane dane) + Centrum Sygnałów (bez ekstrakcji AI, tylko liczniki nowych/pilnych).
+4. `tenders-daily-digest` o 6:30.
+
+**Faza 2:**
+5. `tenders-ai-classify` (warstwa 3) + `tenders-ai-extract` (warstwa 4, w tym pobieranie i analiza załączników).
+6. Integracja z ISZTAR (cła antydumpingowe) i flagowanie "local content"/Lex China.
+7. e-Zamówienia/BZP: pobrać Załącznik 3, dopisać `tenders-ingest-bzp`.
+
+**Faza 3 (opcjonalnie, po walidacji wolumenu z fazy 1–2):**
+8. TED dla przetargów >930 960 zł.
+9. Katalog produktów standaryzowanych (`tender_product_catalog`) + generator gotowej oferty (reużycie edytora TipTap z Wycen).
+10. Ocena czy platformazakupowa.pl/SmartPZP wnoszą wystarczająco unikalnego wolumenu żeby uzasadnić scraper (decyzja biznesowa, nie tylko techniczna).
+
+## 9. Rzeczy, o których mogłeś zapomnieć — dopisane przeze mnie
+
+- **Aneksy/zmiany** już zakwalifikowanych przetargów — obsłużone w 6.4, ale podkreślam: to częsty powód przeoczenia zmiany terminu w praktyce.
+- **Wynik przetargu (kto wygrał, za ile)** — warto zbierać nawet dla przegranych, jako *competitive intelligence* na przyszłość (kto jest realną konkurencją w danej kategorii). Pole `winner_name`/`winning_value` do dodania w `tenders` przy statusie 'przegrany'/'wygrany', uzupełniane ręcznie na razie (automatyczne pobranie wyniku to osobny, trudniejszy temat na później).
+- **Pętla feedbacku** — przycisk "to nie pasuje" na błędnie dopasowanym ogłoszeniu, zbierany jako dane do okresowego (miesięcznego) przeglądu i poprawy słów kluczowych/promptu klasyfikacji AI.
+- **Wymóg podpisu kwalifikowanego** przy faktycznym złożeniu oferty (przypomnienie z v1, wciąż aktualne) — apka automatyzuje **przygotowanie** kompletnej oferty, ale samo złożenie w miniPortalu/Platformie e-Zamówienia to ręczny krok osoby z podpisem elektronicznym. To wymóg prawny, nie ograniczenie techniczne.
+- **RODO** — `contact_persons` w odpowiedziach API Bazy Konkurencyjności zawiera dane osobowe (imię, nazwisko, e-mail, telefon) — przechowywać tylko w zakresie potrzebnym do kontaktu w sprawie oferty, nie eksponować w miejscach niepotrzebnych.
+- **SLA zespołu na ocenę nowego przetargu** — bez tego kolumna "Do oceny" w kanbanie może się zapychać w nieskończoność. Warto dodać automatyczne przypomnienie/eskalację jeśli przetarg leży w statusie "Do oceny" dłużej niż np. 2 dni robocze.
+- **Koszt AI** (z v1, zaktualizowane): przy 10–30 dopasowanych przetargach dziennie z pełną analizą warstwy 3+4 — rząd wielkości 40–150 zł/miesiąc (Sonnet) albo kilkanaście-kilkadziesiąt zł (Haiku). Pomijalne.
+- **Refresh progów/kursów** — próg Pzp (170 000 zł), próg Bazy Konkurencyjności (80 000 zł), progi UE i kurs euro (4,31) są rewidowane biennalnie — ustawić przypomnienie/zadanie na przełom 2027/2028.
+
+## 10. Definition of Done dla Fazy 1
+
+- [ ] Schemat SQL wdrożony z RLS.
+- [ ] `tenders-ingest-bazakonkurencyjnosci` działa cyklicznie, zapisuje bez duplikatów.
+- [ ] Warstwy 1–2 dopasowania działają wg `tender_profile` z kategoriami z sekcji 2.1–2.2 (+ obserwacyjnie 2.3).
+- [ ] Zakładka "Przetargi" w Sidebarze z kanbanem i licznikiem nieprzeczytanych.
+- [ ] Centrum Sygnałów pokazuje dzienne podsumowanie, generowane o 6:30.
+- [ ] Karta szczegółów przetargu pokazuje wszystkie surowe dane + link źródłowy + podgląd załączników (jeśli już pobrane).
+- [ ] Test na żywo: co najmniej 5 realnych dopasowanych ogłoszeń widocznych w panelu w ciągu pierwszych 24h działania (dziś sam research znalazł kilka realnych trafień z kategorii edukacja/IT — dobry sygnał, że to osiągalne).
 
 ---
-*Ten dokument to plan do dyskusji, nie ostateczna specyfikacja — nic z tego nie zostało jeszcze zaimplementowane.*
+*Ten dokument to plan do dyskusji i punkt startowy budowy — nic z sekcji 6–8 nie zostało jeszcze zaimplementowane. v1 (marzec/lipiec) zawierało wstępny profil firmy; v2 (ten dokument) dodaje zweryfikowane na żywo API, potwierdzony zakres kategorii i pełną architekturę/UX.*

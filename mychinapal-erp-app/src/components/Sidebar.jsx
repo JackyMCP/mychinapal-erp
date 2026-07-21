@@ -22,6 +22,7 @@ export const MODULES = [
   { path: '/poczta', label: 'Poczta', icon: '✉️' },
   { path: '/czat', label: 'Czat wewnętrzny', icon: '💬' },
   { path: '/wyceny', label: 'Wyceny', icon: '📝' },
+  { path: '/przetargi', label: 'Przetargi', icon: '🎯' },
   { path: '/raporty', label: 'Raporty & Analizy', icon: '📊' },
   { path: '/ustawienia', label: 'Ustawienia', icon: '⚙️' },
 ]
@@ -44,6 +45,7 @@ export default function Sidebar() {
   const navRefs = useRef({})
   const [pill, setPill] = useState({ top: 0, height: 0, opacity: 0 })
   const [unreadMail, setUnreadMail] = useState(0)
+  const [unreadTenders, setUnreadTenders] = useState(0)
   const [adminOpen, setAdminOpen] = useState(false)
 
   // Nieprzeczytane maile (Odebrane) — czerwona plakietka na "Poczta", tak jak
@@ -66,6 +68,24 @@ export default function Sidebar() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'email_messages' }, () => {
         if (accountId) loadUnread()
       })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [session?.user?.id])
+
+  // Nieprzeczytane sygnały Panelu Przetargów — ten sam wzorzec co plakietka
+  // Poczty wyżej, tylko liczy wiersze tender_notifications, w których mój
+  // auth.uid() nie występuje jeszcze w tablicy seen_by.
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!userId) { setUnreadTenders(0); return }
+    const loadUnread = async () => {
+      const { data } = await supabase.from('tender_notifications').select('seen_by').order('created_at', { ascending: false }).limit(200)
+      const count = (data || []).filter(n => !(n.seen_by || []).includes(userId)).length
+      setUnreadTenders(count)
+    }
+    loadUnread()
+    const channel = supabase.channel(`sidebar-tenders-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tender_notifications' }, () => loadUnread())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [session?.user?.id])
@@ -138,6 +158,9 @@ export default function Sidebar() {
                   <span style={{ flex: 1 }}>{t(m.label)}</span>
                   {m.path === '/poczta' && unreadMail > 0 && (
                     <span style={{ fontSize: 10, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>{unreadMail > 99 ? '99+' : unreadMail}</span>
+                  )}
+                  {m.path === '/przetargi' && unreadTenders > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>{unreadTenders > 99 ? '99+' : unreadTenders}</span>
                   )}
                 </NavLink>
               )
@@ -228,6 +251,9 @@ export default function Sidebar() {
             {!collapsed && <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(m.label)}</span>}
             {m.path === '/poczta' && unreadMail > 0 && (
               <span style={{ fontSize: 9.5, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: collapsed ? '1px 4px' : '1px 6px', flexShrink: 0, position: collapsed ? 'absolute' : 'static', top: collapsed ? 2 : undefined, right: collapsed ? 2 : undefined }}>{collapsed ? '' : (unreadMail > 99 ? '99+' : unreadMail)}</span>
+            )}
+            {m.path === '/przetargi' && unreadTenders > 0 && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, background: C.red, color: '#fff', borderRadius: 10, padding: collapsed ? '1px 4px' : '1px 6px', flexShrink: 0, position: collapsed ? 'absolute' : 'static', top: collapsed ? 2 : undefined, right: collapsed ? 2 : undefined }}>{collapsed ? '' : (unreadTenders > 99 ? '99+' : unreadTenders)}</span>
             )}
           </NavLink>
         ))}
