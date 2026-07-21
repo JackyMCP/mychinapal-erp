@@ -46,10 +46,15 @@ export function AuthProvider({ children }) {
 
   const signOut = () => supabase.auth.signOut()
 
+  // Odświeżenie własnego profilu bez przelogowania — potrzebne np. zaraz po
+  // wgraniu nowego zdjęcia profilowego w Ustawieniach, żeby zmiana pokazała
+  // się od razu w całej aplikacji (Sidebar, czaty), a nie dopiero po F5.
+  const refreshProfile = () => { if (session?.user) return loadProfile(session.user.id) }
+
   const isZarzad = profile?.role === 'zarzad'
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, isZarzad, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, loading, isZarzad, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

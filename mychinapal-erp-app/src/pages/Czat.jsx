@@ -24,11 +24,12 @@ import ForwardModal from '../components/ForwardModal'
 import FilePreviewModal from '../components/ui/FilePreviewModal'
 import AttachmentCard from '../components/ui/AttachmentCard'
 import ForwardIconButton from '../components/ui/ForwardIconButton'
+import DeleteMessageButton from '../components/ui/DeleteMessageButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
-const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
+const MSG_SELECT = '*, profiles(full_name, avatar_url), documents!attachment_document_id(id, file_name, category, file_path, created_at)'
 
 const TYPE_STYLE = {
   ogolny:  { icon: '💬', color: C.blue,   bg: C.blight, label: 'Ogólny' },
@@ -410,6 +411,15 @@ export default function Czat() {
     setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
+  // Usunięcie (miękkie) własnej wiadomości — tylko autor, bez limitu czasowego.
+  const handleDeleteMessage = async (m) => {
+    const ok = await confirm(t('Usunąć tę wiadomość? Tej operacji nie można cofnąć.'), { confirmLabel: t('Usuń') })
+    if (!ok) return
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, deleted_at: new Date().toISOString() } : x))
+    const { error } = await supabase.rpc('soft_delete_chat_message', { p_message_id: m.id })
+    if (error) toast.error(t('Nie udało się usunąć wiadomości: ') + error.message)
+  }
+
   // Przeciągnij-i-upuść plik wprost na okno czatu — od razu pyta o kategorię
   // w popupie, z szybką opcją "Brak kategoryzacji". Załączniki działają tylko
   // na kanałach klienckich (tak samo jak przycisk 📎).
@@ -608,30 +618,41 @@ export default function Czat() {
                     <div key={m.id} className="cz-msg" style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '65%' }}>
                       {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || t("Nieznany")}</div>}
                       <div style={{ background: mine ? activeStyle.color : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        <MentionText text={m.content} profiles={allProfiles} mine={mine} />
-                        {m.translated_content && (
-                          <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${mine ? 'rgba(255,255,255,.25)' : C.border}`, fontSize: 11.5, fontStyle: 'italic', opacity: 0.85 }}>
-                            🌐 {m.translated_content}
-                          </div>
-                        )}
-                        {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
-                          <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
-                            style={{ display: 'block', marginTop: 6, maxWidth: 260, maxHeight: 260, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
-                        )}
-                        {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
-                          <div style={{ marginTop: 6, width: 180, height: 120, borderRadius: 8, background: mine ? 'rgba(255,255,255,.15)' : C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: mine ? 'rgba(255,255,255,.7)' : C.muted }}>
-                            {t("Ładowanie zdjęcia…")}
-                          </div>
-                        )}
-                        {doc && !isImageFile(doc.file_name) && (
-                          <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} mine={mine} />
+                        {m.deleted_at ? (
+                          <span style={{ fontStyle: 'italic', opacity: 0.8 }}>{t("Wiadomość usunięta")}</span>
+                        ) : (
+                          <>
+                            <MentionText text={m.content} profiles={allProfiles} mine={mine} />
+                            {m.translated_content && (
+                              <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${mine ? 'rgba(255,255,255,.25)' : C.border}`, fontSize: 11.5, fontStyle: 'italic', opacity: 0.85 }}>
+                                🌐 {m.translated_content}
+                              </div>
+                            )}
+                            {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
+                              <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
+                                style={{ display: 'block', marginTop: 6, maxWidth: 260, maxHeight: 260, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+                            )}
+                            {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
+                              <div style={{ marginTop: 6, width: 180, height: 120, borderRadius: 8, background: mine ? 'rgba(255,255,255,.15)' : C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: mine ? 'rgba(255,255,255,.7)' : C.muted }}>
+                                {t("Ładowanie zdjęcia…")}
+                              </div>
+                            )}
+                            {doc && !isImageFile(doc.file_name) && (
+                              <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} mine={mine} />
+                            )}
+                          </>
                         )}
                       </div>
                       <div style={{ fontSize: 9, color: C.muted, marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                         <span>{fmtTime(m.created_at)}</span>
-                        <ForwardIconButton size={20}
-                          onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
-                          title={t('Prześlij dalej')} />
+                        {mine && !m.deleted_at && (
+                          <DeleteMessageButton size={18} title={t('Usuń wiadomość')} onClick={() => handleDeleteMessage(m)} />
+                        )}
+                        {!m.deleted_at && (
+                          <ForwardIconButton size={20}
+                            onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
+                            title={t('Prześlij dalej')} />
+                        )}
                       </div>
                     </div>
                   );

@@ -2,7 +2,7 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase, supabaseUrl, supabaseAnonKey } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
-import { avatarColor, initials } from '../klienci/utils'
+import Avatar from '../ui/Avatar'
 
 const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 
@@ -11,7 +11,8 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     t
   } = useLang();
 
-  const [participants, setParticipants] = useState({}) // userId -> { name }
+  const [participants, setParticipants] = useState({}) // userId -> { name, avatarUrl }
+  const [myAvatarUrl, setMyAvatarUrl] = useState(null)
   const [joined, setJoined] = useState(false)
   const [muted, setMuted] = useState(false)
   const [speakingIds, setSpeakingIds] = useState(new Set())
@@ -78,6 +79,14 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
   const captionChunkTimersRef = useRef({})
   const captionChunkLastTextRef = useRef({})
 
+  // własne zdjęcie profilowe — dołączane do presence "track", żeby inni uczestnicy
+  // kanału głosowego zobaczyli je zamiast/obok kółka z inicjałami
+  useEffect(() => {
+    if (!currentUserId) return
+    supabase.from('profiles').select('avatar_url').eq('id', currentUserId).single()
+      .then(({ data }) => setMyAvatarUrl(data?.avatar_url || null))
+  }, [currentUserId])
+
   // ── presence-only subscription: żeby widzieć kto jest na kanale, nawet zanim dołączymy ──
   useEffect(() => {
     const channel = supabase.channel(roomId, { config: { presence: { key: currentUserId } } })
@@ -86,7 +95,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState()
       const map = {}
-      Object.entries(state).forEach(([uid, metas]) => { map[uid] = { name: metas[0]?.name || '?' } })
+      Object.entries(state).forEach(([uid, metas]) => { map[uid] = { name: metas[0]?.name || '?', avatarUrl: metas[0]?.avatar_url || null } })
       setParticipants(map)
     })
 
@@ -610,7 +619,7 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
 
       attachAnalyser(currentUserId, stream)
       startSpeakingLoop()
-      await channelRef.current.track({ name: currentUserName })
+      await channelRef.current.track({ name: currentUserName, avatar_url: myAvatarUrl })
       joinedRef.current = true
       setJoined(true)
       // zainicjuj połączenia z osobami już obecnymi na kanale
@@ -748,11 +757,8 @@ export default function VoiceChannel({ roomId, currentUserId, currentUserName, a
             const isSpeaking = speakingIds.has(uid)
             return (
               <div key={uid} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{
-                  width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 800, color: '#fff', background: avatarColor(p.name),
-                  boxShadow: isSpeaking ? `0 0 0 3px ${C.green}` : '0 0 0 2px transparent', transition: 'box-shadow .1s ease',
-                }}>{initials(p.name)}</div>
+                <Avatar name={p.name} avatarUrl={p.avatarUrl} size={34} fontSize={11}
+                  boxShadow={isSpeaking ? `0 0 0 3px ${C.green}` : '0 0 0 2px transparent'} />
                 <span style={{ fontSize: 9, color: C.text2, maxWidth: 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}{uid === currentUserId ? t(" (ja)") : ''}</span>
               </div>
             );

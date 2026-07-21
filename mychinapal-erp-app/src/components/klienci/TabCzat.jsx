@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 import { C } from '../../lib/theme'
-import { avatarColor, initials } from './utils'
 import { DOC_CATEGORIES } from '../projekty/stageDefs'
 import { useUI } from '../../lib/ui'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
@@ -19,12 +18,14 @@ import ForwardModal from '../ForwardModal'
 import ForwardIconButton from '../ui/ForwardIconButton'
 import FilePreviewModal from '../ui/FilePreviewModal'
 import AttachmentCard from '../ui/AttachmentCard'
+import Avatar from '../ui/Avatar'
+import DeleteMessageButton from '../ui/DeleteMessageButton'
 
 const QUOTE_CATEGORIES = { 'Wycena CN': 'cn', 'Wycena dla klienta': 'pl' }
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
-const MSG_SELECT = '*, profiles(full_name), documents!attachment_document_id(id, file_name, category, file_path)'
+const MSG_SELECT = '*, profiles(full_name, avatar_url), documents!attachment_document_id(id, file_name, category, file_path)'
 
 export default function TabCzat({ clientId, clientName, projects, profiles: profilesProp, onChanged }) {
   const { t } = useLang()
@@ -54,6 +55,7 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   const [quoteProjectId, setQuoteProjectId] = useState(null)
   const [forwardPayload, setForwardPayload] = useState(null)
   const [previewFile, setPreviewFile] = useState(null)
+  const [myId, setMyId] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
   const profiles = profilesProp && profilesProp.length ? profilesProp : ownProfiles
@@ -61,6 +63,19 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
   useEffect(() => {
     if (projects && projects.length && !quoteProjectId) setQuoteProjectId(projects[0].id)
   }, [projects])
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setMyId(data?.user?.id || null))
+  }, [])
+
+  // Usunięcie (miękkie) własnej wiadomości — tylko autor, bez limitu czasowego.
+  const handleDeleteMessage = async (m) => {
+    const ok = await confirm(t('Usunąć tę wiadomość? Tej operacji nie można cofnąć.'), { confirmLabel: t('Usuń') })
+    if (!ok) return
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, deleted_at: new Date().toISOString() } : x))
+    const { error } = await supabase.rpc('soft_delete_chat_message', { p_message_id: m.id })
+    if (error) toast.error(t('Nie udało się usunąć wiadomości: ') + error.message)
+  }
 
   useEffect(() => {
     if (profilesProp && profilesProp.length) return
@@ -352,28 +367,38 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
           {messages.map(m => {
             const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
             const name = m.profiles?.full_name || t('Użytkownik')
+            const mine = m.sender_id === myId
             return (
               <div key={m.id} style={{ display: 'flex', gap: 9, padding: '8px 0' }}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff', background: avatarColor(name) }}>{initials(name)}</div>
+                <Avatar name={name} avatarUrl={m.profiles?.avatar_url} size={26} fontSize={10} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, fontWeight: 700 }}>{name}</span>
                     <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
+                    {mine && !m.deleted_at && (
+                      <DeleteMessageButton size={17} title={t('Usuń wiadomość')} onClick={() => handleDeleteMessage(m)} />
+                    )}
                     <ForwardIconButton size={18}
                       onClick={() => setForwardPayload({ text: m.content, documentId: doc?.id || null, fileName: doc?.file_name || null })}
                       title={t('Prześlij dalej')} />
                   </div>
-                  <div style={{ fontSize: 12.5, marginTop: 1 }}><MentionText text={m.content} profiles={profiles} /></div>
-                  {m.translated_content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
-                  {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
-                    <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
-                      style={{ display: 'block', marginTop: 5, maxWidth: 240, maxHeight: 240, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
-                  )}
-                  {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
-                    <div style={{ marginTop: 5, width: 160, height: 110, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>{t("Ładowanie zdjęcia…")}</div>
-                  )}
-                  {doc && !isImageFile(doc.file_name) && (
-                    <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} />
+                  {m.deleted_at ? (
+                    <div style={{ fontSize: 12.5, color: C.muted, fontStyle: 'italic', marginTop: 1 }}>{t("Wiadomość usunięta")}</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 12.5, marginTop: 1 }}><MentionText text={m.content} profiles={profiles} /></div>
+                      {m.translated_content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
+                      {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
+                        <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
+                          style={{ display: 'block', marginTop: 5, maxWidth: 240, maxHeight: 240, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+                      )}
+                      {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
+                        <div style={{ marginTop: 5, width: 160, height: 110, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>{t("Ładowanie zdjęcia…")}</div>
+                      )}
+                      {doc && !isImageFile(doc.file_name) && (
+                        <AttachmentCard fileName={doc.file_name} subtitle={t(doc.category)} onClick={() => handleDownload(doc)} />
+                      )}
+                    </>
                   )}
                 </div>
               </div>

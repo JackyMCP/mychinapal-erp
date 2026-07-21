@@ -2,17 +2,18 @@ import { useLang } from "../../lib/i18n/LanguageContext";
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { C } from '../../lib/theme'
-import { avatarColor, initials } from '../klienci/utils'
 import VoiceChannel from './VoiceChannel'
 import { useUI } from '../../lib/ui'
 import { safeFileName, isFileTooBig, MAX_FILE_SIZE_MB, isImageFile } from '../../lib/files'
 import { triggerTranslation, triggerPushNotification } from '../../lib/translateMessage'
 import FilePreviewModal from '../ui/FilePreviewModal'
 import AttachmentCard from '../ui/AttachmentCard'
+import Avatar from '../ui/Avatar'
+import DeleteMessageButton from '../ui/DeleteMessageButton'
 
 const LIMIT = 300 // maksymalna liczba ostatnich wiadomości wczytywanych na start (wydajność przy dużej historii)
 
-const MSG_SELECT = '*, profiles(full_name)'
+const MSG_SELECT = '*, profiles(full_name, avatar_url), documents!attachment_document_id(id, file_name, file_path)'
 
 export default function TeamChat({ channelName, zarzadOnly, currentUserId, currentUserName, accentColor }) {
   const {
@@ -87,13 +88,15 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
   // Podpisane URL-e obrazków-załączników, żeby zdjęcia w czacie wyświetlały się
   // od razu jako miniatura, zamiast samego linku do pobrania.
   useEffect(() => {
-    const imgMsgs = messages.filter(m => m.attachment_file_path && isImageFile(m.attachment_file_name) && !imgUrls[m.id])
-    if (imgMsgs.length === 0) return
+    const imgDocs = messages
+      .map(m => Array.isArray(m.documents) ? m.documents[0] : m.documents)
+      .filter(doc => doc && isImageFile(doc.file_name) && !imgUrls[doc.id])
+    if (imgDocs.length === 0) return
     let cancelled = false
     ;(async () => {
-      const entries = await Promise.all(imgMsgs.map(async m => {
-        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 60 * 60 * 24)
-        return error ? null : [m.id, data.signedUrl]
+      const entries = await Promise.all(imgDocs.map(async doc => {
+        const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 60 * 60 * 24)
+        return error ? null : [doc.id, data.signedUrl]
       }))
       if (cancelled) return
       const fresh = Object.fromEntries(entries.filter(Boolean))
@@ -116,11 +119,11 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     setMessages(prev => [...older, ...prev])
   }
 
-  const handleDownload = async (m) => {
-    if (!m.attachment_file_path) return
-    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(m.attachment_file_path, 300)
+  const handleDownload = async (doc) => {
+    if (!doc?.file_path) return
+    const { data, error } = await supabase.storage.from('dokumenty').createSignedUrl(doc.file_path, 300)
     if (error) { toast.error(t('Nie udało się pobrać pliku: ') + error.message); return }
-    setPreviewFile({ url: data.signedUrl, fileName: m.attachment_file_name })
+    setPreviewFile({ url: data.signedUrl, fileName: doc.file_name })
   }
 
   const handleSend = async () => {
@@ -128,19 +131,27 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     if (attachFile && isFileTooBig(attachFile)) { toast.error(`${t('Plik jest za duży (max')} ${MAX_FILE_SIZE_MB}MB).`); return }
     setSending(true)
 
-    let attachmentPath = null
-    let attachmentName = null
+    // Załącznik musi mieć wiersz w "documents" (nie tylko surowy plik w
+    // storage) — RLS bucketu "dokumenty" sprawdza dostęp WYŁĄCZNIE przez
+    // istnienie pasującego wiersza documents.file_path. Bez tego zdjęcia/pliki
+    // wysłane na tym czacie nigdy się nie wyświetlały (ani nie dały pobrać) —
+    // to był dokładnie zgłoszony błąd braku podglądu zdjęć w Czacie Zarządu.
+    let attachmentDocId = null
     if (attachFile) {
       const path = `team-chat/${channelId}/${crypto.randomUUID()}-${safeFileName(attachFile.name)}`
       const { error: upErr } = await supabase.storage.from('dokumenty').upload(path, attachFile)
       if (upErr) { setSending(false); toast.error(t('Nie udało się wysłać pliku: ') + upErr.message); return }
-      attachmentPath = path
-      attachmentName = attachFile.name
+      const { data: doc, error: docErr } = await supabase.from('documents').insert({
+        category: 'Czat wewnętrzny', file_path: path, file_name: attachFile.name,
+        uploaded_by: currentUserId, source: 'team_chat', visible_in_files: false,
+      }).select().single()
+      if (docErr) { setSending(false); toast.error(t('Nie udało się zapisać dokumentu: ') + docErr.message); return }
+      attachmentDocId = doc.id
     }
 
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: channelId, sender_id: currentUserId, content: text.trim() || `📎 ${attachmentName || ''}`,
-      attachment_file_path: attachmentPath, attachment_file_name: attachmentName,
+      channel_id: channelId, sender_id: currentUserId, content: text.trim() || `📎 ${attachFile?.name || ''}`,
+      attachment_document_id: attachmentDocId,
     }).select(MSG_SELECT).single()
     setSending(false)
     if (error) { toast.error(t('Nie udało się wysłać wiadomości: ') + error.message); return }
@@ -149,6 +160,17 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
     setText('')
     setAttachFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // Usunięcie (miękkie) własnej wiadomości — dostępne tylko dla autora, bez
+  // limitu czasowego. Treść/załącznik znikają u wszystkich, zostaje neutralna
+  // notka "Wiadomość usunięta" (realtime UPDATE roznosi to do innych okien).
+  const handleDeleteMessage = async (m) => {
+    const ok = await confirm(t('Usunąć tę wiadomość? Tej operacji nie można cofnąć.'), { confirmLabel: t('Usuń') })
+    if (!ok) return
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, deleted_at: new Date().toISOString() } : x))
+    const { error } = await supabase.rpc('soft_delete_chat_message', { p_message_id: m.id })
+    if (error) toast.error(t('Nie udało się usunąć wiadomości: ') + error.message)
   }
 
   return (
@@ -167,33 +189,46 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
             </div>
           )}
           {messages.length === 0 && <div style={{ fontSize: 11, color: C.muted }}>{t("Brak wiadomości — napisz pierwszą.")}</div>}
-            {messages.map(m => (
+            {messages.map(m => {
+              const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
+              const mine = m.sender_id === currentUserId
+              return (
               <div key={m.id} style={{ display: 'flex', gap: 8, padding: '6px 0' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', flexShrink: 0, background: avatarColor(m.profiles?.full_name || '') }}>{initials(m.profiles?.full_name || '?')}</div>
+                <Avatar name={m.profiles?.full_name} avatarUrl={m.profiles?.avatar_url} size={22} fontSize={9} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                     <span style={{ fontSize: 11, fontWeight: 700 }}>{m.profiles?.full_name || t("Użytkownik")}</span>
-                    <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleString('pl-PL')}</span>
+                    {mine && !m.deleted_at && (
+                      <DeleteMessageButton size={16} title={t('Usuń wiadomość')} onClick={() => handleDeleteMessage(m)} />
+                    )}
                   </div>
-                  <div style={{ fontSize: 12 }}>{m.content}</div>
-                  {m.translated_content && (
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>
-                  )}
-                  {m.attachment_file_path && isImageFile(m.attachment_file_name) && imgUrls[m.id] && (
-                    <img src={imgUrls[m.id]} alt={m.attachment_file_name} onClick={() => handleDownload(m)}
-                      style={{ display: 'block', marginTop: 6, maxWidth: 220, maxHeight: 220, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
-                  )}
-                  {m.attachment_file_path && isImageFile(m.attachment_file_name) && !imgUrls[m.id] && (
-                    <div style={{ marginTop: 6, width: 160, height: 100, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>
-                      {t("Ładowanie zdjęcia…")}
-                    </div>
-                  )}
-                  {m.attachment_file_path && !isImageFile(m.attachment_file_name) && (
-                    <AttachmentCard fileName={m.attachment_file_name} onClick={() => handleDownload(m)} />
+                  {m.deleted_at ? (
+                    <div style={{ fontSize: 12, color: C.muted, fontStyle: 'italic' }}>{t("Wiadomość usunięta")}</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 12 }}>{m.content}</div>
+                      {m.translated_content && (
+                        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>
+                      )}
+                      {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
+                        <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
+                          style={{ display: 'block', marginTop: 6, maxWidth: 220, maxHeight: 220, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
+                      )}
+                      {doc && isImageFile(doc.file_name) && !imgUrls[doc.id] && (
+                        <div style={{ marginTop: 6, width: 160, height: 100, borderRadius: 8, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: C.muted }}>
+                          {t("Ładowanie zdjęcia…")}
+                        </div>
+                      )}
+                      {doc && !isImageFile(doc.file_name) && (
+                        <AttachmentCard fileName={doc.file_name} onClick={() => handleDownload(doc)} />
+                      )}
+                    </>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
             <div ref={bottomRef} />
           </div>
           {attachFile && (
