@@ -35,10 +35,18 @@ export default function RealCostsTable({ project, onSaved }) {
   }, [project.id])
 
   const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v))
-  const costFields = FIELDS.filter(([k]) => k !== 'real_przychod_netto')
+  // "Koszt towaru w Chinach" to WYŁĄCZNIE wartość informacyjna (ile towar
+  // faktycznie kosztował u dostawcy) — NIE liczy się osobno do realnego zysku.
+  // Zonglu (nasza chińska firma) stanowi jedność z polską spółką, więc liczy
+  // się realny przepływ gotówki: ile FAKTYCZNIE przelaliśmy do Zonglu
+  // (real_kwota_zonglu) — to ona zastępuje koszt towaru w rachunku zysku.
+  // Różnica między tymi dwiema wartościami to nadwyżka zostająca w Zonglu
+  // ponad realny koszt towaru (patrz wskaźnik "nadwyżka" niżej).
+  const costFields = FIELDS.filter(([k]) => k !== 'real_przychod_netto' && k !== 'real_koszt_towaru')
   const totalCosts = costFields.reduce((s, [k]) => s + num(values[k]), 0)
   const zysk = num(values.real_przychod_netto) - totalCosts
   const marzaPct = num(values.real_przychod_netto) > 0 ? (zysk / num(values.real_przychod_netto)) * 100 : 0
+  const nadwyzkaZonglu = num(values.real_kwota_zonglu) - num(values.real_koszt_towaru)
 
   const handleChange = (key, v) => setValues(prev => ({ ...prev, [key]: v }))
 
@@ -65,6 +73,13 @@ export default function RealCostsTable({ project, onSaved }) {
           </div>
         ))}
       </div>
+      {(values.real_koszt_towaru !== '' && values.real_kwota_zonglu !== '' && nadwyzkaZonglu !== 0) && (
+        <div style={{ fontSize: 10.5, color: C.muted, marginTop: 10 }}>
+          {nadwyzkaZonglu > 0
+            ? '💰 ' + t('Nadwyżka przelana do Zonglu ponad koszt towaru: ') + fmt(nadwyzkaZonglu, 0) + ' ' + t('PLN') + ' ' + t('(nie liczy się jako koszt — zostaje w firmie)')
+            : '⚠️ ' + t('Przelano do Zonglu mniej niż wynosi koszt towaru o: ') + fmt(Math.abs(nadwyzkaZonglu), 0) + ' ' + t('PLN')}
+        </div>
+      )}
       <div style={{ marginTop: 16, background: `linear-gradient(135deg, ${C.navy}, #0F3D24)`, borderRadius: 10, padding: '12px 16px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.55)', textTransform: 'uppercase' }}>{t("Realny zysk")}</div>
