@@ -176,7 +176,7 @@ export default function TeamChat({ channelName, zarzadOnly, currentUserId, curre
                     <span style={{ fontSize: 9, color: C.muted }}>{new Date(m.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ fontSize: 12 }}>{m.content}</div>
-                  {m.translated_content && m.translated_content !== m.content && (
+                  {m.translated_content && (
                     <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>
                   )}
                   {m.attachment_file_path && isImageFile(m.attachment_file_name) && imgUrls[m.id] && (

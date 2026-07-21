@@ -609,7 +609,7 @@ export default function Czat() {
                       {!mine && <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 2 }}>{m.profiles?.full_name || t("Nieznany")}</div>}
                       <div style={{ background: mine ? activeStyle.color : C.white, color: mine ? '#fff' : C.text, border: mine ? 'none' : `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', fontSize: 12.5, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         <MentionText text={m.content} profiles={allProfiles} mine={mine} />
-                        {m.translated_content && m.translated_content !== m.content && (
+                        {m.translated_content && (
                           <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${mine ? 'rgba(255,255,255,.25)' : C.border}`, fontSize: 11.5, fontStyle: 'italic', opacity: 0.85 }}>
                             🌐 {m.translated_content}
                           </div>

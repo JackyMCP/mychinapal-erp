@@ -279,7 +279,7 @@ export default function ProjectChat({ project, onChanged }) {
                 </span>
               </div>
               <div style={{ fontSize: 12, marginTop: 2 }}><MentionText text={m.content} profiles={profiles} /></div>
-              {m.translated_content && m.translated_content !== m.content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
+              {m.translated_content && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🌐 {m.translated_content}</div>}
               {doc && isImageFile(doc.file_name) && imgUrls[doc.id] && (
                 <img src={imgUrls[doc.id]} alt={doc.file_name} onClick={() => handleDownload(doc)}
                   style={{ display: 'block', marginTop: 6, maxWidth: 240, maxHeight: 240, borderRadius: 8, cursor: 'pointer', objectFit: 'cover' }} />
