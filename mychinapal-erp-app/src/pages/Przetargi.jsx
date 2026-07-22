@@ -51,6 +51,7 @@ export default function Przetargi() {
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState(null)
   const [openTenderId, setOpenTenderId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   const load = async () => {
     setLoading(true)
@@ -91,6 +92,30 @@ export default function Przetargi() {
     [tenders, categoryFilter]
   )
 
+  // Zaznaczanie wielu przetargów naraz i usuwanie ich jednym kliknięciem (na
+  // wyraźne życzenie użytkownika, 22.07.2026 — zamiast potwierdzać usunięcie
+  // osobno dla każdego przetargu, "ptaszki" na kafelkach + jeden przycisk
+  // usuwa cały zaznaczony zestaw).
+  const allVisibleIds = useMemo(() => visibleTenders.map(t2 => t2.id), [visibleTenders])
+  const selectedVisibleCount = useMemo(() => allVisibleIds.filter(id => selectedIds.has(id)).length, [allVisibleIds, selectedIds])
+  const allVisibleSelected = allVisibleIds.length > 0 && selectedVisibleCount === allVisibleIds.length
+
+  const toggleSelect = (e, id) => {
+    e.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (allVisibleSelected) return new Set()
+      return new Set(allVisibleIds)
+    })
+  }
+
   const markAllRead = async () => {
     if (unseenNotifications.length === 0 || !profile?.id) return
     const ids = unseenNotifications.map(n => n.id)
@@ -114,24 +139,30 @@ export default function Przetargi() {
     related.forEach(markOneRead)
   }
 
-  // Przycisk usuwania bezpośrednio na kafelku kanbanu (na wyraźne życzenie
-  // użytkownika, 22.07.2026 — "przycisk usunięcia musi być widoczny z widoku
-  // głównego a nie dopiero jak się wejdzie w przetarg"). Twarde usunięcie +
-  // wpis do tender_exclusions (denylist), tak samo jak w TenderDetailsModal —
-  // patrz komentarz tam po pełne uzasadnienie.
-  const handleDeleteTender = async (e, tender) => {
-    e.stopPropagation()
-    const ok = await confirm(t('Usunąć ten przetarg całkowicie? Zniknie ze wszystkich widoków i nie zostanie ponownie pobrany.'), { confirmLabel: t('Usuń') })
+  // Usuwanie zaznaczonych przetargów naraz (zastępuje wcześniejsze usuwanie
+  // pojedyncze z potwierdzeniem za każdym razem). Twarde usunięcie + wpis do
+  // tender_exclusions (denylist) dla każdego, tak samo jak w
+  // TenderDetailsModal — patrz komentarz tam po pełne uzasadnienie.
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    const ok = await confirm(
+      t(`Usunąć ${selectedIds.size} zaznaczonych przetargów całkowicie? Znikną ze wszystkich widoków i nie zostaną ponownie pobrane.`),
+      { confirmLabel: t('Usuń') }
+    )
     if (!ok) return
-    const { error: exErr } = await supabase.from('tender_exclusions').insert({
-      source: tender.source,
-      external_id: tender.external_id,
-      excluded_by: profile?.id || null,
-    })
-    if (exErr && exErr.code !== '23505') { toast.error(t('Nie udało się usunąć przetargu: ') + exErr.message); return }
-    const { error } = await supabase.from('tenders').delete().eq('id', tender.id)
-    if (error) { toast.error(t('Nie udało się usunąć przetargu: ') + error.message); return }
-    toast.success(t('Przetarg usunięty.'))
+
+    const selected = tenders.filter(t2 => selectedIds.has(t2.id))
+    const exclusionRows = selected.map(t2 => ({ source: t2.source, external_id: t2.external_id, excluded_by: profile?.id || null }))
+    if (exclusionRows.length > 0) {
+      const { error: exErr } = await supabase.from('tender_exclusions').upsert(exclusionRows, { onConflict: 'source,external_id', ignoreDuplicates: true })
+      if (exErr) { toast.error(t('Nie udało się zapisać wykluczeń: ') + exErr.message); return }
+    }
+
+    const { error } = await supabase.from('tenders').delete().in('id', Array.from(selectedIds))
+    if (error) { toast.error(t('Nie udało się usunąć przetargów: ') + error.message); return }
+
+    toast.success(t(`Usunięto ${selected.length} przetargów.`))
+    setSelectedIds(new Set())
     load()
   }
 
@@ -194,6 +225,32 @@ export default function Przetargi() {
           )}
         </div>
 
+        {/* Pasek zaznaczania — checkboxy na kafelkach + usuwanie zbiorcze jednym kliknięciem */}
+        {!loading && visibleTenders.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: C.text2, fontWeight: 700, cursor: 'pointer' }}>
+              <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} />
+              {t('Zaznacz wszystkie')}
+            </label>
+            {selectedIds.size > 0 && (
+              <>
+                <span style={{ fontSize: 11.5, color: C.muted }}>{t('Zaznaczono: ')}{selectedIds.size}</span>
+                <button onClick={handleBulkDelete} style={{
+                  border: 'none', background: C.red, color: '#fff', borderRadius: 8, padding: '7px 14px',
+                  fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                }}>
+                  {t('🗑️ Usuń zaznaczone')} ({selectedIds.size})
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} style={{
+                  border: 'none', background: 'transparent', color: C.muted, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline',
+                }}>
+                  {t('Anuluj zaznaczenie')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Kanban wg statusu (sekcja 7.3 planu) */}
         {loading ? (
           <div style={{ fontSize: 12.5, color: C.muted, padding: 20 }}>{t('Ładowanie…')}</div>
@@ -213,19 +270,13 @@ export default function Przetargi() {
                       return (
                         <div key={tender.id} onClick={() => openTender(tender)}
                           style={{
-                            background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px',
+                            background: selectedIds.has(tender.id) ? C.blight : C.white,
+                            border: `1px solid ${selectedIds.has(tender.id) ? C.blue : C.border}`, borderRadius: 10, padding: '10px 12px 10px 30px',
                             cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.04)', position: 'relative',
                           }}>
-                          <button onClick={e => handleDeleteTender(e, tender)} title={t('Usuń przetarg')}
-                            style={{
-                              position: 'absolute', top: 6, right: 6, border: 'none', background: 'transparent',
-                              color: C.muted, fontSize: 12, cursor: 'pointer', padding: 4, lineHeight: 1, borderRadius: 6,
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}>
-                            🗑️
-                          </button>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4, lineHeight: 1.3, paddingRight: 18 }}>
+                          <input type="checkbox" checked={selectedIds.has(tender.id)} onClick={e => toggleSelect(e, tender.id)} onChange={() => {}}
+                            style={{ position: 'absolute', top: 10, left: 10, cursor: 'pointer' }} />
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4, lineHeight: 1.3 }}>
                             {tender.title.length > 90 ? tender.title.slice(0, 90) + '…' : tender.title}
                           </div>
                           <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 6 }}>{tender.buyer_name || t('Nabywca nieznany')}</div>
