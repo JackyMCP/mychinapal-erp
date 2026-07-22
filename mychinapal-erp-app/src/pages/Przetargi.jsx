@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../lib/i18n/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useUI } from '../lib/ui'
 import PageHeader from '../components/PageHeader'
 import CountUp from '../components/ui/CountUp'
 import TenderDetailsModal from '../components/przetargi/TenderDetailsModal'
@@ -35,11 +36,15 @@ function deadlineColor(days) {
 
 // Panel Przetargów — Faza 1 (PLAN-PANEL-PRZETARGOW.md). Centrum Sygnałów
 // (hero-baner z licznikiem/chipami/pilnością) + kanban wg statusu. Dane
-// dopasowane przez tenders-match (warstwy 1-2), zasilane cyklicznie przez
-// tenders-ingest-bazakonkurencyjnosci (pg_cron co 20 min).
+// dopasowane przez tenders-match (warstwy 1-2), zasilane RAZ DZIENNIE przez
+// tenders-ingest-bazakonkurencyjnosci (pg_cron 6:00, kaskadowo dopasowanie/AI,
+// digest o 6:30 — zmienione z cyklu co 20 min na wyraźne życzenie użytkownika,
+// 22.07.2026). Usunięte przetargi znikają całkowicie (twardy DELETE +
+// tender_exclusions jako trwała denylist, żeby nie wracały przy ingest).
 export default function Przetargi() {
   const { t } = useLang()
   const { profile } = useAuth()
+  const { toast, confirm } = useUI()
 
   const [tenders, setTenders] = useState([])
   const [notifications, setNotifications] = useState([])
@@ -52,7 +57,6 @@ export default function Przetargi() {
     const [tRes, nRes] = await Promise.all([
       supabase.from('tenders').select('*')
         .neq('category', '(brak dopasowania)').not('category', 'is', null)
-        .eq('dismissed', false)
         .order('created_at', { ascending: false }),
       supabase.from('tender_notifications').select('*').order('created_at', { ascending: false }).limit(50),
     ])
@@ -110,9 +114,30 @@ export default function Przetargi() {
     related.forEach(markOneRead)
   }
 
+  // Przycisk usuwania bezpośrednio na kafelku kanbanu (na wyraźne życzenie
+  // użytkownika, 22.07.2026 — "przycisk usunięcia musi być widoczny z widoku
+  // głównego a nie dopiero jak się wejdzie w przetarg"). Twarde usunięcie +
+  // wpis do tender_exclusions (denylist), tak samo jak w TenderDetailsModal —
+  // patrz komentarz tam po pełne uzasadnienie.
+  const handleDeleteTender = async (e, tender) => {
+    e.stopPropagation()
+    const ok = await confirm(t('Usunąć ten przetarg całkowicie? Zniknie ze wszystkich widoków i nie zostanie ponownie pobrany.'), { confirmLabel: t('Usuń') })
+    if (!ok) return
+    const { error: exErr } = await supabase.from('tender_exclusions').insert({
+      source: tender.source,
+      external_id: tender.external_id,
+      excluded_by: profile?.id || null,
+    })
+    if (exErr && exErr.code !== '23505') { toast.error(t('Nie udało się usunąć przetargu: ') + exErr.message); return }
+    const { error } = await supabase.from('tenders').delete().eq('id', tender.id)
+    if (error) { toast.error(t('Nie udało się usunąć przetargu: ') + error.message); return }
+    toast.success(t('Przetarg usunięty.'))
+    load()
+  }
+
   return (
     <div>
-      <PageHeader title={t('🎯 Przetargi')} subtitle={t('Dopasowane ogłoszenia z Bazy Konkurencyjności — aktualizacja co 20 minut')} />
+      <PageHeader title={t('🎯 Przetargi')} subtitle={t('Dopasowane ogłoszenia z Bazy Konkurencyjności — aktualizacja raz dziennie o 6:30')} />
       <div style={{ padding: '16px 22px' }}>
 
         {/* Centrum Sygnałów — hero-baner (sekcja 7.2 planu) */}
@@ -189,9 +214,18 @@ export default function Przetargi() {
                         <div key={tender.id} onClick={() => openTender(tender)}
                           style={{
                             background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px',
-                            cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.04)',
+                            cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.04)', position: 'relative',
                           }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4, lineHeight: 1.3 }}>
+                          <button onClick={e => handleDeleteTender(e, tender)} title={t('Usuń przetarg')}
+                            style={{
+                              position: 'absolute', top: 6, right: 6, border: 'none', background: 'transparent',
+                              color: C.muted, fontSize: 12, cursor: 'pointer', padding: 4, lineHeight: 1, borderRadius: 6,
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = C.rlight; e.currentTarget.style.color = C.red }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted }}>
+                            🗑️
+                          </button>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 4, lineHeight: 1.3, paddingRight: 18 }}>
                             {tender.title.length > 90 ? tender.title.slice(0, 90) + '…' : tender.title}
                           </div>
                           <div style={{ fontSize: 10.5, color: C.muted, marginBottom: 6 }}>{tender.buyer_name || t('Nabywca nieznany')}</div>

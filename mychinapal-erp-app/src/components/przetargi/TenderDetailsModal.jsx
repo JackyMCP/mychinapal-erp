@@ -74,19 +74,26 @@ export default function TenderDetailsModal({ tenderId, onClose, onChanged }) {
     load()
   }
 
-  // Soft-delete (dismissed=true) zamiast twardego DELETE — ingest robi upsert
-  // co 20 min, więc fizycznie usunięty, ale wciąż aktywny na źródle przetarg
-  // wróciłby przy kolejnym cyklu. Ukrycie przez dismissed jest trwałe.
-  const handleDismiss = async () => {
-    const ok = await confirm(t('Usunąć ten przetarg z panelu? Nie będzie już widoczny na kanbanie ani w powiadomieniach.'), { confirmLabel: t('Usuń') })
+  // Twarde usunięcie (na wyraźne życzenie użytkownika, 22.07.2026 — "przetargi
+  // mają się całkowicie usuwać z aplikacji"): najpierw zapisujemy source+
+  // external_id do tender_exclusions (trwała denylist sprawdzana przez
+  // tenders-ingest-bazakonkurencyjnosci przed każdym upsertem), dopiero potem
+  // fizycznie kasujemy wiersz z tenders — dzięki temu ogłoszenie znika ze
+  // wszystkich widoków od razu (kaskadowo usuwają się też notatki/dokumenty/
+  // analiza AI/historia/powiadomienia, FK mają ON DELETE CASCADE) i nigdy nie
+  // wróci przy kolejnym pobieraniu, mimo że nadal widnieje jako aktywne u źródła.
+  const handleDelete = async () => {
+    const ok = await confirm(t('Usunąć ten przetarg całkowicie? Zniknie ze wszystkich widoków i nie zostanie ponownie pobrany.'), { confirmLabel: t('Usuń') })
     if (!ok) return
-    const { error } = await supabase.from('tenders').update({
-      dismissed: true,
-      dismissed_at: new Date().toISOString(),
-      dismissed_by: profile?.id || null,
-    }).eq('id', tenderId)
+    const { error: exErr } = await supabase.from('tender_exclusions').insert({
+      source: tender.source,
+      external_id: tender.external_id,
+      excluded_by: profile?.id || null,
+    })
+    if (exErr && exErr.code !== '23505') { toast.error(t('Nie udało się usunąć przetargu: ') + exErr.message); return }
+    const { error } = await supabase.from('tenders').delete().eq('id', tenderId)
     if (error) { toast.error(t('Nie udało się usunąć przetargu: ') + error.message); return }
-    toast.success(t('Przetarg usunięty z panelu.'))
+    toast.success(t('Przetarg usunięty.'))
     onChanged?.()
     onClose?.()
   }
@@ -128,7 +135,7 @@ export default function TenderDetailsModal({ tenderId, onClose, onChanged }) {
               {t('🔗 Otwórz źródło')}
             </a>
           )}
-          <button onClick={handleDismiss}
+          <button onClick={handleDelete}
             style={{ fontSize: 11.5, padding: '7px 12px', borderRadius: 8, background: C.rlight, color: C.red, fontWeight: 700, border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>
             {t('🗑️ Usuń przetarg')}
           </button>
