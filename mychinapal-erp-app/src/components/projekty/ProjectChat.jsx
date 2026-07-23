@@ -52,6 +52,8 @@ export default function ProjectChat({ project, onChanged }) {
   const [myId, setMyId] = useState(null)
   const fileRef = useRef(null)
   const bottomRef = useRef(null)
+  const containerRef = useRef(null)
+  const lastMarkedAtRef = useRef(0)
 
   useEffect(() => {
     supabase.from('profiles').select('id,full_name').then(({ data }) => setProfiles(data || []))
@@ -80,13 +82,34 @@ export default function ProjectChat({ project, onChanged }) {
         ch = created
       }
       setChannelId(ch.id)
-      // Otwarcie czatu tego zamówienia (np. wejście w zakładkę panelu
-      // zamówienia) liczy się jako przeczytanie — inaczej licznik nigdy by
-      // się nie zerował, bo ten komponent wcześniej w ogóle go nie znał.
-      if (user) await supabase.from('chat_channel_reads').upsert({ channel_id: ch.id, user_id: user.id, last_read_at: new Date().toISOString() })
       setLoading(false)
     })()
   }, [project.id])
+
+  // Ten komponent jest zawsze zamontowany na stronie zamówienia (obok
+  // ProjectTeam/ProfitTable/StageTimeline itd.), więc "przeczytane" NIE może
+  // być ustawiane na sam mount — inaczej otwarcie zamówienia z dowolnego
+  // powodu zerowałoby licznik nieprzeczytanych, zanim ktokolwiek faktycznie
+  // zobaczył czat (stąd zgłoszenie: wiadomość "w ogóle się nie pojawiła").
+  // Zamiast tego oznaczamy jako przeczytane dopiero, gdy panel czatu
+  // faktycznie wjedzie w widoczny obszar ekranu (IntersectionObserver),
+  // i ponownie przy każdej nowej wiadomości, jeśli w tym momencie panel
+  // nadal jest widoczny.
+  useEffect(() => {
+    if (!channelId || !myId || !containerRef.current) return
+    const el = containerRef.current
+    const markRead = () => {
+      const now = Date.now()
+      if (now - lastMarkedAtRef.current < 1500) return // proste odbicie zbyt częstych zapisów
+      lastMarkedAtRef.current = now
+      supabase.from('chat_channel_reads').upsert({ channel_id: channelId, user_id: myId, last_read_at: new Date().toISOString() })
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) markRead()
+    }, { threshold: 0.4 })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [channelId, myId, messages.length])
 
   useEffect(() => {
     if (!channelId) return
@@ -257,7 +280,7 @@ export default function ProjectChat({ project, onChanged }) {
   if (loading) return <div style={{ fontSize: 11, color: C.muted }}>{t("Ładowanie czatu…")}</div>;
 
   return (
-    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+    <div ref={containerRef} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
       style={{
         background: dragOver ? C.blight : C.white, border: `1.5px ${dragOver ? 'dashed' : 'solid'} ${dragOver ? C.blue : C.border}`,
         borderRadius: 14, padding: '16px 18px', position: 'relative', transition: 'all .12s ease',

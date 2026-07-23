@@ -138,11 +138,28 @@ export async function saveQuoteFile({ file, project, client, side, value, source
       quote = updated
       result.overwritten = true
     } else {
-      const { data: rows } = await supabase.from('quotes').select('quote_number')
-      const quote_number = nextQuoteNumber((rows || []).map(r => r.quote_number))
-      const { data: inserted, error: insErr } = await supabase.from('quotes').insert({
-        quote_number, client_id: client.id, project_id: project.id, created_by: user?.id, ...patch,
-      }).select().single()
+      // Numer wyceny liczony jest z migawki istniejących numerów po stronie
+      // klienta (nextQuoteNumber) — bez blokady na poziomie bazy. Gdy dwa
+      // wgrania trafiają się prawie równocześnie (np. ten sam Excel wchodzi
+      // przez czat I panel plików projektu), oba mogą policzyć ten sam
+      // "kolejny" numer i zderzyć się o unique constraint
+      // quotes_quote_number_unique. Naprawa: przy takim konflikcie pobieramy
+      // świeżą listę numerów i próbujemy ponownie (do 5 razy), zamiast od
+      // razu zwracać błąd użytkownikowi.
+      let inserted = null
+      let insErr = null
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: rows } = await supabase.from('quotes').select('quote_number')
+        const quote_number = nextQuoteNumber((rows || []).map(r => r.quote_number))
+        const res = await supabase.from('quotes').insert({
+          quote_number, client_id: client.id, project_id: project.id, created_by: user?.id, ...patch,
+        }).select().single()
+        if (!res.error) { inserted = res.data; insErr = null; break }
+        insErr = res.error
+        // Ponawiamy tylko przy konflikcie numeru — inne błędy (np. RLS,
+        // sieć) nie znikną przy kolejnej próbie.
+        if (res.error.code !== '23505' || !(res.error.message || '').includes('quote_number')) break
+      }
       if (insErr) { result.error = 'Nie udało się utworzyć wyceny: ' + insErr.message; return result }
       quote = inserted
     }

@@ -74,6 +74,8 @@ export default function Czat() {
   const [renameValue, setRenameValue] = useState('')
   const [renameSaving, setRenameSaving] = useState(false)
   const [showFiles, setShowFiles] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [clientOrderChannels, setClientOrderChannels] = useState([])
   const [unreadCounts, setUnreadCounts] = useState({})
   const [clientUnread, setClientUnread] = useState({})
@@ -193,6 +195,8 @@ export default function Czat() {
     if (!activeId) { setMessages([]); setHasMore(false); return }
     let cancelled = false
     setShowFiles(false)
+    setShowSearch(false)
+    setSearchQuery('')
     setRenaming(false)
     setHasMore(false)
 
@@ -456,6 +460,10 @@ export default function Czat() {
     .map(m => Array.isArray(m.documents) ? m.documents[0] : m.documents)
     .filter(Boolean)
   const fmtTime = ts => new Date(ts).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const searchQueryTrimmed = searchQuery.trim().toLowerCase()
+  const visibleMessages = searchQueryTrimmed
+    ? messages.filter(m => !m.deleted_at && (m.content || '').toLowerCase().includes(searchQueryTrimmed))
+    : messages
 
   // na telefonie pokazujemy albo listę kanałów, albo okno czatu — nigdy oba naraz
   const mobileShowList = isMobile && !active
@@ -585,10 +593,27 @@ export default function Czat() {
                     <button onClick={() => setShowFiles(f => !f)} style={smallBtn({ color: C.blue, bg: C.blight }, showFiles)}>
                       {t('📎 Pliki')}{channelFiles.length > 0 ? ` (${channelFiles.length})` : ''}
                     </button>
+                    <button onClick={() => setShowSearch(s => !s)} style={smallBtn({ color: C.blue, bg: C.blight }, showSearch)}>
+                      {t('🔍 Szukaj')}
+                    </button>
                   </div>
                 </div>
                 <VoiceChannel roomId={`voice-${active.id}`} currentUserId={profile?.id} currentUserName={profile?.full_name || 'Użytkownik'} accentColor={activeStyle.color} chatChannelId={active.id} />
               </div>
+              {showSearch && (
+                <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, background: C.white, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input autoFocus value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    placeholder={t('Szukaj w tym kanale…')}
+                    onKeyDown={e => { if (e.key === 'Escape') { setShowSearch(false); setSearchQuery('') } }}
+                    style={{ flex: 1, fontSize: 12.5, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 10px', outline: 'none' }} />
+                  {searchQuery && (
+                    <span style={{ fontSize: 10.5, color: C.muted, whiteSpace: 'nowrap' }}>
+                      {visibleMessages.length} {t('wynik(ów)')}
+                    </span>
+                  )}
+                  <span onClick={() => { setShowSearch(false); setSearchQuery('') }} style={{ cursor: 'pointer', fontSize: 13, color: C.muted }}>✕</span>
+                </div>
+              )}
               {activeType === 'klient' && clientOrderChannels.length > 0 && (
                 <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, background: C.white, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {clientOrderChannels.map(c => (
@@ -611,7 +636,10 @@ export default function Czat() {
                   </div>
                 )}
                 {messages.length === 0 && <EmptyState icon="✉️" title={t("Brak wiadomości")} subtitle={t("Napisz pierwszą wiadomość na tym kanale.")} />}
-                {messages.map(m => {
+                {messages.length > 0 && searchQueryTrimmed && visibleMessages.length === 0 && (
+                  <EmptyState icon="🔍" title={t("Brak wyników")} subtitle={t("Żadna wiadomość w tym kanale nie pasuje do wyszukiwania.")} />
+                )}
+                {(searchQueryTrimmed ? visibleMessages : messages).map(m => {
                   const mine = m.sender_id === profile?.id
                   const doc = Array.isArray(m.documents) ? m.documents[0] : m.documents
                   return (

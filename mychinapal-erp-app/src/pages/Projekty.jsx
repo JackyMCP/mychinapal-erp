@@ -36,6 +36,9 @@ export default function Projekty() {
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [showNewProject, setShowNewProject] = useState(false)
+  const [editingOrderLabel, setEditingOrderLabel] = useState(false)
+  const [orderLabelDraft, setOrderLabelDraft] = useState('')
+  const [savingOrderLabel, setSavingOrderLabel] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -102,8 +105,24 @@ export default function Projekty() {
 
   const selected = projects.find(p => p.id === selectedId) || null
 
-  const handleSelect = (p) => { setSelectedId(p.id); setSearchParams({ project: p.id }) }
-  const handleBack = () => { setSelectedId(null); setSearchParams({}) }
+  const handleSelect = (p) => { setSelectedId(p.id); setSearchParams({ project: p.id }); setEditingOrderLabel(false) }
+  const handleBack = () => { setSelectedId(null); setSearchParams({}); setEditingOrderLabel(false) }
+
+  // Edycja nazwy zamówienia (order_label) — brakowało tego zupełnie w UI,
+  // zgłoszone przez zespół 22.07.2026. Wzorem edycji nazwy klienta w
+  // Klienci.jsx (ołówek -> inline input -> zapisz/anuluj).
+  const startEditOrderLabel = () => { setOrderLabelDraft(selected?.order_label || ''); setEditingOrderLabel(true) }
+  const cancelEditOrderLabel = () => { setEditingOrderLabel(false); setOrderLabelDraft('') }
+  const handleSaveOrderLabel = async () => {
+    const trimmed = orderLabelDraft.trim()
+    if (!trimmed || !selected) return
+    setSavingOrderLabel(true)
+    const { data, error } = await supabase.from('projects').update({ order_label: trimmed }).eq('id', selected.id).select().single()
+    setSavingOrderLabel(false)
+    if (error) { toast.error(t('Nie udało się zapisać nazwy: ') + error.message); return }
+    setProjects(prev => prev.map(p => p.id === data.id ? data : p))
+    setEditingOrderLabel(false)
+  }
 
   const handleAssignClient = async (project, newClientId) => {
     const { error } = await supabase.from('projects').update({ client_id: newClientId, updated_at: new Date().toISOString() }).eq('id', project.id)
@@ -165,7 +184,20 @@ export default function Projekty() {
             </div>
             <div style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', background: avatarColor(clientName) }}>{initials(clientName)}</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800 }}>{selected.order_label}</div>
+              {editingOrderLabel ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input value={orderLabelDraft} onChange={e => setOrderLabelDraft(e.target.value)} autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveOrderLabel(); if (e.key === 'Escape') cancelEditOrderLabel() }}
+                    style={{ fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 800, border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', width: 260 }} />
+                  <span onClick={handleSaveOrderLabel} title={t('Zapisz')} style={{ cursor: 'pointer', color: C.green, fontWeight: 700 }}>{savingOrderLabel ? '…' : '✓'}</span>
+                  <span onClick={cancelEditOrderLabel} title={t('Anuluj')} style={{ cursor: 'pointer', color: C.red, fontWeight: 700 }}>✕</span>
+                </div>
+              ) : (
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {selected.order_label}
+                  <span onClick={startEditOrderLabel} title={t('Zmień nazwę')} style={{ fontSize: 12, color: C.blue, cursor: 'pointer', opacity: .7 }}>✏️</span>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{clientName} {t("· utworzono")} {selected.created_at ? new Date(selected.created_at).toLocaleDateString('pl-PL') : '—'}</div>
             </div>
           </div>

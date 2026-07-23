@@ -122,7 +122,16 @@ export default function CalendarWidget({ events, profiles, currentUserId, onChan
           const visible = dayEvents.slice(0, 3)
           const extra = dayEvents.length - visible.length
           return (
-            <div key={i} className="cal-day-cell" onClick={() => d && setSelectedDay(prev => (prev && prev.toDateString() === d.toDateString() ? null : d))}
+            <div key={i} className="cal-day-cell" onClick={() => {
+                if (!d) return
+                const isSame = selectedDay && selectedDay.toDateString() === d.toDateString()
+                if (isSame) {
+                  setSelectedDay(null)
+                } else {
+                  setSelectedDay(d)
+                  setDate(d.toISOString().slice(0, 10))
+                }
+              }}
               style={{
                 minHeight: isMobile ? 66 : 98, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: isMobile ? '4px 3px' : '8px 7px',
                 fontSize: isMobile ? 9 : 10.5, position: 'relative', cursor: d ? 'pointer' : 'default', boxSizing: 'border-box',
