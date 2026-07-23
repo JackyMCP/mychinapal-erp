@@ -76,6 +76,7 @@ export default function Czat() {
   const [showFiles, setShowFiles] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [channelDocs, setChannelDocs] = useState([])
   const [clientOrderChannels, setClientOrderChannels] = useState([])
   const [unreadCounts, setUnreadCounts] = useState({})
   const [clientUnread, setClientUnread] = useState({})
@@ -232,6 +233,27 @@ export default function Czat() {
 
     return () => { cancelled = true; supabase.removeChannel(sub) }
   }, [activeId])
+
+  // Panel "📎 Pliki" pokazywał WYŁĄCZNIE pliki wysłane jako zwykły załącznik
+  // wiadomości (attachment_document_id) — pliki wyceny (kategorie "Wycena
+  // CN"/"Wycena dla klienta") trafiają na kartę wyceny/Dokumenty NIEZALEŻNIE
+  // od wiadomości (patrz lib/quoteIntake.js: wiadomość dostaje
+  // attachment_document_id=null), więc mimo poprawnego zapisania w bazie w
+  // ogóle się tu nie pojawiały — wyglądało to tak, jakby wgranie pliku w
+  // ogóle się nie udało. Doczytujemy więc wprost wszystkie dokumenty tego
+  // klienta/zamówienia (te same, które widać w "Pliki projektu"/zakładce
+  // Wyceny), żeby panel na czacie pokazywał komplet, a nie tylko podzbiór.
+  useEffect(() => {
+    if (!active || (!active.project_id && !active.client_id)) { setChannelDocs([]); return }
+    let cancelled = false
+    ;(async () => {
+      let query = supabase.from('documents').select('*').eq('visible_in_files', true).order('created_at', { ascending: false })
+      query = active.project_id ? query.eq('project_id', active.project_id) : query.eq('client_id', active.client_id)
+      const { data, error } = await query
+      if (!cancelled && !error) setChannelDocs(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [activeId, active?.project_id, active?.client_id])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -456,9 +478,15 @@ export default function Czat() {
   const activeType = active ? channelType(active) : 'ogolny'
   const activeStyle = TYPE_STYLE[activeType]
   const canRename = active && (isZarzad || active.created_by === profile?.id)
-  const channelFiles = messages
+  const messageFiles = messages
     .map(m => Array.isArray(m.documents) ? m.documents[0] : m.documents)
     .filter(Boolean)
+  // Scalenie plików załączonych wprost do wiadomości (messageFiles) z
+  // dokumentami wyceny doczytanymi osobno (channelDocs — patrz efekt wyżej),
+  // bez duplikatów, posortowane od najnowszych.
+  const channelFiles = [...messageFiles, ...channelDocs]
+    .filter((doc, idx, arr) => arr.findIndex(d => d.id === doc.id) === idx)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   const fmtTime = ts => new Date(ts).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   const searchQueryTrimmed = searchQuery.trim().toLowerCase()
   const visibleMessages = searchQueryTrimmed
