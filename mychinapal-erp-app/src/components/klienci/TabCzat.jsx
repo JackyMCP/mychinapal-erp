@@ -288,9 +288,11 @@ export default function TabCzat({ clientId, clientName, projects, profiles: prof
     const actionLabel = result.overwritten ? t('Wycena nadpisana') : t('Wycena zapisana')
     const sideLabel = side === 'cn' ? t('od zespołu CN') : t('dla klienta (z marżą)')
     const notifyNote = side === 'cn' ? ` — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}` : ''
-    const infoNote = `📊 ${actionLabel} ${sideLabel} (${project?.order_label}): ${file?.name}${notifyNote}`
+    const infoNote = `📊 ${actionLabel} ${sideLabel} (${project?.order_label})${notifyNote}`
     const content = srcText ? `${srcText}\n\n${infoNote}` : infoNote
-    await sendChatMessage(content, null, srcText)
+    // attachment_document_id -> dokument utworzony przez saveQuoteFile, żeby
+    // wiadomość pokazała normalną kartę załącznika (jak WhatsApp), a nie sam tekst.
+    await sendChatMessage(content, result.documentId, srcText)
     setSending(false)
     setPendingQuoteFile(null)
     setText(''); setAttachFile(null)

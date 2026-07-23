@@ -119,10 +119,10 @@ export async function checkPlTeamAssigned(project) {
  * zamówienia. Przy stronie CN dodatkowo powiadamia (zadanie w Centrum zadań,
  * bez duplikatów przy ponownym wgraniu) cały zespół przypisany do zamówienia.
  * @param {{file:File, project:{id:string, client_id:string}, client:{id:string, name?:string}, side:'cn'|'pl', value:number, source?:string}} args
- * @returns {Promise<{ok:boolean, quoteId:string|null, notified:number, notifyFailed:boolean, overwritten:boolean, error:string|null}>}
+ * @returns {Promise<{ok:boolean, quoteId:string|null, documentId:string|null, notified:number, notifyFailed:boolean, overwritten:boolean, error:string|null}>}
  */
 export async function saveQuoteFile({ file, project, client, side, value, source = 'manual' }) {
-  const result = { ok: false, quoteId: null, notified: 0, notifyFailed: false, overwritten: false, error: null }
+  const result = { ok: false, quoteId: null, documentId: null, notified: 0, notifyFailed: false, overwritten: false, error: null }
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -132,10 +132,16 @@ export async function saveQuoteFile({ file, project, client, side, value, source
     if (upErr) { result.error = 'Nie udało się wgrać pliku: ' + upErr.message; return result }
 
     const category = side === 'cn' ? 'Wycena CN' : 'Wycena dla klienta'
-    await supabase.from('documents').insert({
+    // Zwracamy id utworzonego dokumentu — dzięki temu wiadomość na czacie
+    // może się do niego podpiąć jako attachment_document_id i wyświetlić się
+    // jako normalna karta załącznika (jak WhatsApp: ikona, nazwa, rozmiar,
+    // kliknięcie -> podgląd/pobranie), zamiast być samym tekstem podsumowania.
+    const { data: docRow, error: docErr } = await supabase.from('documents').insert({
       client_id: client.id, project_id: project.id, category,
       file_path: path, file_name: file.name, uploaded_by: user?.id, source,
-    })
+    }).select().single()
+    if (docErr) console.error('[quoteIntake] documents insert failed:', docErr.message)
+    result.documentId = docRow?.id || null
 
     const { data: existing } = await supabase.from('quotes').select('*').eq('project_id', project.id).maybeSingle()
 

@@ -414,12 +414,15 @@ export default function Czat() {
     const actionLabel = result.overwritten ? t('Wycena nadpisana') : t('Wycena zapisana')
     const sideLabel = side === 'cn' ? t('od zespołu CN') : t('dla klienta (z marżą)')
     const notifyNote = side === 'cn' ? ` — ${t('powiadomiono')} ${result.notified} ${t('os. z zespołu')}` : ''
-    const infoNote = `📊 ${actionLabel} ${sideLabel}: ${file?.name}${notifyNote}`
+    const infoNote = `📊 ${actionLabel} ${sideLabel}${notifyNote}`
     const content = srcText ? `${srcText}\n\n${infoNote}` : infoNote
     const { data: { user } } = await supabase.auth.getUser()
     const mentionIds = extractMentions(srcText, allProfiles)
+    // attachment_document_id wskazuje na dokument utworzony przez
+    // saveQuoteFile — dzięki temu wiadomość pokazuje normalną kartę
+    // załącznika (nazwa/rozmiar/podgląd, jak WhatsApp), a nie tylko sam tekst.
     const { data: inserted, error } = await supabase.from('chat_messages').insert({
-      channel_id: activeId, sender_id: user.id, content, attachment_document_id: null,
+      channel_id: activeId, sender_id: user.id, content, attachment_document_id: result.documentId,
       mentioned_user_ids: mentionIds.length ? mentionIds : null,
     }).select(MSG_SELECT).single()
     setSending(false)
