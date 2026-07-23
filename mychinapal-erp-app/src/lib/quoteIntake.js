@@ -94,9 +94,19 @@ export async function fetchNbpCnyRate() {
 
 export async function checkPlTeamAssigned(project) {
   const { data: assignments, error: assignErr } = await supabase.from('project_assignments')
-    .select('user_id, role').eq('project_id', project.id).neq('role', 'glowny_cn')
+    .select('user_id, role').eq('project_id', project.id)
   if (assignErr) return { ok: false, plUserIds: [], error: 'Nie udało się sprawdzić zespołu przypisanego do zamówienia: ' + assignErr.message }
-  const plUserIds = [...new Set((assignments || []).map(a => a.user_id).filter(Boolean))]
+  // WAŻNE: filtr "nie jest głównym CN" musi być po stronie JS, nie jako
+  // `.neq('role', 'glowny_cn')` w zapytaniu — w SQL `NULL <> 'glowny_cn'` daje
+  // NIEZNANE (nie PRAWDA), więc wiersze z rolą NULL są przez taki filtr po
+  // cichu wykluczane. W praktyce większość przypisań (dodanych szybkim
+  // przypisaniem, bez wyboru konkretnej roli) ma rolę NULL — więc ten błąd
+  // sprawiał, że "powiadomiono 0 os. z zespołu" pokazywało się niemal zawsze,
+  // nawet gdy ktoś był realnie przypisany do zamówienia.
+  const plUserIds = [...new Set((assignments || [])
+    .filter(a => a.role !== 'glowny_cn')
+    .map(a => a.user_id)
+    .filter(Boolean))]
   return { ok: true, plUserIds, error: null }
 }
 
