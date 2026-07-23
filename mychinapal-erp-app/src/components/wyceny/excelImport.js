@@ -157,7 +157,18 @@ function looksLikeTotalRowLabel(rawRow) {
   return (rawRow || []).some(c => TOTAL_ROW_REGEX.test(foldDiacritics(String(c ?? '').toLowerCase())))
 }
 
-export async function parseQuoteExcel(file) {
+// `extractImages`: wyciąganie zdjęć z Excela (przez ciężką bibliotekę
+// ExcelJS — patrz extractRowImages) jest potrzebne TYLKO tam, gdzie zdjęcia
+// faktycznie się wyświetlają (podgląd zapisanej wyceny — previewQuoteFile).
+// Samo wykrycie łącznej wartości wyceny (detectQuoteValue, wywoływane przy
+// KAŻDYM wgraniu pliku, zanim cokolwiek zostanie zapisane) w ogóle nie
+// korzysta ze zdjęć — a dla dużych plików z wieloma/dużymi zdjęciami w
+// komórkach to wyciąganie potrafi trwać bardzo długo (albo się wysypać),
+// przez co wgranie takiego pliku wyglądało na "zawieszone"/nieudane, mimo że
+// same dane (ilość/cena) parsują się błyskawicznie. Domyślnie zdjęcia są
+// wyciągane (zachowanie jak dotychczas) — wyłączane jawnie tam, gdzie i tak
+// nie są używane.
+export async function parseQuoteExcel(file, { extractImages = true } = {}) {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
@@ -167,7 +178,7 @@ export async function parseQuoteExcel(file) {
 
   // Zdjęcia trzeba wyciągnąć z osobnej kopii bufora (ExcelJS konsumuje/czyta
   // go niezależnie od SheetJS) — dopasowywane do wierszy przez pozycję kotwicy.
-  const imagesByRowIdx = await extractRowImages(buf.slice(0), sheetStartRow0)
+  const imagesByRowIdx = extractImages ? await extractRowImages(buf.slice(0), sheetStartRow0) : {}
 
   // Znajdź wiersz nagłówka — pierwszy, który ma JAKĄKOLWIEK komórkę pasującą
   // do znanego nagłówka (nie tylko "name"/"品名" — inaczej plik z samymi

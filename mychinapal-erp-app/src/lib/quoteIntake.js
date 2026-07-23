@@ -35,7 +35,11 @@ export { isExcelFile }
 export async function detectQuoteValue(file) {
   if (!isExcelFile(file)) return { value: null, itemCount: 0 }
   try {
-    const items = await parseQuoteExcel(file)
+    // extractImages: false — to tylko suma ilość×cena, zdjęcia z komórek nie
+    // są tu w ogóle używane (patrz komentarz przy parseQuoteExcel). Dla
+    // dużych plików ze zdjęciami wyciąganie ich bez potrzeby potrafiło
+    // sprawiać wrażenie "zawieszonego" wgrywania.
+    const items = await parseQuoteExcel(file, { extractImages: false })
     if (!items.length) return { value: null, itemCount: 0 }
     const total = items.reduce((s, it) => s + toNum(it.qty) * toNum(it.unit_price_cny), 0)
     return { value: Math.round(total * 100) / 100, itemCount: items.length }
